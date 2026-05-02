@@ -1,0 +1,199 @@
+历史直播地址:
+https://s.lazada.com.my/s.Gl8c1
+{"liveUuid":"fb1962b5-3dbe-470f-9348-b5f0b21cc879","action":0}
+http://pull-live.lazcdn.com/peacock/fb1962b5-3dbe-470f-9348-b5f0b21cc879_new-720p.flv?auth_key=1768103111-0-0-6af929b28828fefc4180f442b961b6a3
+fb1962b5-3dbe-470f-9348-b5f0b21cc879_new-720p
+
+当前正在直播间地址：
+https://s.lazada.com.my/s.Gl8dg
+{"liveUuid":"c5b6417d-1f8d-4f1a-9956-885fecb2c6b8","action":0}
+http://pull-live.lazcdn.com/peacock/c5b6417d-1f8d-4f1a-9956-885fecb2c6b8_new-720p.flv?auth_key=1768103408-0-0-46375e4e778201e0ba2f08d7b82316bd
+c5b6417d-1f8d-4f1a-9956-885fecb2c6b8_new-720p
+
+lazada 直播实时流目标接口地址：
+
+url = "https://acs-m.lazada.com.my/h5/mtop.lazada.live.query/1.1/"
+params = {
+    "jsv": "2.6.1",
+    "appKey": "24677475",
+    "t": "1765166514128",
+    "sign": "db36d9d33fd4e174757b4e2dff0f62dd",
+    "api": "mtop.lazada.live.query",
+    "v": "1.1",
+    "type": "originaljson",
+    "isSec": "1",
+    "AntiCreep": "true",
+    "timeout": "12000",
+    "dataType": "json",
+    "sessionOption": "AutoLoginOnly",
+    "x-i18n-language": "en",
+    "x-i18n-regionID": "MY"
+}
+
+{
+  "api": "mtop.lazada.live.query",
+  "data": {
+    "count": 0,
+    "data": {
+      "abGroup": "control",
+      "approveStatus": "APPROVED",
+      "autoBitrateText": "Auto",
+      "backUrl": "",
+      "bestPullStreamUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18.flv?auth_key=1767749060-0-0-23c0c034826e931f5f1478e45e6fbb38",
+      "bitRate": 1257.36,
+      "bizCode": "LAZADA_MY",
+      "containAdultProducts": false,
+      "degradePullStreamInfo": [],
+      "enableAutoBitrate": false,
+      "enableManualBitrate": false,
+      "endTime": "2026-01-07 09:54:00",
+      "endTimestamp": 1767750840000,
+      "extInfo": {
+        "weex_dynamic_config": {
+          "weex_load_url": "https://pages.lazada.com.my/wow/i/my/laz-live/fans-room?wh_weex=true",
+          "icms_config_url": "https://pages.lazada.com.my/wow/i/my/LandingPage/lzd-liveroom-weex-config-online?wh_weex=true"
+        },
+        "host_weex_dynamic_config": {
+          "weex_load_url": "https://pages.lazada.com.my/wow/i/my/laz-live/anchor-room?wh_weex=true",
+          "icms_config_url": "https://pages.lazada.com.my/wow/i/my/LandingPage/lzd-liveanchor-weex-config-online?wh_weex=true"
+        }
+      },
+      "features": {
+        "push_mode": "1",
+        "rateInfoTime": "2025-12-08 11:57:07",
+        "code_level": "3",
+        "videoFrameRate": "19.316668",
+        "live_checked": "true",
+        "audioFrameRate": "43.066666",
+        "appointmentTime": "1765158840000",
+        "bitRate": "1257.36",
+        "live_room_host_type": "KOL"
+      },
+      "forceAkamai": false,
+      "gmvTier": "A",
+      "haedPic": "http://member-avatar.lazcdn.com/lzd-live-my-member/61fc8f119780492ba1d87a911fd6b98b_d157ca83448a428d8aad7f313a0ca0ea.jpg",
+      "inputCodeLevel": 3,
+      "ipId": 0,
+      "isCurrentLiveHost": false,
+      "isSliver": false,
+      "jumpUrl": "https://pages.lazada.com.my/wow/gcp/my/laz-live/liveroom?liveuuid=28804121-d64e-4cde-81da-975c80be5c18",
+      "keepAlive": false,
+      "liveId": 101765157060420,
+      "liveList": [],
+      "liveRoomHostType": 2,
+      "liveUuid": "28804121-d64e-4cde-81da-975c80be5c18",
+      "location": "",
+      "onlineCount": 0,
+      "panelUrl": "https://pages.lazada.com.my/wow/gcp/my/laz-live/lazlive-end?liveUuid=28804121-d64e-4cde-81da-975c80be5c18",
+      "praiseCount": 0,
+      "productCount": 882,
+      "pullStreamInfo": [
+        {
+          "codeLevel": -1,
+          "codeLevelName": "Original",
+          "pullStreamUrls": [
+            "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18.flv?auth_key=1767749060-0-0-23c0c034826e931f5f1478e45e6fbb38",
+            "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18.m3u8?auth_key=1767749060-0-0-f13b8b33b66c48e2d48ccc482e13361e"
+          ]
+        },
+        {
+          "codeLevel": 2,
+          "codeLevelName": "540P",
+          "pullStreamUrls": [
+            "http://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_new-540p.flv?auth_key=1767758515-0-0-5728032d246e99261bd65b64a43d1a6d",
+            "http://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_new-540p.m3u8?auth_key=1767758515-0-0-d79875def9f7d7d70ee676b57104791a"
+          ]
+        },
+        {
+          "codeLevel": 3,
+          "codeLevelName": "720P",
+          "pullStreamUrls": [
+            "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18.flv?auth_key=1767749060-0-0-23c0c034826e931f5f1478e45e6fbb38",
+            "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18.m3u8?auth_key=1767749060-0-0-f13b8b33b66c48e2d48ccc482e13361e"
+          ]
+        }
+      ],
+      "ratio_16_9": "https://sg-test-11.slatic.net/p/fc88756286af3121b13507a40830a032.jpg",
+      "ratio_1_1": "https://sg-test-11.slatic.net/p/fc88756286af3121b13507a40830a032.jpg",
+      "roomId": 119714,
+      "roomStatus": "Online",
+      "roomType": 0,
+      "rotation": "Portrait",
+      "sellerInfo": {
+        "followersNumber": 0,
+        "isFollowed": 0,
+        "isLazMall": false,
+        "isOffice": false,
+        "sellerId": 0,
+        "shopId": 310009545411,
+        "shopLogo": "http://member-avatar.lazcdn.com/lzd-live-my-member/61fc8f119780492ba1d87a911fd6b98b_d157ca83448a428d8aad7f313a0ca0ea.jpg",
+        "shopName": "RosalmieSal",
+        "shopUrl": "https://pages.lazada.com.my/wow/gcp/my/feedlp/feed-profile?isLive=true&hybrid=1&wh_showError=true&wx_navbar_transparent=true&lzd_navbar_hidden=true&userId=310009545411"
+      },
+      "showAiProduct": false,
+      "startTime": "2025-12-08 10:13:06",
+      "startTimestamp": 1765159986000,
+      "streamInfo": {
+        "inputCodeLevel": 3,
+        "liveUUID": "28804121-d64e-4cde-81da-975c80be5c18",
+        "liveUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18.flv?auth_key=1767749060-0-0-23c0c034826e931f5f1478e45e6fbb38",
+        "liveUrlHls": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18.m3u8?auth_key=1767749060-0-0-f13b8b33b66c48e2d48ccc482e13361e",
+        "liveUrls": [
+          {
+            "codeLevel": -1,
+            "flvUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-360p.flv?auth_key=1767749060-0-0-89c61bbf9129d60b23ce72a0b3cfbf95",
+            "hlsUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-360p.m3u8?auth_key=1767749060-0-0-21e26a4f083a35b44098ed90306ae454"
+          },
+          {
+            "codeLevel": 1,
+            "flvUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-360p.flv?auth_key=1767749060-0-0-89c61bbf9129d60b23ce72a0b3cfbf95",
+            "h265FlvUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-360p-hevc.flv?auth_key=1767749060-0-0-c6da25838b435fe43c0ba5da03ac8a54",
+            "h265HlsUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-360p-hevc.m3u8?auth_key=1767749060-0-0-c11f769bcfe72e5c2e1cbab39112cdd7",
+            "hlsUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-360p.m3u8?auth_key=1767749060-0-0-21e26a4f083a35b44098ed90306ae454"
+          },
+          {
+            "codeLevel": 2,
+            "flvUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-540p.flv?auth_key=1767749060-0-0-cf103af9ea5ddeb07963d70b88716895",
+            "h265FlvUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-540p-hevc.flv?auth_key=1767749060-0-0-9ea7b6ce81a41ec59b41e973a87eb9ae",
+            "h265HlsUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-540p-hevc.m3u8?auth_key=1767749060-0-0-be425e32a5f00dcbbf64b647556c78e0",
+            "hlsUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-540p.m3u8?auth_key=1767749060-0-0-c794a849e5e7a064f0c08a9c84faff85"
+          },
+          {
+            "codeLevel": 3,
+            "flvUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-720p.flv?auth_key=1767749060-0-0-fdf9d335e3564eee9fd64403d80c0677",
+            "h265FlvUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-720p-hevc.flv?auth_key=1767749060-0-0-5a85265f5c23cbe55827a520ccaecd7f",
+            "h265HlsUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-720p-hevc.m3u8?auth_key=1767749060-0-0-5531940dd480a2b347912a993e2ef5a6",
+            "hlsUrl": "https://pull-live.lazcdn.com/peacock/28804121-d64e-4cde-81da-975c80be5c18_liveng-720p.m3u8?auth_key=1767749060-0-0-3aa7e62525dd9eb0dd388b554a268659"
+          }
+        ],
+        "rotation": "Portrait",
+        "status": "Online"
+      },
+      "subscribe": false,
+      "tags": [
+        ""
+      ],
+      "timeShiftStatus": false,
+      "title": "12.12 sales🔥🔥🔥🔥  sales😍😍",
+      "totalJoinCount": 0,
+      "totalViewCount": 1375,
+      "userAutoBitrate": false,
+      "userId": 310009545411,
+      "userNewPullLogic": true,
+      "userNick": "RosalmieSal",
+      "uuid": "28804121-d64e-4cde-81da-975c80be5c18"
+    },
+    "fail": false,
+    "pageSize": 20,
+    "timestamp": 1765166515593
+  },
+  "ret": [
+    "SUCCESS::调用成功"
+  ],
+  "traceId": "0babe87017651665155714167ef698",
+  "v": "1.1"
+}
+
+
+
+

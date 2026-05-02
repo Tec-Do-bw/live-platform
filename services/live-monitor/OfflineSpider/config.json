@@ -1,0 +1,45 @@
+{
+    "GMV": [
+        {
+            "description": "直播分析-直播间详情-流量分析",
+            "endpoint": "api/v1/insights/workbench/live/detail/core/stats",
+            "method": "POST",
+            "data_templates": [
+                {"request":{"room_filter":{"room_id":"PLACEHOLDER_ROOM_ID","is_content_type":1,"country":"ID"},"stats_types":[23,3,322,310,39,29,312,332,330,10,323,7,20,11,62,241,341,342,2,5,18,290,291,292,-23,-3,-39,-330,-10,-7,-20,-11,-62,-341,-342,-2,-18]}}
+            ]
+        },
+        {
+            "description": "直播大屏 获取当前用户/商家账户的基础信息、权限和配置状态",
+            "endpoint": "api/v1/streamer_desktop/account_info/get",
+            "method": "GET",
+            "data_templates": [
+                {}
+            ]
+        },
+        {
+        "description": "直播大屏-流量来源 ",
+        "endpoint": "api/v3/insights/workbench/live/detail/source/new",
+        "method": "POST",
+        "data_templates": [
+             {"request":{"stats_types":[100],"room_filter":{"room_id":"PLACEHOLDER_ROOM_ID","is_content_type":1}},"version":3}
+            ]
+        },
+        {
+            "description": "直播大屏  获取该场直播的所有基本信息，包括主播身份、直播状态和回放链接",
+            "endpoint": "api/v1/insights/workbench/live/detail/room/info",
+            "method": "POST",
+            "data_templates": [
+                {"request":{"room_filter":{"room_id":"PLACEHOLDER_ROOM_ID","is_content_type":1}}}
+            ]
+        },
+        {
+            "description": "直播大屏-直播分析-表现趋势",
+            "endpoint": "api/v1/insights/workbench/live/detail/trend/chart",
+            "method": "POST",
+            "data_templates": [
+                {"request":{"room_filter":{"room_id":"PLACEHOLDER_ROOM_ID","is_content_type":1},"stats_types":[341,92]}}
+            ]
+        }
+    ]
+
+}

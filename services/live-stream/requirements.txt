@@ -1,0 +1,16 @@
+requests
+loguru
+pycryptodome
+distro
+tqdm
+confluent-kafka
+kafka-python
+moviepy
+pymysql
+fastapi
+uvicorn[standard]
+oss2
+
+
+
+

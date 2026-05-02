@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>派大星爬虫数据接口</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        
+        /* 导航栏样式 - 平铺 */
+        .nav-override {
+            width: none;
+            margin-bottom: 0 !important;
+            position: relative !important; /* 改为相对定位 */
+        }
+        
+        .doc-content-wrapper {
+            padding: 20px;
+        }
+        
+        .container {
+            /* max-width: 1200px; */
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        /* 标题区样式 */
+        .header-container {
+            display: flex;
+            /* justify-content: space-between; */
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .header-container h1 {
+            margin: 0;
+        }
+        
+        .doc-guide-btn {
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background-color 0.2s ease;
+            margin-left: 20px;
+        }
+        
+        .doc-guide-btn:hover {
+            background-color: #0056b3;
+            color: white;
+        }
+        
+        .select-container {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            min-width: 120px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;
+        }
+        .interface-info {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .field-description {
+            margin-top: 15px;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 15px;
+        }
+        .field-description table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .field-description th, .field-description td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .field-description th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        .field-description tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+        .params-container {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+        }
+        .param-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+        .param-row input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            flex: 1;
+            width: 100%; /* Ensure inputs take full width of their containers */
+            box-sizing: border-box; /* Include padding in width calculation */
+        }
+        .param-row > div {
+            flex: 1; /* Each container div takes equal space */
+            width: 50%; /* Each container div takes 50% of the row width */
+            min-width: 200px; /* Ensure minimum width for better readability */
+        }
+        .param-row input.invalid {
+            border-color: #dc3545;
+            background-color: #fff8f8;
+        }
+        .param-row input[readonly] {
+            background-color: #f5f5f5;
+            cursor: not-allowed;
+            border: 1px solid #ddd;
+            color: #666;
+        }
+        .param-row input[readonly]:hover {
+            border-color: #ccc;
+        }
+        .param-row input[readonly]::after {
+            content: "系统默认参数，不可修改";
+            position: absolute;
+            display: none;
+        }
+        .param-row input[readonly]:hover::after {
+            display: block;
+        }
+        .param-row button {
+            background-color: #dc3545;
+        }
+        .param-row button:hover {
+            background-color: #c82333;
+        }
+        .param-row button.delete-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            min-width: 30px;
+            max-width: 30px;
+            min-height: 30px;
+            max-height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            margin-left: 5px;
+        }
+        .param-row button.delete-btn:hover {
+            background-color: #c82333;
+        }
+        .param-type {
+            color: #6c757d;
+            font-size: 12px;
+            margin-top: 2px;
+            display: block;
+        }
+        .error-message {
+            color: #dc3545;
+            font-size: 12px;
+            margin-top: 2px;
+            display: none;
+        }
+        .error-message.visible {
+            display: block;
+        }
+        #addParamBtn {
+            margin-top: 10px;
+            background-color: #007bff;
+        }
+        #addParamBtn:hover {
+            background-color: #0056b3;
+        }
+        .method-select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: white;
+        }
+        #switchToAskBtn {
+            margin-left: auto;
+            background-color: #007bff;
+        }
+        #switchToAskBtn:hover {
+            background-color: #0056b3;
+        }
+        #requestInfo, #responseInfo {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            position: relative;
+        }
+        #requestInfo h3, #responseInfo h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        #requestData, #responseData {
+            white-space: pre-wrap;
+            font-family: monospace;
+            background-color: #fff;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 10px;
+            position: relative;
+            padding-right: 100px;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            z-index: 1;
+        }
+        .copy-btn:hover {
+            background-color: #0056b3;
+        }
+        
+        /* Styles for documentation links */
+        .docs-links {
+            margin-top: 15px;
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        .docs-links h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .docs-links a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .docs-links a:hover {
+            text-decoration: underline;
+        }
+        .docs-links ol {
+            margin-top: 5px;
+            margin-bottom: 5px;
+            padding-left: 25px;
+        }
+        .docs-links li {
+            margin-bottom: 5px;
+        }
+        .no-docs {
+            color: #6c757d;
+            font-style: italic;
+            margin: 5px 0;
+        }
+        
+        /* 通知样式 */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .notification.show {
+            opacity: 1;
+        }
+        
+        /* Modal样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            position: relative;
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 80%;
+            max-width: 800px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        
+        .close-button {
+            color: #aaa;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close-button:hover {
+            color: #333;
+        }
+        
+        .modal-body {
+            margin-bottom: 20px;
+        }
+        
+        .curl-command {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f8f8f8;
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow-y: auto;
+            resize: vertical;
+        }
+        
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="doc-content-wrapper">
+        <div class="container">
+            <div class="header-container">
+                <h1>liveLab数据接口测试</h1>
+            </div>
+
+            <div class="select-container">
+                <select id="parentSelect" onchange="updateChildSelect(); updateInterfaceInfo()">
+                    <option value="">选择数据平台</option>
+                </select>
+                
+                <select id="childSelect" onchange="updateInterfaceInfo()">
+                    <option value="">选择子级API</option>
+                </select>
+
+                <select id="methodSelect" class="method-select">
+                    <option value="POST" selected>POST</option>
+                    <option value="GET">GET</option>
+                </select>
+                
+                <button onclick="sendRequest()">发送请求</button>
+                <button onclick="generateCurlCommand()" style="background-color: #007bff;" title="生成并复制当前请求的curl命令">复制为cURL</button>
+                <!-- <button id="switchToAskBtn" onclick="window.location.href='ask'">切换提问版</button> -->
+            </div>
+
+            <div class="interface-info" id="interfaceInfo">
+                <h3>接口详情</h3>
+                <div id="details"></div>
+            </div>
+            
+            <div class="params-container">
+                <h3>请求参数|请求体</h3>
+                <div id="paramsContainer">
+                    <!-- Parameter rows will be added here -->
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                    <button id="addParamBtn" onclick="addParamRow()">添加参数</button>
+                    <p style="color: #6c757d; font-size: 12px; margin: 0; align-self: center;">系统预设参数不可删除，新添加的参数可删除</p>
+                </div>
+            </div>
+
+            <div class="params-container">
+                <h3>请求头(Headers)</h3>
+                <div id="headersContainer">
+                    <!-- Headers rows will be added here -->
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                    <button id="addHeaderBtn" onclick="addHeaderRow()">添加请求头</button>
+                    <p style="color: #6c757d; font-size: 12px; margin: 0; align-self: center;">系统预设请求头不可删除，新添加的请求头可删除</p>
+                </div>
+            </div>
+
+            <div id="requestInfo">
+                <h3>请求数据</h3>
+                <div id="requestData"></div>
+                <button class="copy-btn" onclick="copyContent('requestData')">复制内容</button>
+            </div>
+
+            <div id="responseInfo">
+                <h3>响应结果</h3>
+                <div id="responseData"></div>
+                <button class="copy-btn" onclick="copyContent('responseData')">复制内容</button>
+            </div>
+
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <div id="curlModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>cURL 命令</h2>
+                <span class="close-button" onclick="closeCurlModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>以下是根据当前参数生成的cURL命令：</p>
+                <textarea id="curlCommand" class="curl-command" spellcheck="false"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button onclick="copyCurlCommand()">复制</button>
+                <button onclick="closeCurlModal()" style="background-color: #6c757d;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // const API_ENDPOINT = 'http://autoreport-external.tec-do.cn:8081/sensortower/data';
+        // const CONFIG_ENDPOINT = 'http://autoreport-external.tec-do.cn:8081/getConfig';
+        
+        const API_ENDPOINT = 'http://47.236.42.104:8080/getHtml';
+        const CONFIG_ENDPOINT = 'http://47.236.42.104:8080/docs/getConfig';
+        let apiConfig = {};
+
+        // 获取配置信息
+        async function fetchConfig() {
+            try {
+                const response = await fetch(CONFIG_ENDPOINT, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                var apiConfigJson = await response.json();
+                apiConfig = apiConfigJson.data;
+                
+                // 确保在后端传递过来的配置中，docsLinks字段被正确处理
+                Object.keys(apiConfig).forEach(platform => {
+                    if (apiConfig[platform]) {
+                        Object.keys(apiConfig[platform]).forEach(api => {
+                            if (apiConfig[platform][api]?.doc?.docsLinks) {
+                                apiConfig[platform][api].docsLinks = apiConfig[platform][api].doc.docsLinks;
+                            }
+                        });
+                    }
+                });
+                
+                console.log('API配置加载成功:', apiConfig);
+                
+                // 加载配置后初始化选择框
+                initializeSelects();
+            } catch (error) {
+                console.error('加载API配置失败:', error);
+                document.getElementById('details').innerHTML = `<p style="color: red;">加载API配置失败: ${error.message}</p>`;
+            }
+        }
+
+        // 初始化父级选择框
+        function initializeSelects() {
+            const parentSelect = document.getElementById('parentSelect');
+            parentSelect.innerHTML = '<option value="">选择数据平台</option>';
+            
+            Object.keys(apiConfig).forEach(parent => {
+                const option = document.createElement('option');
+                option.value = parent;
+                option.textContent = parent;
+                parentSelect.appendChild(option);
+            });
+            addParamRow();
+        }
+
+        function updateChildSelect() {
+            const parentSelect = document.getElementById('parentSelect');
+            const childSelect = document.getElementById('childSelect');
+            const methodSelect = document.getElementById('methodSelect');
+            const selectedParent = parentSelect.value;
+            
+            childSelect.innerHTML = '<option value="">选择子级API</option>';
+            
+            if (selectedParent && apiConfig[selectedParent]) {
+                Object.keys(apiConfig[selectedParent]).forEach(child => {
+                    const option = document.createElement('option');
+                    option.value = child;
+                    option.textContent = child;
+                    childSelect.appendChild(option);
+                });
+            }
+
+            // 重置方法选择框
+            methodSelect.value = 'POST';
+            updateInterfaceInfo();
+        }
+
+        function addParamRow() {
+            const container = document.getElementById('paramsContainer');
+            const row = document.createElement('div');
+            row.className = 'param-row';
+            row.dataset.isCustom = 'true';  // 标记为用户添加的参数
+            row.innerHTML = `
+                <div style="flex: 1; width: 50%;">
+                    <input type="text" placeholder="参数名称" class="param-name">
+                </div>
+                <div style="flex: 1; width: 50%;">
+                    <input type="text" placeholder="参数值" class="param-value">
+                </div>
+                <button class="delete-btn" title="删除此参数" onclick="removeRow(this)">×</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function removeRow(button) {
+            const row = button.parentElement;
+            row.remove();
+        }
+        
+        function addHeaderRow() {
+            const container = document.getElementById('headersContainer');
+            const row = document.createElement('div');
+            row.className = 'param-row';
+            row.dataset.isCustom = 'true';  // 标记为用户添加的请求头
+            row.innerHTML = `
+                <div style="flex: 1; width: 50%;">
+                    <input type="text" placeholder="请求头名称" class="header-name">
+                </div>
+                <div style="flex: 1; width: 50%;">
+                    <input type="text" placeholder="请求头值" class="header-value">
+                </div>
+                <button class="delete-btn" title="删除此请求头" onclick="removeRow(this)">×</button>
+            `;
+            container.appendChild(row);
+        }
+        
+        function getHeaders() {
+            const headers = {};
+            const rows = document.querySelectorAll('#headersContainer .param-row');
+            rows.forEach(row => {
+                const nameInput = row.querySelector('.header-name');
+                const valueInput = row.querySelector('.header-value');
+                
+                if (!nameInput || !valueInput) return;
+                
+                const name = nameInput.value.trim();
+                const value = valueInput.value.trim();
+                if (name && value) {
+                    headers[name] = value;
+                }
+            });
+            return headers;
+        }
+
+        // 初始化默认参数
+        function addDefaultParams(defaultParams) {
+            // 清除现有参数
+            const container = document.getElementById('paramsContainer');
+            container.innerHTML = '';
+            
+            // 如果没有默认参数，添加一些示例参数
+            if (!defaultParams || Object.keys(defaultParams).length === 0) {
+                // 添加默认参数
+                addParamRow();
+                return;
+            }
+            
+            // 处理新的参数结构，每个参数现在包含type和value字段
+            Object.entries(defaultParams).forEach(([key, paramInfo]) => {
+                const row = document.createElement('div');
+                row.className = 'param-row';
+                row.dataset.isDefault = 'true';  // 标记为默认参数
+                
+                // 检查paramInfo是否是新格式 (有type和value属性)
+                if (paramInfo && typeof paramInfo === 'object' && 'type' in paramInfo && 'value' in paramInfo) {
+                    // 新格式: {key: {type: 'string', value: 'xxx'}}
+                    row.innerHTML = `
+                        <div style="flex: 1; width: 50%;">
+                            <input type="text" placeholder="参数名称" class="param-name" value="${key}" data-original-name="${key}" readonly style="background-color: #f5f5f5;" title="系统预设参数，不可修改名称">
+                            <span class="param-type">参数类型: ${paramInfo.type}</span>
+                        </div>
+                        <div style="flex: 1; width: 50%;">
+                            <input type="text" placeholder="参数值" class="param-value" value="${paramInfo.value}" data-param-type="${paramInfo.type}">
+                            <span class="error-message">请输入有效的 ${paramInfo.type} 类型数据</span>
+                        </div>
+                    `;
+                } else {
+                    // 旧格式: {key: 'value'} 或未知格式，以防万一保留兼容性
+                    row.innerHTML = `
+                        <div style="flex: 1; width: 50%;">
+                            <input type="text" placeholder="参数名称" class="param-name" value="${key}" data-original-name="${key}" readonly style="background-color: #f5f5f5;" title="系统预设参数，不可修改名称">
+                        </div>
+                        <div style="flex: 1; width: 50%;">
+                            <input type="text" placeholder="参数值" class="param-value" value="${paramInfo}">
+                        </div>
+                    `;
+                }
+                
+                container.appendChild(row);
+            });
+            
+            // 添加事件监听器进行验证
+            addValidationListeners();
+        }
+        
+        // 添加验证事件监听器
+        function addValidationListeners() {
+            const valueInputs = document.querySelectorAll('.param-value[data-param-type]');
+            valueInputs.forEach(input => {
+                input.addEventListener('input', validateInput);
+                input.addEventListener('blur', validateInput);
+                // 初始验证
+                validateInput.call(input);
+            });
+        }
+        
+        // 验证输入值是否符合类型要求
+        function validateInput() {
+            const type = this.getAttribute('data-param-type');
+            const value = this.value.trim();
+            const errorMessage = this.parentElement.querySelector('.error-message');
+            let isValid = true;
+            
+            if (value === '') {
+                // 空值暂不验证
+                isValid = true;
+            } else {
+                switch (type.toLowerCase()) {
+                    case 'string':
+                        // 字符串类型总是有效的
+                        isValid = true;
+                        break;
+                    case 'number':
+                    case 'integer':
+                        // 数字类型验证
+                        isValid = !isNaN(Number(value));
+                        if (type.toLowerCase() === 'integer') {
+                            isValid = isValid && Number.isInteger(Number(value));
+                        }
+                        break;
+                    case 'boolean':
+                        // 布尔类型验证
+                        isValid = value.toLowerCase() === 'true' || value.toLowerCase() === 'false';
+                        break;
+                    case 'array':
+                        // 数组类型验证 (简单检查是否是JSON数组格式)
+                        try {
+                            const parsed = JSON.parse(value);
+                            isValid = Array.isArray(parsed);
+                        } catch (e) {
+                            isValid = false;
+                        }
+                        break;
+                    case 'object':
+                        // 对象类型验证 (简单检查是否是JSON对象格式)
+                        try {
+                            const parsed = JSON.parse(value);
+                            isValid = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
+                        } catch (e) {
+                            isValid = false;
+                        }
+                        break;
+                }
+            }
+            
+            // 更新UI状态
+            if (!isValid) {
+                this.classList.add('invalid');
+                if (errorMessage) {
+                    errorMessage.classList.add('visible');
+                }
+            } else {
+                this.classList.remove('invalid');
+                if (errorMessage) {
+                    errorMessage.classList.remove('visible');
+                }
+            }
+            
+            return isValid;
+        }
+        
+        // 添加默认请求头
+        function addDefaultHeaders(defaultHeaders) {
+            // 清除现有请求头
+            const container = document.getElementById('headersContainer');
+            container.innerHTML = '';
+            
+            // 如果没有默认请求头，添加一个空行
+            if (!defaultHeaders || Object.keys(defaultHeaders).length === 0) {
+                addHeaderRow();
+                return;
+            }
+            
+            // 添加默认请求头
+            Object.entries(defaultHeaders).forEach(([key, value]) => {
+                const row = document.createElement('div');
+                row.className = 'param-row';
+                row.dataset.isDefault = 'true';  // 标记为默认请求头
+                row.innerHTML = `
+                    <div style="flex: 1; width: 50%;">
+                        <input type="text" placeholder="请求头名称" class="header-name" value="${key}" readonly style="background-color: #f5f5f5;" title="系统预设请求头，不可修改名称">
+                    </div>
+                    <div style="flex: 1; width: 50%;">
+                        <input type="text" placeholder="请求头值" class="header-value" value="${value}">
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function getParameters() {
+            const params = {};
+            const rows = document.querySelectorAll('#paramsContainer .param-row');
+            rows.forEach(row => {
+                const nameInput = row.querySelector('.param-name');
+                const valueInput = row.querySelector('.param-value');
+                
+                if (!nameInput || !valueInput) return;
+                
+                const name = nameInput.value.trim();
+                const value = valueInput.value.trim();
+                
+                if (name && value) {
+                    // 检查是否有类型信息，尝试转换为正确的类型
+                    const paramType = valueInput.getAttribute('data-param-type');
+                    if (paramType) {
+                        params[name] = convertValueToType(value, paramType);
+                    } else {
+                        params[name] = value;
+                    }
+                }
+            });
+            return params;
+        }
+        
+        // 将值转换为指定类型
+        function convertValueToType(value, type) {
+            if (value === '') return value;
+            
+            switch (type.toLowerCase()) {
+                case 'number':
+                    return Number(value);
+                case 'integer':
+                    return parseInt(value, 10);
+                case 'boolean':
+                    return value.toLowerCase() === 'true';
+                case 'array':
+                    try {
+                        return JSON.parse(value);
+                    } catch (e) {
+                        return value;
+                    }
+                case 'object':
+                    try {
+                        return JSON.parse(value);
+                    } catch (e) {
+                        return value;
+                    }
+                default:
+                    return value;
+            }
+        }
+
+        function updateInterfaceInfo() {
+            const parentSelect = document.getElementById('parentSelect');
+            const childSelect = document.getElementById('childSelect');
+            const methodSelect = document.getElementById('methodSelect');
+            const detailsDiv = document.getElementById('details');
+            
+            const parent = parentSelect.value;
+            const child = childSelect.value;
+            
+            if (parent && child && apiConfig[parent][child]) {
+                const info = apiConfig[parent][child];
+                // 根据配置文件中的method值设置请求方法
+                if (info&& info.method) {
+                    methodSelect.value = info.method;
+                } else {
+                    methodSelect.value = 'POST'; // 默认使用POST方法
+                }
+                
+                let html = `
+                    <p><strong>所属平台:</strong> ${parent}</p>
+                    <p><strong>API 名称:</strong> ${child}</p>
+                    <p><strong>API 地址:</strong> ${info.endpoint}</p>
+                    <p><strong>请求方法:</strong> ${info.method}</p>
+                    <p><strong>描述:</strong> ${info.description}</p>
+                `;
+
+                // 添加参考文档链接
+                if (info.docsLinks) {
+                    html += `<div class="docs-links"><h4>参考文档：</h4>`;
+                    
+                    // 如果docsLinks是对象（单个链接）
+                    if (info.docsLinks.url) {
+                        html += `<p><a href="${info.docsLinks.url}" target="_blank">${info.docsLinks.title || '参考文档'}</a></p>`;
+                    } 
+                    // 如果docsLinks是数组（多个链接）
+                    else if (Array.isArray(info.docsLinks)) {
+                        // 检查数组是否为空
+                        if (info.docsLinks.length > 0) {
+                            html += `<ol>`;
+                            info.docsLinks.forEach((link, index) => {
+                                html += `<li><a href="${link.url}" target="_blank">${link.title || `参考文档 ${index+1}`}</a></li>`;
+                            });
+                            html += `</ol>`;
+                        } else {
+                            // 数组为空时显示提示信息
+                            html += `<p class="no-docs">无参考或第三方文档</p>`;
+                        }
+                    } else {
+                        // docsLinks存在但格式不正确时显示提示信息
+                        html += `<p class="no-docs">无参考或第三方文档</p>`;
+                    }
+                    
+                    html += `</div>`;
+                } else {
+                    // 当没有参考文档时显示提示信息
+                    html += `<div class="docs-links"><h4>参考文档：</h4><p class="no-docs">无参考或第三方文档</p></div>`;
+                }
+
+                // 添加请求字段说明
+                if (info.responseFieldDescription && Object.keys(info.responseFieldDescription).length > 0) {
+                    html += `
+                        <div class="field-description">
+                            <h4>响应字段说明：</h4>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>字段名</th>
+                                        <th>说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
+                    
+                    Object.entries(info.responseFieldDescription).forEach(([field, description]) => {
+                        html += `
+                            <tr>
+                                <td>${field}</td>
+                                <td>${description}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+
+                detailsDiv.innerHTML = html;
+                // 获取默认参数和请求头
+                const defaultParams = info.defaultParams;
+                const defaultHeaders = info.headers;
+                
+                console.log("defaultParams--->", defaultParams);
+                console.log("defaultHeaders--->", defaultHeaders);
+                
+                // 根据不同的API显示相应的默认参数和请求头
+                addDefaultParams(defaultParams);
+                addDefaultHeaders(defaultHeaders);
+            } else if (parent && !child) {
+                detailsDiv.innerHTML = `<p><strong>已选择分类:</strong> ${parent}</p><p>请选择具体的API接口</p>`;
+                methodSelect.value = 'POST'; // 重置为默认方法
+                // 清空参数和请求头
+                document.getElementById('paramsContainer').innerHTML = '';
+                document.getElementById('headersContainer').innerHTML = '';
+                addHeaderRow(); // 添加一个空的请求头行
+            } else {
+                detailsDiv.innerHTML = '<p>请选择父级和子级 API 查看详情</p>';
+                methodSelect.value = 'POST'; // 重置为默认方法
+                // 清空参数和请求头
+                document.getElementById('paramsContainer').innerHTML = '';
+                document.getElementById('headersContainer').innerHTML = '';
+                addHeaderRow(); // 添加一个空的请求头行
+            }
+        }
+
+        async function sendRequest() {
+            const parentSelect = document.getElementById('parentSelect');
+            const childSelect = document.getElementById('childSelect');
+            const methodSelect = document.getElementById('methodSelect');
+            const requestDataDiv = document.getElementById('requestData');
+            const responseDataDiv = document.getElementById('responseData');
+            
+            const parent = parentSelect.value;
+            const child = childSelect.value;
+            const method = methodSelect.value;
+            
+            if (!parent || !child) {
+                alert('请选择父级和子级 API');
+                return;
+            }
+            
+            // 在发送请求前验证所有输入
+            if (!validateAllInputs()) {
+                alert('请检查输入参数，有些参数类型不匹配');
+                return;
+            }
+            
+            const params = getParameters();
+            const headers = getHeaders();
+            
+            let requestUrl = '';
+            // 构建请求数据
+            const requestData = {
+                isSynchronize: 1,
+                PlatFrom: parent,
+                apiTitle: child,
+                params: params,
+                headers: headers
+            };
+            // 显示请求数据
+            if (method === 'POST' && apiConfig[parent][child].endpoint.includes("getHtml")) {
+                requestDataDiv.innerHTML = JSON.stringify(requestData, null, 2);
+            } else {
+                const displayRequestData = {
+                    params: params,
+                    headers: headers
+                };
+                requestDataDiv.innerHTML = JSON.stringify(displayRequestData, null, 2);
+            }
+            
+            try {
+                const API_ENDPOINT_config = apiConfig[parent][child].endpoint;
+                // console.log("API_ENDPOINT_config-->",API_ENDPOINT_config);
+
+                // 根据选择的请求方法构建请求配置
+                const requestConfig = {
+                    method: method,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                };
+                
+                // 添加用户定义的请求头
+                const customHeaders = getHeaders();
+                Object.keys(customHeaders).forEach(key => {
+                    requestConfig.headers[key] = customHeaders[key];
+                });
+
+                // 如果是POST请求，添加请求体
+                if (method === 'POST') {
+                    requestConfig.headers['Content-Type'] = 'application/json';
+                    requestUrl = API_ENDPOINT_config;
+                    if (requestUrl.includes("getHtml")) {
+                        requestConfig.body = JSON.stringify(requestData);
+                    }
+                    else{
+                        requestConfig.body = JSON.stringify(params);
+                    }
+                } else {
+                    // 如果是GET请求，只使用defaultParams中的参数
+                    
+                    const apiInfo = apiConfig[parent][child];
+                    console.log("defaultParams-->",apiInfo.defaultParams);
+                    if (apiInfo.defaultParams) {                     
+                        const urlParams = new URLSearchParams();
+                        Object.entries(params).forEach(([key, value]) => {
+                            urlParams.append(key, value);
+                        });
+                        // API_ENDPOINT_config是一个常量，不能重新赋值
+                        // 应该创建一个新变量来存储带参数的URL
+                        requestUrl = `${API_ENDPOINT_config}?${urlParams.toString()}`;
+                        console.log("requestUrl111111-->",requestUrl);
+                    } else {
+                        alert('该接口没有配置默认参数，无法发起GET请求');
+                        return;
+                    }
+                }
+                console.log("requestUrl-->",requestUrl);
+
+                const response = await fetch(requestUrl, requestConfig);
+                const responseData = await response.json();
+                // 显示响应结果
+                responseDataDiv.innerHTML = JSON.stringify(responseData, null, 2);
+            } catch (error) {
+                responseDataDiv.innerHTML = `请求错误:\n${error.message}`;
+            }
+        }
+        
+        // 验证所有输入字段
+        function validateAllInputs() {
+            const valueInputs = document.querySelectorAll('.param-value[data-param-type]');
+            let allValid = true;
+            
+            valueInputs.forEach(input => {
+                // 重新验证每个输入
+                const isValid = validateInput.call(input);
+                if (!isValid) {
+                    allValid = false;
+                    // 高亮无效的输入
+                    input.classList.add('invalid');
+                    const errorMessage = input.parentElement.querySelector('.error-message');
+                    if (errorMessage) {
+                        errorMessage.classList.add('visible');
+                    }
+                }
+            });
+            
+            return allValid;
+        }
+
+        // 页面加载完成后获取配置
+        window.onload = function() {
+            fetchConfig();
+            
+            // 添加类到导航栏，使其平铺
+            setTimeout(() => {
+                const navBar = document.querySelector('.nav-bar');
+                if (navBar) {
+                    navBar.classList.add('nav-override');
+                }
+            }, 500); // 给导航栏一些时间加载
+            
+            // 添加一个空的请求头行
+            addHeaderRow();
+        };
+
+        // 添加复制功能
+        function copyContent(elementId) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent;
+            
+            // 创建一个临时textarea元素
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            
+            // 选择并复制文本
+            textarea.select();
+            document.execCommand('copy');
+            
+            // 移除临时元素
+            document.body.removeChild(textarea);
+            
+            // 显示复制成功提示
+            const originalBtn = event.target;
+            const originalText = originalBtn.textContent;
+            originalBtn.textContent = '已复制!';
+            setTimeout(() => {
+                originalBtn.textContent = originalText;
+            }, 2000);
+        }
+
+        // 生成并显示curl命令
+        function generateCurlCommand() {
+            const parentSelect = document.getElementById('parentSelect');
+            const childSelect = document.getElementById('childSelect');
+            const methodSelect = document.getElementById('methodSelect');
+            
+            const parent = parentSelect.value;
+            const child = childSelect.value;
+            const method = methodSelect.value;
+            
+            if (!parent || !child) {
+                showNotification('请先选择平台和API接口', 'error');
+                return;
+            }
+            
+            // 获取API端点
+            if (!apiConfig[parent] || !apiConfig[parent][child] || !apiConfig[parent][child].endpoint) {
+                showNotification('无法获取API端点', 'error');
+                return;
+            }
+
+            const endpoint = apiConfig[parent][child].endpoint;
+            const params = getParameters();
+            const headers = getHeaders();
+            
+            let curlCommand = 'curl';
+            
+            // 添加请求方法
+            curlCommand += ` -X ${method}`;
+            
+            // 添加请求头
+            Object.entries(headers).forEach(([key, value]) => {
+                curlCommand += ` -H "${key}: ${value.replace(/"/g, '\\"')}"`;
+            });
+            
+            // 添加Content-Type头
+            if (method === 'POST') {
+                curlCommand += ` -H "Content-Type: application/json"`;
+            }
+            
+            // 添加请求体或URL参数
+            if (method === 'POST') {
+                let requestBody;
+                if (endpoint.includes("getHtml")) {
+                    requestBody = {
+                        isSynchronize: 1,
+                        PlatFrom: parent,
+                        apiTitle: child,
+                        params: params,
+                        headers: headers
+                    };
+                } else {
+                    requestBody = params;
+                }
+                curlCommand += ` -d '${JSON.stringify(requestBody, null, 2)}'`;
+            } else { // GET请求
+                let url = endpoint;
+                const urlParams = new URLSearchParams();
+                Object.entries(params).forEach(([key, value]) => {
+                    // 如果value是对象或数组，转换为JSON字符串
+                    let paramValue = typeof value === 'object' ? JSON.stringify(value) : value;
+                    urlParams.append(key, paramValue);
+                });
+                url += `?${urlParams.toString()}`;
+                curlCommand += ` "${url}"`;
+            }
+            
+            if (method === 'POST') {
+                curlCommand += ` "${endpoint}"`;
+            }
+            
+            // 显示cURL命令对话框
+            document.getElementById('curlCommand').value = curlCommand;
+            document.getElementById('curlModal').style.display = 'block';
+        }
+        
+        // 复制cURL命令
+        function copyCurlCommand() {
+            const curlCommandTextarea = document.getElementById('curlCommand');
+            curlCommandTextarea.select();
+            document.execCommand('copy');
+            
+            // 关闭对话框
+            closeCurlModal();
+            
+            // 显示复制成功提示
+            showNotification('已复制cURL命令到剪贴板');
+        }
+        
+        // 关闭cURL命令对话框
+        function closeCurlModal() {
+            document.getElementById('curlModal').style.display = 'none';
+        }
+        
+        // 点击对话框外部关闭对话框
+        window.onclick = function(event) {
+            const modal = document.getElementById('curlModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        };
+        
+        // 显示通知
+        function showNotification(message, type = 'success') {
+            // 移除之前的通知
+            const oldNotification = document.querySelector('.notification');
+            if (oldNotification) {
+                document.body.removeChild(oldNotification);
+            }
+            
+            // 创建新通知
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            
+            // 设置通知类型样式
+            if (type === 'error') {
+                notification.style.backgroundColor = '#dc3545';
+            }
+            
+            document.body.appendChild(notification);
+            
+            // 显示通知
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 10);
+            
+            // 3秒后隐藏通知
+            setTimeout(() => {
+                notification.classList.remove('show');
+                
+                // 完全隐藏后移除元素
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        document.body.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+    </script>
+    <!-- 添加用户状态显示脚本 -->
+    <script src="/static/js/auth.js"></script>
+</body>
+</html>

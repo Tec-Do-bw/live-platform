@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>投屏测试页面</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    .row { margin-bottom: 12px; }
+    label { display: inline-block; width: 120px; }
+    input, select { padding: 4px; }
+    button { padding: 6px 12px; margin-right: 8px; }
+    #canvas { border: 1px solid #ccc; width: 960px; height: 540px; }
+    #status { margin-top: 8px; }
+    #debug { margin-top: 16px; display: flex; gap: 16px; }
+    .panel { border: 1px solid #ddd; padding: 8px; width: 320px; height: 240px; overflow: auto; font-size: 12px; }
+    .panel h3 { margin: 0 0 8px 0; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h2>AdsPower 投屏测试页面</h2>
+
+  <div class="row">
+    <label>国家(country)</label>
+    <input id="country" value="MY" />
+  </div>
+  <div class="row">
+    <label>媒体(media)</label>
+    <select id="media">
+      <option value="shopee">shopee</option>
+      <option value="tiktok">tiktok</option>
+      <option value="lazada">lazada</option>
+    </select>
+  </div>
+  <div class="row">
+    <label>广告主</label>
+    <input id="advertiser" value="测试广告主" />
+  </div>
+  <div class="row">
+    <label>直播账号</label>
+    <input id="liveAccount" value="test_account_001" />
+  </div>
+  <div class="row">
+    <label>验证店铺ID</label>
+    <input id="validateId" value="111" />
+  </div>
+
+  <div class="row">
+    <button id="createBtn">创建浏览器</button>
+    <button id="closeBtn">关闭浏览器</button>
+  </div>
+
+  <div class="row">
+    <label>Session ID</label>
+    <span id="sessionId">-</span>
+  </div>
+  <div class="row">
+    <label>WS URL</label>
+    <span id="wsUrl">-</span>
+  </div>
+
+  <canvas id="canvas" width="960" height="540"></canvas>
+
+  <div id="status">状态：<span id="connStatus">未连接</span></div>
+  <div id="status">最后一帧时间：<span id="lastFrame">-</span></div>
+  <div id="status">FPS：<span id="fps">0</span></div>
+  <div id="status">延迟：<span id="latency">-</span></div>
+
+  <div class="row">
+    <label>文本输入</label>
+    <input id="textInput" placeholder="输入中文后回车" />
+  </div>
+
+  <div id="debug">
+    <div class="panel">
+      <h3>发送日志(最近10条)</h3>
+      <div id="sendLog"></div>
+    </div>
+    <div class="panel">
+      <h3>接收统计</h3>
+      <div id="recvStats"></div>
+    </div>
+    <div class="panel">
+      <h3>错误信息</h3>
+      <div id="errors"></div>
+    </div>
+  </div>
+
+  <script>
+    const createBtn = document.getElementById('createBtn');
+    const closeBtn = document.getElementById('closeBtn');
+    const sessionIdEl = document.getElementById('sessionId');
+    const wsUrlEl = document.getElementById('wsUrl');
+    const connStatusEl = document.getElementById('connStatus');
+    const lastFrameEl = document.getElementById('lastFrame');
+    const fpsEl = document.getElementById('fps');
+    const latencyEl = document.getElementById('latency');
+    const sendLogEl = document.getElementById('sendLog');
+    const recvStatsEl = document.getElementById('recvStats');
+    const errorsEl = document.getElementById('errors');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let ws = null;
+    let sessionId = '';
+    let wsUrl = '';
+    let remoteWidth = 0;
+    let remoteHeight = 0;
+    let frameTimes = [];
+    let recvStats = {};
+    let sendLog = [];
+    let pingTimer = null;
+    let pingMap = new Map();
+    let lastFrameRecvAt = 0;
+    let frameRequestTimer = null;
+
+    function appendError(msg) {
+      const div = document.createElement('div');
+      div.textContent = msg;
+      errorsEl.prepend(div);
+    }
+
+    function updateConnStatus(text) {
+      connStatusEl.textContent = text;
+    }
+
+    function logSend(payload) {
+      sendLog.unshift({ ts: Date.now(), payload });
+      sendLog = sendLog.slice(0, 10);
+      sendLogEl.innerHTML = sendLog.map(item => `<div>${new Date(item.ts).toLocaleTimeString()} ${JSON.stringify(item.payload)}</div>`).join('');
+    }
+
+    function logRecv(type) {
+      recvStats[type] = (recvStats[type] || 0) + 1;
+      recvStatsEl.innerHTML = Object.keys(recvStats).map(key => `<div>${key}: ${recvStats[key]}</div>`).join('');
+    }
+
+    function updateFps() {
+      const now = Date.now();
+      frameTimes = frameTimes.filter(ts => now - ts <= 1000);
+      fpsEl.textContent = frameTimes.length.toString();
+    }
+
+    function sendMessage(payload) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      ws.send(JSON.stringify(payload));
+      logSend(payload);
+    }
+
+    async function createBrowser() {
+      const country = document.getElementById('country').value.trim();
+      const media = document.getElementById('media').value.trim();
+      const advertiser = document.getElementById('advertiser').value.trim();
+      const liveAccount = document.getElementById('liveAccount').value.trim();
+      const validateId = document.getElementById('validateId').value.trim();
+
+      const payload = { country, media, advertiser_name: advertiser, live_account: liveAccount, validate_id: String(validateId) };
+
+      const resp = await fetch('http://192.168.88.76:8080/api/browser/profile/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (data.code !== 0) {
+        appendError(`创建失败: ${data.msg}`);
+        return;
+      }
+      sessionId = data.data.session_id;
+      wsUrl = data.data.ws_url;
+      sessionIdEl.textContent = sessionId;
+      wsUrlEl.textContent = wsUrl;
+      connectWs();
+    }
+
+    async function closeBrowser() {
+      if (!sessionId) {
+        return;
+      }
+      await fetch('http://192.168.88.76:8080/api/browser/profile/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId })
+      });
+      disconnectWs();
+      sessionId = '';
+      wsUrl = '';
+      sessionIdEl.textContent = '-';
+      wsUrlEl.textContent = '-';
+    }
+
+    function connectWs() {
+      if (!wsUrl) {
+        return;
+      }
+      ws = new WebSocket(wsUrl);
+      updateConnStatus('连接中');
+
+      ws.onopen = () => {
+        updateConnStatus('已连接');
+        startPing();
+        startFrameRequest();
+      };
+      ws.onclose = () => {
+        updateConnStatus('已断开');
+        stopPing();
+        stopFrameRequest();
+        lastFrameRecvAt = 0;
+      };
+      ws.onerror = () => {
+        appendError('WebSocket 出错');
+      };
+      ws.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        logRecv(payload.type || 'unknown');
+        if (payload.type === 'frame') {
+          remoteWidth = payload.width || remoteWidth;
+          remoteHeight = payload.height || remoteHeight;
+          lastFrameRecvAt = Date.now();
+          const frameId = payload.frameId;
+          const img = new Image();
+          img.onload = () => {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            // 帧渲染完成后，发送确认给后端
+            if (frameId !== undefined && frameId !== null) {
+              sendMessage({ type: 'frameAck', frameId });
+            } else {
+              sendMessage({ type: 'frameAck' });
+            }
+          };
+          img.onerror = () => {
+            sendMessage({ type: 'frameRequest' });
+          };
+          img.src = `data:image/jpeg;base64,${payload.data}`;
+          lastFrameEl.textContent = new Date(payload.ts).toLocaleTimeString();
+          frameTimes.push(Date.now());
+          updateFps();
+        }
+        if (payload.type === 'pong') {
+          const sentTs = payload.ts;
+          if (pingMap.has(sentTs)) {
+            const latency = Date.now() - pingMap.get(sentTs);
+            latencyEl.textContent = `${latency} ms`;
+            pingMap.delete(sentTs);
+          }
+        }
+        if (payload.type === 'error') {
+          appendError(`服务错误: ${payload.reason}`);
+        }
+      };
+    }
+
+    function disconnectWs() {
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+    }
+
+    function startPing() {
+      stopPing();
+      pingTimer = setInterval(() => {
+        const ts = Date.now();
+        pingMap.set(ts, ts);
+        sendMessage({ type: 'ping', ts });
+      }, 5000);
+    }
+
+    function stopPing() {
+      if (pingTimer) {
+        clearInterval(pingTimer);
+        pingTimer = null;
+      }
+    }
+
+    function startFrameRequest() {
+      stopFrameRequest();
+      frameRequestTimer = setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        if (!lastFrameRecvAt) {
+          return;
+        }
+        if (Date.now() - lastFrameRecvAt > 1500) {
+          sendMessage({ type: 'frameRequest' });
+        }
+      }, 1000);
+    }
+
+    function stopFrameRequest() {
+      if (frameRequestTimer) {
+        clearInterval(frameRequestTimer);
+        frameRequestTimer = null;
+      }
+    }
+
+    function getCanvasScale() {
+      if (!remoteWidth || !remoteHeight) {
+        return { scaleX: 1, scaleY: 1 };
+      }
+      return {
+        scaleX: remoteWidth / canvas.width,
+        scaleY: remoteHeight / canvas.height
+      };
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      const { scaleX, scaleY } = getCanvasScale();
+      sendMessage({
+        type: 'input',
+        event: 'mouse',
+        x: Math.round(e.offsetX * scaleX),
+        y: Math.round(e.offsetY * scaleY),
+        button: 'left',
+        action: 'down'
+      });
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+      const { scaleX, scaleY } = getCanvasScale();
+      sendMessage({
+        type: 'input',
+        event: 'mouse',
+        x: Math.round(e.offsetX * scaleX),
+        y: Math.round(e.offsetY * scaleY),
+        button: 'left',
+        action: 'up'
+      });
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      const { scaleX, scaleY } = getCanvasScale();
+      sendMessage({
+        type: 'input',
+        event: 'mouse',
+        x: Math.round(e.offsetX * scaleX),
+        y: Math.round(e.offsetY * scaleY),
+        button: 'left',
+        action: 'move'
+      });
+    });
+
+    // 鼠标滚轮事件
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();  // 阻止页面滚动
+      const { scaleX, scaleY } = getCanvasScale();
+      sendMessage({
+        type: 'input',
+        event: 'mouse',
+        action: 'wheel',
+        x: Math.round(e.offsetX * scaleX),
+        y: Math.round(e.offsetY * scaleY),
+        deltaX: e.deltaX,
+        deltaY: e.deltaY
+      });
+    }, { passive: false });
+
+    window.addEventListener('keydown', (e) => {
+      // 拦截 Ctrl+V，不发送给远程浏览器，由 paste 事件处理
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        return;
+      }
+      sendMessage({
+        type: 'input',
+        event: 'key',
+        key: e.key,
+        action: 'down',
+        modifiers: getModifiers(e)
+      });
+    });
+
+    window.addEventListener('keyup', (e) => {
+      // 拦截 Ctrl+V，不发送给远程浏览器
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        return;
+      }
+      sendMessage({
+        type: 'input',
+        event: 'key',
+        key: e.key,
+        action: 'up',
+        modifiers: getModifiers(e)
+      });
+    });
+
+    // 剪贴板粘贴事件 - 将本机剪贴板内容发送给远程浏览器（仅在非输入框时拦截）
+    window.addEventListener('paste', async (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      e.preventDefault();
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          sendMessage({
+            type: 'input',
+            event: 'clipboard',
+            text: text
+          });
+        }
+      } catch (err) {
+        // 如果 Clipboard API 不可用，尝试从事件中获取
+        const text = e.clipboardData?.getData('text');
+        if (text) {
+          sendMessage({
+            type: 'input',
+            event: 'clipboard',
+            text: text
+          });
+        }
+      }
+    });
+
+    function getModifiers(e) {
+      const mods = [];
+      if (e.ctrlKey) mods.push('ctrl');
+      if (e.altKey) mods.push('alt');
+      if (e.shiftKey) mods.push('shift');
+      if (e.metaKey) mods.push('meta');
+      return mods;
+    }
+
+    const textInput = document.getElementById('textInput');
+    textInput.addEventListener('change', () => {
+      const text = textInput.value.trim();
+      if (text) {
+        sendMessage({ type: 'input', event: 'text', text });
+      }
+      textInput.value = '';
+    });
+
+    createBtn.addEventListener('click', createBrowser);
+    closeBtn.addEventListener('click', closeBrowser);
+  </script>
+</body>
+</html>

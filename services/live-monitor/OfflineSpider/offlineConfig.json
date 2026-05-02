@@ -1,0 +1,27 @@
+{
+    "TT": [
+        {
+            "script": "TTcheck.py",
+            "status": 0,
+            "cycleTime": 864000,
+            "start_time": 1,
+            "description": "TT 直播间定期更新",
+            "updateTime": "2025-04-24 15:16:43"
+        },
+        {
+            "script": "gmvServerSpideT1.py",
+            "status": 0,
+            "cycleTime": 86400,
+            "start_time": 8,
+            "description": "离线获取已安装插件账号T+1数据",
+            "updateTime": "2025-07-09 10:22:42"
+        },
+        {
+            "script": "gmvServerSpider.py",
+            "status": 0,
+            "cycleTime": 300,
+            "description": "gmv实时数据获取，每5分钟一次",
+            "updateTime": "2025-07-09 10:22:43"
+        }
+    ]
+}

@@ -1,0 +1,1465 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BIC-爬虫数据系统</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8f9fa;
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            margin: 0;
+            max-width: none;
+        }
+        
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            overflow: auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #eaeaea;
+            padding-bottom: 15px;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            color: #333;
+            margin: 0;
+            font-weight: 600;
+            position: relative;
+        }
+        
+        .header h1:after {
+            content: '';
+            display: block;
+            width: 50px;
+            height: 3px;
+            background: #007bff;
+            position: absolute;
+            bottom: -17px;
+            left: 0;
+        }
+        
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .filter-control {
+            display: flex;
+            align-items: center;
+        }
+        
+        .filter-btn {
+            padding: 8px 15px;
+            background-color: #f1f1f1;
+            color: #333;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-right: 5px;
+            border: 1px solid #ddd;
+        }
+        
+        .filter-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: transparent;
+        }
+        
+        .filter-btn:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .filter-btn.active:hover {
+            background: #0069d9;
+        }
+        
+        .upload-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #4CAF50, #2E7D32);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .upload-btn:hover {
+            background: linear-gradient(135deg, #5cb860, #3b9a40);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .platform-section {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .platform-header {
+            background: #007bff;
+            padding: 15px 20px;
+            font-size: 18px;
+            font-weight: bold;
+            border-bottom: 1px solid #ddd;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+        
+        .task-list {
+            padding: 0;
+        }
+        
+        .task-item {
+            display: flex;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            align-items: center;
+            transition: background-color 0.2s ease;
+        }
+        
+        .task-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .task-item:last-child {
+            border-bottom: none;
+        }
+        
+        .task-info {
+            flex: 1;
+        }
+        
+        .task-name {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 16px;
+        }
+        
+        .task-description {
+            color: #666;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+        
+        .task-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: #777;
+            background-color: #f5f7fa;
+            padding: 6px 10px;
+            border-radius: 4px;
+            display: inline-flex;
+        }
+        
+        .task-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .execute-btn {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .execute-btn:hover {
+            background-color: #0069d9;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 3px rgba(0,0,0,0.1);
+        }
+        
+        .status-toggle {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .status-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #4CAF50;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            width: 500px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .close-btn {
+            cursor: pointer;
+            font-size: 24px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .form-actions button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .cancel-btn {
+            background-color: #f1f1f1;
+            color: #333;
+        }
+        
+        .save-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .edit-btn {
+            padding: 8px 15px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            transition: background-color 0.2s ease;
+        }
+        
+        .edit-btn:hover {
+            background-color: #5a6268;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 3px rgba(0,0,0,0.1);
+        }
+        
+        .record-btn {
+            padding: 8px 15px;
+            background-color: #17a2b8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            transition: background-color 0.2s ease;
+        }
+        
+        .record-btn:hover {
+            background-color: #138496;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 3px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="content-area">
+            <div class="header">
+                <h1>离线任务管理</h1>
+                <div class="header-controls">
+                    <div class="filter-control">
+                        <!-- <button class="filter-btn active" data-status="all">全部</button> -->
+                        <button class="filter-btn" data-status="1">仅启用</button>
+                        <button class="filter-btn" data-status="0">全部</button>
+                    </div>
+                    <button class="upload-btn" id="uploadBtn">上传任务</button>
+                </div>
+            </div>
+            
+            <div id="platformContainer">
+                <!-- 平台任务将通过JavaScript动态添加 -->
+                <div class="loading-message">加载中...</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 上传任务模态框 -->
+    <div id="uploadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">上传离线任务</h2>
+                <span class="close-btn">&times;</span>
+            </div>
+            <form id="taskForm" enctype="multipart/form-data">
+                <input type="hidden" id="editMode" value="add">
+                <input type="hidden" id="taskPlatform" value="">
+                <input type="hidden" id="taskIndex" value="">
+                
+                <div class="form-group">
+                    <label for="platform">平台:</label>
+                    <select id="platform" name="platform" required>
+                        <!-- 平台选项将通过JavaScript动态加载 -->
+                    </select>
+                </div>
+                
+                <div class="form-group" id="scriptFileGroup">
+                    <label for="scriptFile">脚本文件:</label>
+                    <input type="file" id="scriptFile" name="script_file" required>
+                </div>
+                
+                <div class="form-group" id="scriptNameGroup">
+                    <label for="script">脚本文件名:</label>
+                    <input type="text" id="script" name="script" required placeholder="例如: qimaiKeywordHintsRank.py">
+                </div>
+                
+                <div class="form-group">
+                    <label for="description">脚本描述:</label>
+                    <textarea id="description" name="description" required placeholder="请输入脚本功能描述"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="status">状态:</label>
+                    <select id="status" name="status">
+                        <option value="1">启用</option>
+                        <option value="0">暂停</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="cycleTime">执行周期:</label>
+                    <select id="cycleTime" name="cycle_time" required>
+                        <option value="86400">每天 (1天)</option>
+                        <option value="604800">每周 (7天)</option>
+                        <option value="2592000">每月 (30天)</option>
+                        <option value="custom">自定义</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="customCycleGroup" style="display:none;">
+                    <label for="customCycle">自定义周期 (秒):</label>
+                    <input type="number" id="customCycle" name="custom_cycle" placeholder="请输入自定义执行周期(秒)" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="startTime">每日执行时间:</label>
+                    <select id="startTime" name="start_time" required>
+                        <!-- 时间选项将通过JavaScript动态生成 1-24点 -->
+                    </select>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="cancel-btn" id="cancelBtn">取消</button>
+                    <button type="submit" class="save-btn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- 编辑任务模态框 -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>编辑离线任务</h2>
+                <span class="close-btn" id="editCloseBtn">&times;</span>
+            </div>
+            <form id="editTaskForm" enctype="multipart/form-data">
+                <input type="hidden" id="editTaskPlatform" value="">
+                <input type="hidden" id="editTaskIndex" value="">
+                
+                <div class="form-group">
+                    <label for="editPlatform">平台:</label>
+                    <select id="editPlatform" name="platform" required>
+                        <!-- 平台选项将通过JavaScript动态加载 -->
+                    </select>
+                </div>
+                
+                <div class="form-group" id="editScriptNameGroup">
+                    <label for="editScript">脚本文件名:</label>
+                    <input type="text" id="editScript" name="script" required placeholder="例如: qimaiKeywordHintsRank.py">
+                </div>
+                
+                <div class="form-group">
+                    <label for="editDescription">脚本描述:</label>
+                    <textarea id="editDescription" name="description" required placeholder="请输入脚本功能描述"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editStatus">状态:</label>
+                    <select id="editStatus" name="status">
+                        <option value="1">启用</option>
+                        <option value="0">暂停</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editCycleTime">执行周期:</label>
+                    <select id="editCycleTime" name="cycle_time" required>
+                        <option value="86400">每天 (1天)</option>
+                        <option value="604800">每周 (7天)</option>
+                        <option value="2592000">每月 (30天)</option>
+                        <option value="custom">自定义</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="editCustomCycleGroup" style="display:none;">
+                    <label for="editCustomCycle">自定义周期 (秒):</label>
+                    <input type="number" id="editCustomCycle" name="custom_cycle" placeholder="请输入自定义执行周期(秒)" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="editStartTime">每日执行时间:</label>
+                    <select id="editStartTime" name="start_time" required>
+                        <!-- 时间选项将通过JavaScript动态生成 1-24点 -->
+                    </select>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="cancel-btn" id="editCancelBtn">取消</button>
+                    <button type="submit" class="save-btn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 首先引入jQuery库，然后再引入Bootstrap -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <!-- 添加用户状态显示脚本 -->
+    <script src="/static/js/auth.js"></script>
+    <script>
+        // 任务配置数据
+        let taskConfig = {};
+        // 状态筛选标志
+        let showOnlyEnabled = false;
+        
+        // 页面加载时获取任务配置
+        document.addEventListener('DOMContentLoaded', () => {
+            // 从API获取配置
+            fetchTaskConfig();
+            
+            // 设置事件监听器
+            setupEventListeners();
+            
+            // 初始化时间选择框
+            initTimeSelectors();
+        });
+        
+        // 初始化时间选择框
+        function initTimeSelectors() {
+            const startTimeSelect = document.getElementById('startTime');
+            const editStartTimeSelect = document.getElementById('editStartTime');
+            
+            // 获取当前小时作为默认值
+            const currentHour = new Date().getHours();
+            
+            // 清空现有选项
+            startTimeSelect.innerHTML = '';
+            editStartTimeSelect.innerHTML = '';
+            
+            // 添加时间选项（1-24点）
+            for (let i = 1; i <= 24; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `${i}:00`;
+                
+                const editOption = option.cloneNode(true);
+                
+                // 设置当前小时为默认选中
+                if (i === currentHour) {
+                    option.selected = true;
+                    editOption.selected = true;
+                }
+                
+                startTimeSelect.appendChild(option);
+                editStartTimeSelect.appendChild(editOption);
+            }
+        }
+        
+        // 获取任务配置
+        function fetchTaskConfig() {
+            fetch('/docs/getOfflineConfig')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.code === 200) {
+                        taskConfig = data.data;
+                        // 更新平台下拉框
+                        updatePlatformOptions();
+                        // 渲染任务列表
+                        renderTaskList();
+                    } else {
+                        console.error('获取配置失败:', data.message);
+                        alert('获取任务配置失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('获取配置失败:', error);
+                    alert('获取任务配置失败，请检查网络连接');
+                    
+                    // 如果获取失败，使用测试数据
+                    taskConfig = {
+                        "qimai": [
+                            {
+                                "script": "qimaiKeywordHintsRank.py",
+                                "status": 0,
+                                "cycleTime": 86400,
+                                "description": "七麦关键词排行榜采集",
+                                "updateTime": "2025-04-18 16:00:00"
+                            }
+                        ]
+                    };
+                    // 更新平台下拉框
+                    updatePlatformOptions();
+                    // 渲染任务列表
+                    renderTaskList();
+                });
+        }
+        
+        // 更新平台下拉框选项
+        function updatePlatformOptions() {
+            const platformSelect = document.getElementById('platform');
+            platformSelect.innerHTML = '';
+            
+            // 从配置中获取平台列表
+            const platforms = Object.keys(taskConfig);
+            
+            // 添加现有平台选项
+            platforms.forEach(platform => {
+                const option = document.createElement('option');
+                option.value = platform;
+                option.textContent = platform;
+                platformSelect.appendChild(option);
+            });
+            
+            // 添加"新平台"选项
+            const newOption = document.createElement('option');
+            newOption.value = "new_platform";
+            newOption.textContent = "新平台";
+            platformSelect.appendChild(newOption);
+            
+            // 监听平台选择变化
+            platformSelect.onchange = function() {
+                if (this.value === 'new_platform') {
+                    const newPlatform = prompt('请输入新平台名称:');
+                    if (newPlatform && newPlatform.trim() !== '') {
+                        // 检查是否已存在相同名称的平台
+                        if (platforms.includes(newPlatform)) {
+                            alert('已存在相同名称的平台');
+                            this.value = platforms[0] || '';
+                            return;
+                        }
+                        
+                        // 添加新平台选项
+                        const option = document.createElement('option');
+                        option.value = newPlatform;
+                        option.textContent = newPlatform;
+                        
+                        // 插入到倒数第二个位置（新平台选项之前）
+                        platformSelect.insertBefore(option, platformSelect.lastChild);
+                        
+                        // 选中新平台
+                        this.value = newPlatform;
+                    } else {
+                        // 取消输入或输入为空，恢复为第一个选项
+                        this.value = platforms[0] || '';
+                    }
+                }
+            };
+        }
+        
+        // 渲染任务列表
+        function renderTaskList() {
+            const container = document.getElementById('platformContainer');
+            container.innerHTML = '';
+            
+            // 遍历每个平台
+            for (const platform in taskConfig) {
+                const tasks = taskConfig[platform];
+                
+                // 根据筛选条件过滤任务
+                const filteredTasks = showOnlyEnabled 
+                    ? tasks.filter(task => task.status === 1) 
+                    : tasks;
+                
+                // 如果该平台没有任务可显示，则跳过
+                if (filteredTasks.length === 0) {
+                    continue;
+                }
+                
+                // 创建平台区块
+                const platformSection = document.createElement('div');
+                platformSection.className = 'platform-section';
+                
+                // 平台标题
+                const platformHeader = document.createElement('div');
+                platformHeader.className = 'platform-header';
+                platformHeader.textContent = getPlatformDisplayName(platform);
+                platformSection.appendChild(platformHeader);
+                
+                // 任务列表
+                const taskList = document.createElement('div');
+                taskList.className = 'task-list';
+                
+                // 添加每个任务
+                filteredTasks.forEach((task, index) => {
+                    const taskItem = document.createElement('div');
+                    taskItem.className = 'task-item';
+                    
+                    // 查找原始索引（用于编辑和状态更新）
+                    const originalIndex = tasks.findIndex(t => t.script === task.script);
+                    
+                    // 任务信息
+                    const taskInfo = document.createElement('div');
+                    taskInfo.className = 'task-info';
+                    
+                    const taskName = document.createElement('div');
+                    taskName.className = 'task-name';
+                    taskName.textContent = task.script;
+                    
+                    const taskDescription = document.createElement('div');
+                    taskDescription.className = 'task-description';
+                    taskDescription.textContent = task.description;
+                    
+                    const taskMeta = document.createElement('div');
+                    taskMeta.className = 'task-meta';
+                    
+                    const cycleTimeDisplay = document.createElement('span');
+                    cycleTimeDisplay.textContent = `执行周期: ${formatCycleTime(task.cycleTime)}`;
+                    
+                    // 只有当start_time存在且不为空时才显示执行时间
+                    let startTimeDisplay;
+                    if (task.start_time) {
+                        startTimeDisplay = document.createElement('span');
+                        startTimeDisplay.textContent = `执行开始时间: ${task.start_time}:00`;
+                    }
+                    
+                    const updateTimeDisplay = document.createElement('span');
+                    updateTimeDisplay.textContent = `更新时间: ${task.updateTime}`;
+                    
+                    taskMeta.appendChild(cycleTimeDisplay);
+                    // 只有当start_time存在时才添加到DOM中
+                    if (startTimeDisplay) {
+                        taskMeta.appendChild(startTimeDisplay);
+                    }
+                    taskMeta.appendChild(updateTimeDisplay);
+                    
+                    taskInfo.appendChild(taskName);
+                    taskInfo.appendChild(taskDescription);
+                    taskInfo.appendChild(taskMeta);
+                    
+                    // 任务控制
+                    const taskControls = document.createElement('div');
+                    taskControls.className = 'task-controls';
+                    
+                    // 执行记录按钮
+                    const recordBtn = document.createElement('button');
+                    recordBtn.className = 'record-btn';
+                    recordBtn.textContent = '执行记录';
+                    recordBtn.onclick = () => viewTaskRecords(platform, originalIndex);
+                    
+                    // 编辑按钮
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'edit-btn';
+                    editBtn.textContent = '编辑';
+                    editBtn.onclick = () => editTask(platform, originalIndex);
+                    
+                    // 执行按钮
+                    const executeBtn = document.createElement('button');
+                    executeBtn.className = 'execute-btn';
+                    executeBtn.textContent = '立即执行';
+                    executeBtn.onclick = () => executeTask(platform, originalIndex);
+                    
+                    // 状态开关
+                    const statusToggle = document.createElement('label');
+                    statusToggle.className = 'status-toggle';
+                    
+                    const statusInput = document.createElement('input');
+                    statusInput.type = 'checkbox';
+                    statusInput.checked = task.status === 1;
+                    statusInput.onchange = (e) => updateTaskStatus(platform, originalIndex, e.target.checked ? 1 : 0);
+                    
+                    const slider = document.createElement('span');
+                    slider.className = 'slider';
+                    
+                    statusToggle.appendChild(statusInput);
+                    statusToggle.appendChild(slider);
+                    
+                    taskControls.appendChild(recordBtn);
+                    taskControls.appendChild(editBtn);
+                    taskControls.appendChild(executeBtn);
+                    taskControls.appendChild(statusToggle);
+                    
+                    // 组合任务项
+                    taskItem.appendChild(taskInfo);
+                    taskItem.appendChild(taskControls);
+                    
+                    taskList.appendChild(taskItem);
+                });
+                
+                platformSection.appendChild(taskList);
+                container.appendChild(platformSection);
+            }
+        }
+        
+        // 设置事件监听器
+        function setupEventListeners() {
+            const uploadModal = document.getElementById('uploadModal');
+            const editModal = document.getElementById('editModal');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const closeBtn = document.querySelector('#uploadModal .close-btn');
+            const editCloseBtn = document.getElementById('editCloseBtn');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const editCancelBtn = document.getElementById('editCancelBtn');
+            const taskForm = document.getElementById('taskForm');
+            const editTaskForm = document.getElementById('editTaskForm');
+            const cycleTimeSelect = document.getElementById('cycleTime');
+            const editCycleTimeSelect = document.getElementById('editCycleTime');
+            const customCycleGroup = document.getElementById('customCycleGroup');
+            const editCustomCycleGroup = document.getElementById('editCustomCycleGroup');
+            const editMode = document.getElementById('editMode');
+            const scriptFileGroup = document.getElementById('scriptFileGroup');
+            const scriptNameGroup = document.getElementById('scriptNameGroup');
+            const filterStatusBtn = document.querySelectorAll('.filter-btn');
+            
+            // 打开上传模态框
+            uploadBtn.onclick = () => {
+                document.getElementById('modalTitle').textContent = '上传离线任务';
+                editMode.value = 'add';
+                taskForm.reset();
+                
+                // 显示文件上传控件，隐藏脚本名称
+                scriptFileGroup.style.display = 'block';
+                scriptNameGroup.style.display = 'none';
+                document.getElementById('scriptFile').required = true;
+                document.getElementById('script').required = false;
+                
+                uploadModal.style.display = 'flex';
+            };
+            
+            // 关闭上传模态框
+            closeBtn.onclick = () => {
+                uploadModal.style.display = 'none';
+            };
+            
+            cancelBtn.onclick = () => {
+                uploadModal.style.display = 'none';
+            };
+            
+            // 关闭编辑模态框
+            editCloseBtn.onclick = () => {
+                editModal.style.display = 'none';
+            };
+            
+            editCancelBtn.onclick = () => {
+                editModal.style.display = 'none';
+            };
+            
+            // 点击模态框外部关闭
+            window.onclick = (event) => {
+                if (event.target === uploadModal) {
+                    uploadModal.style.display = 'none';
+                }
+                if (event.target === editModal) {
+                    editModal.style.display = 'none';
+                }
+            };
+            
+            // 显示/隐藏自定义周期输入（上传模态框）
+            cycleTimeSelect.onchange = () => {
+                if (cycleTimeSelect.value === 'custom') {
+                    customCycleGroup.style.display = 'block';
+                    document.getElementById('customCycle').required = true;
+                } else {
+                    customCycleGroup.style.display = 'none';
+                    document.getElementById('customCycle').required = false;
+                    document.getElementById('customCycle').value = '';
+                }
+            };
+            
+            // 显示/隐藏自定义周期输入（编辑模态框）
+            editCycleTimeSelect.onchange = () => {
+                if (editCycleTimeSelect.value === 'custom') {
+                    editCustomCycleGroup.style.display = 'block';
+                    document.getElementById('editCustomCycle').required = true;
+                } else {
+                    editCustomCycleGroup.style.display = 'none';
+                    document.getElementById('editCustomCycle').required = false;
+                    document.getElementById('editCustomCycle').value = '';
+                }
+            };
+            
+            // 表单提交
+            taskForm.onsubmit = (e) => {
+                e.preventDefault();
+                saveTask('add');
+            };
+            
+            // 编辑表单提交
+            editTaskForm.onsubmit = (e) => {
+                e.preventDefault();
+                saveTask('edit');
+            };
+            
+            // 状态筛选按钮点击事件
+            filterStatusBtn.forEach(btn => {
+                btn.onclick = () => {
+                    showOnlyEnabled = btn.getAttribute('data-status') === 'all' || btn.getAttribute('data-status') === '1';
+                    if (showOnlyEnabled) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                    renderTaskList();
+                };
+            });
+        }
+        
+        // 保存任务
+        function saveTask(mode) {
+            if (mode === 'add') {
+                // 新增任务，使用FormData上传文件
+                const formData = new FormData(document.getElementById('taskForm'));
+                
+                // 设置cycle_time值
+                if (document.getElementById('cycleTime').value === 'custom') {
+                    // 获取自定义周期值
+                    const customCycleValue = document.getElementById('customCycle').value;
+                    const customCycleTime = parseInt(customCycleValue);
+                    if (isNaN(customCycleTime) || customCycleTime <= 0) {
+                        alert('请输入有效的自定义周期值');
+                        return;
+                    }
+                    formData.set('cycle_time', customCycleTime);
+                    // 删除额外的custom_cycle参数
+                    formData.delete('custom_cycle');
+                } else {
+                    formData.set('cycle_time', document.getElementById('cycleTime').value);
+                }
+                
+                // 检查文件选择
+                const fileInput = document.getElementById('scriptFile');
+                if (!fileInput.files || fileInput.files.length === 0) {
+                    alert('请选择要上传的脚本文件');
+                    return;
+                }
+
+                console.log('Submitting form data:', {
+                    platform: formData.get('platform'),
+                    description: formData.get('description'),
+                    status: formData.get('status'),
+                    cycle_time: formData.get('cycle_time'),
+                    start_time: formData.get('start_time'),
+                    script_file: fileInput.files[0].name
+                });
+                
+                // 发送到服务器
+                fetch('/docs/uploadOfflineTask', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    console.log('Response received:', response);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json().catch(error => {
+                        console.error('解析JSON响应失败:', error);
+                        // 如果JSON解析失败但HTTP状态码是成功的，我们假设上传可能成功了
+                        if (response.ok) {
+                            return { parseError: true, httpSuccess: true };
+                        }
+                        throw error;
+                    });
+                })
+                .then(data => {
+                    console.log('Response data:', data);
+                    
+                    // 检查是否是解析错误但HTTP成功的情况
+                    if (data && data.parseError && data.httpSuccess) {
+                        alert('任务可能已上传成功，正在刷新任务列表...');
+                        fetchTaskConfig();
+                        document.getElementById('uploadModal').style.display = 'none';
+                        return;
+                    }
+                    
+                    if (data && data.code === 200) {
+                        if (data.data && data.data.renamed) {
+                            const originalName = data.data.original_filename || '未知文件名';
+                            const newName = data.data.task && data.data.task.script ? data.data.task.script : '未知文件名';
+                            alert(`检测到文件名已存在，已自动重命名:\n原文件名: ${originalName}\n新文件名: ${newName}`);
+                        } else {
+                            alert('任务上传成功');
+                        }
+                        // 重新获取任务配置
+                        fetchTaskConfig();
+                        // 隐藏模态框
+                        document.getElementById('uploadModal').style.display = 'none';
+                    } else {
+                        alert('任务上传失败: ' + (data && data.message ? data.message : '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    console.error('上传失败:', error);
+                    
+                    // 检查是否已经成功上传，但是返回数据解析失败
+                    try {
+                        // 即使出现错误，也尝试重新获取任务配置
+                        fetchTaskConfig();
+                        // 隐藏模态框
+                        document.getElementById('uploadModal').style.display = 'none';
+                        alert('任务可能已上传成功，正在刷新任务列表...');
+                    } catch (refreshError) {
+                        console.error('刷新任务列表失败:', refreshError);
+                        alert('任务上传失败，请检查网络连接: ' + error.message);
+                    }
+                });
+            } else {
+                // 编辑任务
+                const taskPlatform = document.getElementById('editTaskPlatform').value;
+                const taskIndex = parseInt(document.getElementById('editTaskIndex').value);
+                const task = taskConfig[taskPlatform][taskIndex];
+                const originalScript = task.script;
+                
+                // 获取表单数据
+                let cycleTime;
+                if (document.getElementById('editCycleTime').value === 'custom') {
+                    // 获取自定义周期值
+                    const customCycleValue = document.getElementById('editCustomCycle').value;
+                    cycleTime = parseInt(customCycleValue);
+                    if (isNaN(cycleTime) || cycleTime <= 0) {
+                        alert('请输入有效的自定义周期值');
+                        return;
+                    }
+                } else {
+                    cycleTime = parseInt(document.getElementById('editCycleTime').value);
+                }
+                
+                // 创建请求数据
+                const updateData = {
+                    platform: document.getElementById('editPlatform').value,
+                    original_script: originalScript,
+                    script_name: document.getElementById('editScript').value,
+                    description: document.getElementById('editDescription').value,
+                    status: parseInt(document.getElementById('editStatus').value),
+                    cycle_time: cycleTime,
+                    start_time: document.getElementById('editStartTime').value
+                };
+                
+                console.log('Updating task with data:', updateData);
+                
+                // 发送更新请求
+                fetch('/docs/updateTask', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updateData)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.code === 200) {
+                        if (data.data && data.data.renamed) {
+                            alert(`脚本文件已重命名:\n原文件名: ${data.data.original_name}\n新文件名: ${data.data.new_name}`);
+                        } else {
+                            alert('任务更新成功');
+                        }
+                        // 重新获取任务配置
+                        fetchTaskConfig();
+                        // 隐藏模态框
+                        document.getElementById('editModal').style.display = 'none';
+                    } else {
+                        alert('任务更新失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('更新失败:', error);
+                    alert('任务更新失败，请检查网络连接: ' + error.message);
+                });
+            }
+        }
+        
+        // 更新编辑模态框中的平台选项
+        function updateEditPlatformOptions(selectedPlatform) {
+            const platformSelect = document.getElementById('editPlatform');
+            platformSelect.innerHTML = '';
+            
+            // 从配置中获取平台列表
+            const platforms = Object.keys(taskConfig);
+            
+            // 添加现有平台选项
+            platforms.forEach(platform => {
+                const option = document.createElement('option');
+                option.value = platform;
+                option.textContent = platform;
+                platformSelect.appendChild(option);
+            });
+            
+            // 添加"新平台"选项
+            const newOption = document.createElement('option');
+            newOption.value = "new_platform";
+            newOption.textContent = "新平台";
+            platformSelect.appendChild(newOption);
+            
+            // 设置选中平台
+            if (selectedPlatform && platforms.includes(selectedPlatform)) {
+                platformSelect.value = selectedPlatform;
+            }
+            
+            // 监听平台选择变化
+            platformSelect.onchange = function() {
+                if (this.value === 'new_platform') {
+                    const newPlatform = prompt('请输入新平台名称:');
+                    if (newPlatform && newPlatform.trim() !== '') {
+                        // 检查是否已存在相同名称的平台
+                        if (platforms.includes(newPlatform)) {
+                            alert('已存在相同名称的平台');
+                            this.value = selectedPlatform || platforms[0] || '';
+                            return;
+                        }
+                        
+                        // 添加新平台选项
+                        const option = document.createElement('option');
+                        option.value = newPlatform;
+                        option.textContent = newPlatform;
+                        
+                        // 插入到倒数第二个位置（新平台选项之前）
+                        platformSelect.insertBefore(option, platformSelect.lastChild);
+                        
+                        // 选中新平台
+                        this.value = newPlatform;
+                    } else {
+                        // 取消输入或输入为空，恢复为第一个选项
+                        this.value = selectedPlatform || platforms[0] || '';
+                    }
+                }
+            };
+        }
+        
+        // 编辑任务
+        function editTask(platform, index) {
+            const task = taskConfig[platform][index];
+            const modal = document.getElementById('editModal');
+            
+            // 存储任务平台和索引
+            document.getElementById('editTaskPlatform').value = platform;
+            document.getElementById('editTaskIndex').value = index;
+            
+            // 更新平台选项并默认选择当前平台
+            updateEditPlatformOptions(platform);
+            
+            // 填充表单
+            document.getElementById('editScript').value = task.script;
+            document.getElementById('editDescription').value = task.description || '';
+            document.getElementById('editStatus').value = task.status.toString();
+            
+            // 设置周期
+            const cycleTimeSelect = document.getElementById('editCycleTime');
+            const customCycleGroup = document.getElementById('editCustomCycleGroup');
+            
+            // 检查是否是预设周期
+            if ([86400, 604800, 2592000].includes(task.cycleTime)) {
+                cycleTimeSelect.value = task.cycleTime.toString();
+                customCycleGroup.style.display = 'none';
+                document.getElementById('editCustomCycle').required = false;
+                document.getElementById('editCustomCycle').value = '';
+            } else {
+                cycleTimeSelect.value = 'custom';
+                document.getElementById('editCustomCycle').value = task.cycleTime;
+                customCycleGroup.style.display = 'block';
+                document.getElementById('editCustomCycle').required = true;
+            }
+            
+            // 设置执行时间
+            if (task.start_time) {
+                document.getElementById('editStartTime').value = task.start_time;
+            } else {
+                // 如果没有设置执行时间，设置为当前小时
+                const currentHour = new Date().getHours();
+                document.getElementById('editStartTime').value = currentHour === 0 ? 24 : currentHour;
+            }
+            
+            // 显示模态框
+            modal.style.display = 'flex';
+        }
+        
+        // 更新任务状态
+        function updateTaskStatus(platform, index, status) {
+            const task = taskConfig[platform][index];
+            
+            // 发送状态更新请求到服务器
+            fetch('/docs/updateTaskStatus', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    platform: platform, 
+                    script: task.script, 
+                    status: status 
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.code === 200) {
+                    // 更新本地状态
+                    taskConfig[platform][index].status = status;
+                } else {
+                    console.error('状态更新失败:', data.message);
+                    alert('更新失败: ' + data.message);
+                    
+                    // 恢复UI状态
+                    const statusToggle = document.querySelector(`.task-item:nth-child(${index + 1}) input[type="checkbox"]`);
+                    if (statusToggle) {
+                        statusToggle.checked = !statusToggle.checked;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('状态更新失败:', error);
+                alert('更新失败，请检查网络连接');
+                
+                // 恢复UI状态
+                const statusToggle = document.querySelector(`.task-item:nth-child(${index + 1}) input[type="checkbox"]`);
+                if (statusToggle) {
+                    statusToggle.checked = !statusToggle.checked;
+                }
+            });
+        }
+        
+        // 执行任务
+        function executeTask(platform, index) {
+            const task = taskConfig[platform][index];
+            console.log(`执行任务: ${platform} - ${task.script}`);
+            
+            // 发送执行请求到服务器
+            fetch('/docs/executeOfflineTask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ platform, script: task.script })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.code === 200) {
+                    alert(`任务 ${task.script} 已开始执行`);
+                } else {
+                    alert(`执行失败: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                console.error('执行失败:', error);
+                alert(`执行失败，请检查网络连接`);
+            });
+        }
+        
+        // 格式化周期时间显示
+        function formatCycleTime(seconds) {
+            if (seconds === 86400) return '每天';
+            if (seconds === 604800) return '每周';
+            if (seconds === 2592000) return '每月';
+            
+            if (seconds < 60) return `${seconds}秒`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时`;
+            return `${Math.floor(seconds / 86400)}天`;
+        }
+        
+        // 查看任务执行记录
+        function viewTaskRecords(platform, index) {
+            const task = taskConfig[platform][index];
+            // console.log(`查看执行记录: ${platform} - ${task.script}`);
+            
+            // 创建模态框（如果不存在）
+            let recordModal = document.getElementById('recordModal');
+            if (!recordModal) {
+                recordModal = document.createElement('div');
+                recordModal.id = 'recordModal';
+                recordModal.className = 'modal';
+                
+                const modalContent = document.createElement('div');
+                modalContent.className = 'modal-content';
+                
+                const modalHeader = document.createElement('div');
+                modalHeader.className = 'modal-header';
+                
+                const modalTitle = document.createElement('h2');
+                modalTitle.id = 'recordModalTitle';
+                modalHeader.appendChild(modalTitle);
+                
+                const closeBtn = document.createElement('span');
+                closeBtn.className = 'close-btn';
+                closeBtn.innerHTML = '&times;';
+                closeBtn.onclick = () => {
+                    recordModal.style.display = 'none';
+                };
+                modalHeader.appendChild(closeBtn);
+                
+                const recordContent = document.createElement('div');
+                recordContent.id = 'recordContent';
+                recordContent.style.maxHeight = '400px';
+                recordContent.style.overflowY = 'auto';
+                
+                modalContent.appendChild(modalHeader);
+                modalContent.appendChild(recordContent);
+                recordModal.appendChild(modalContent);
+                document.body.appendChild(recordModal);
+                
+                // 点击模态框外部关闭
+                window.addEventListener('click', (event) => {
+                    if (event.target === recordModal) {
+                        recordModal.style.display = 'none';
+                    }
+                });
+            }
+            
+            // 更新模态框标题
+            document.getElementById('recordModalTitle').textContent = `最新记录: ${task.script}`;
+            
+            // 显示加载中
+            document.getElementById('recordContent').innerHTML = '<p>加载中...</p>';
+            
+            // 显示模态框
+            recordModal.style.display = 'flex';
+            
+            // 获取执行记录
+            fetch(`/docs/getTaskExecutionRecords?platform=${platform}&script=${task.script}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('后端返回的记录数据:', data); // 添加调试日志
+                    
+                    if (data.code === 200) {
+                        const recordContent = document.getElementById('recordContent');
+                        const records = data.data;
+                        console.log('解析的记录数据:', records); // 查看解析后的数据格式
+                        
+                        // 处理不同可能的数据格式
+                        let recordsArray = [];
+                        const scriptKey = `${platform}/${task.script}`;
+                        
+                        // 尝试确定数据格式并提取记录数组
+                        if (Array.isArray(records)) {
+                            // 直接是数组格式
+                            recordsArray = records;
+                        } else if (records && typeof records === 'object') {
+                            if (records[scriptKey] && Array.isArray(records[scriptKey])) {
+                                // 按scriptKey索引的格式
+                                recordsArray = records[scriptKey];
+                            } else if (records.records && Array.isArray(records.records)) {
+                                // 有records字段的格式
+                                recordsArray = records.records;
+                            } else if (records.list && Array.isArray(records.list)) {
+                                // 有list字段的格式
+                                recordsArray = records.list;
+                            } else if (records.data && Array.isArray(records.data)) {
+                                // 有data字段的格式
+                                recordsArray = records.data;
+                            } else {
+                                // 尝试从对象中找到第一个数组
+                                for (const key in records) {
+                                    if (Array.isArray(records[key])) {
+                                        recordsArray = records[key];
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // console.log('处理后的记录数组:', recordsArray); // 检查处理后的数组
+                        
+                        if (recordsArray && recordsArray.length > 0) {
+                            // 创建表格
+                            const table = document.createElement('table');
+                            table.style.width = '100%';
+                            table.style.borderCollapse = 'collapse';
+                            table.style.marginTop = '10px';
+                            
+                            // 添加表头
+                            const thead = document.createElement('thead');
+                            const headerRow = document.createElement('tr');
+                            
+                            const thNum = document.createElement('th');
+                            thNum.textContent = '序号(最新5条)';
+                            thNum.style.border = '1px solid #ddd';
+                            thNum.style.padding = '8px';
+                            thNum.style.backgroundColor = '#f2f2f2';
+                            
+                            const thTime = document.createElement('th');
+                            thTime.textContent = '执行时间';
+                            thTime.style.border = '1px solid #ddd';
+                            thTime.style.padding = '8px';
+                            thTime.style.backgroundColor = '#f2f2f2';
+                            
+                            headerRow.appendChild(thNum);
+                            headerRow.appendChild(thTime);
+                            thead.appendChild(headerRow);
+                            table.appendChild(thead);
+                            
+                            // 添加表体
+                            const tbody = document.createElement('tbody');
+                            recordsArray.forEach((item, i) => {
+                                const row = document.createElement('tr');
+                                row.style.backgroundColor = i % 2 === 0 ? '#f9f9f9' : 'white';
+                                
+                                const tdNum = document.createElement('td');
+                                tdNum.textContent = i + 1;
+                                tdNum.style.border = '1px solid #ddd';
+                                tdNum.style.padding = '8px';
+                                
+                                const tdTime = document.createElement('td');
+                                // 处理可能的不同格式的时间字段
+                                let timeText;
+                                if (typeof item === 'string') {
+                                    timeText = item;
+                                } else if (typeof item === 'object') {
+                                    // 尝试从对象中找到可能的时间字段
+                                    timeText = item.time || item.execute_time || item.executionTime || 
+                                             item.executeTime || item.createTime || item.create_time || 
+                                             item.updateTime || item.update_time || 
+                                             JSON.stringify(item); // 如果找不到，显示整个对象
+                                } else {
+                                    timeText = String(item);
+                                }
+                                
+                                tdTime.textContent = timeText;
+                                tdTime.style.border = '1px solid #ddd';
+                                tdTime.style.padding = '8px';
+                                
+                                row.appendChild(tdNum);
+                                row.appendChild(tdTime);
+                                tbody.appendChild(row);
+                            });
+                          
+                            table.appendChild(tbody);
+                            
+                            // 清空内容区域并添加表格
+                            recordContent.innerHTML = '';
+                            recordContent.appendChild(table);
+                            
+                        } else {
+                            recordContent.innerHTML = '<p>暂无执行记录</p>';
+                        }
+                    } else {
+                        document.getElementById('recordContent').innerHTML = `<p>获取执行记录失败: ${data.message}</p>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('获取执行记录失败:', error);
+                    document.getElementById('recordContent').innerHTML = '<p>获取执行记录失败，请检查网络连接</p>';
+                });
+        }
+        
+        // 获取平台显示名称
+        function getPlatformDisplayName(platform) {
+            // 直接返回平台名称，不进行映射
+            return platform;
+        }
+    </script>
+</body>
+</html>

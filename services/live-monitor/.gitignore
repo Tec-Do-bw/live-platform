@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 环境变量（敏感信息）
+.env
+.env.*
+!env.example
+
+# 日志文件
+logs/
+*.log
+*.logs
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 浏览器用户数据（体积大，含敏感信息）
+user/
+
+# 错误记录
+errorUrl.txt
+
+# Claude Code
+.claude/

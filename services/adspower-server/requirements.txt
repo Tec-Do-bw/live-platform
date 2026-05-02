@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+websockets
+DrissionPage
+httpx
+httpx[socks]
+pydantic
+python-dotenv
+loguru

@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BIC-爬虫数据系统-版本更新记录</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8f9fa;
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            margin: 0;
+            max-width: none;
+        }
+        
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            overflow: auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #eaeaea;
+            padding-bottom: 15px;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            color: #333;
+            margin: 0;
+            font-weight: 600;
+            position: relative;
+        }
+        
+        .header h1:after {
+            content: '';
+            display: block;
+            width: 50px;
+            height: 3px;
+            background: #007bff;
+            position: absolute;
+            bottom: -17px;
+            left: 0;
+        }
+        
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .add-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #4CAF50, #2E7D32);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .add-btn:hover {
+            background: linear-gradient(135deg, #5cb860, #3b9a40);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .version-section {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .version-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f1f8ff;
+            padding: 15px 20px;
+            font-size: 18px;
+            font-weight: bold;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+        }
+        
+        .latest .version-header {
+            background: #007bff;
+            color: white;
+        }
+        
+        .version-date {
+            font-size: 14px;
+            color: #666;
+            font-weight: normal;
+        }
+        
+        .latest .version-date {
+            color: #e6f0ff;
+        }
+        
+        .version-content {
+            padding: 20px;
+            display: none;
+        }
+        
+        .version-content.active {
+            display: block;
+        }
+        
+        .update-category {
+            margin-bottom: 20px;
+        }
+        
+        .category-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #007bff;
+        }
+        
+        .update-list {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .update-item {
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+        
+        .collapse-icon {
+            transition: transform 0.3s ease;
+        }
+        
+        .version-header.expanded .collapse-icon {
+            transform: rotate(180deg);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            width: 600px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .close-btn {
+            cursor: pointer;
+            font-size: 24px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        .update-categories {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        
+        .category-group {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .category-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .category-items {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .item-row {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .item-row input {
+            flex: 1;
+        }
+        
+        .remove-btn {
+            padding: 5px 10px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .add-item-btn {
+            padding: 5px 10px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            align-self: flex-start;
+        }
+        
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .form-actions button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .cancel-btn {
+            background-color: #f1f1f1;
+            color: #333;
+        }
+        
+        .save-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .tag {
+            display: inline-block;
+            padding: 3px 8px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 3px;
+            margin-right: 5px;
+        }
+        
+        .tag-new {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .tag-fix {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .tag-improvement {
+            background-color: #17a2b8;
+            color: white;
+        }
+        
+        .tag-feature {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        #addVersionBtn {
+            display: none; /* 默认隐藏，只在确认登录后显示 */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="content-area">
+            <div class="header">
+                <h1>系统更新迭代记录</h1>
+                <div class="header-controls">
+                    <button class="add-btn" id="addVersionBtn">添加版本更新</button>
+                </div>
+            </div>
+            
+            <div id="versionContainer">
+                <!-- 版本记录将通过JavaScript动态添加 -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 添加版本模态框 -->
+    <div id="versionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>添加版本更新记录</h2>
+                <span class="close-btn">&times;</span>
+            </div>
+            <form id="versionForm">
+                <div class="form-group">
+                    <label for="versionNumber">版本号:</label>
+                    <input type="text" id="versionNumber" name="versionNumber" required placeholder="例如: v1.2.0">
+                </div>
+                
+                <div class="form-group">
+                    <label for="releaseDate">发布日期:</label>
+                    <input type="date" id="releaseDate" name="releaseDate" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>更新内容:</label>
+                    <div class="update-categories" id="updateCategories">
+                        <div class="category-group">
+                            <div class="category-header">
+                                <select class="category-type">
+                                    <option value="feature">新功能</option>
+                                    <option value="improvement">改进</option>
+                                    <option value="fix">修复</option>
+                                    <option value="other">其他</option>
+                                </select>
+                                <button type="button" class="remove-btn" onclick="removeCategory(this)">删除</button>
+                            </div>
+                            <div class="category-items">
+                                <div class="item-row">
+                                    <input type="text" class="item-text" placeholder="更新内容描述">
+                                    <button type="button" class="remove-btn" onclick="removeItem(this)">删除</button>
+                                </div>
+                            </div>
+                            <button type="button" class="add-item-btn" onclick="addItem(this)">添加项目</button>
+                        </div>
+                    </div>
+                    <button type="button" id="addCategoryBtn" style="margin-top: 10px;">添加分类</button>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="cancel-btn" id="cancelBtn">取消</button>
+                    <button type="submit" class="save-btn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <!-- 添加用户状态显示脚本 -->
+    <script src="/static/js/auth.js"></script>
+    <script>
+        // 版本历史数据
+        let versionHistory = [];
+        
+        // 页面加载时获取版本历史
+        document.addEventListener('DOMContentLoaded', () => {
+            // 从API获取版本历史或使用测试数据
+            fetchVersionHistory();
+            
+            // 设置事件监听器
+            setupEventListeners();
+            
+            // 设置当前日期为默认发布日期
+            document.getElementById('releaseDate').valueAsDate = new Date();
+            
+            // 检查用户登录状态，控制添加按钮的显示
+            checkUserLoginStatus();
+        });
+        
+        // 获取版本历史
+        function fetchVersionHistory() {
+            console.log('开始获取版本历史数据...');
+            fetch('/docs/getVersionHistory')
+                .then(response => {
+                    console.log('收到服务器响应:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('解析响应数据:', data);
+                    if (data.code === 200 && data.data && Array.isArray(data.data)) {
+                        versionHistory = data.data;
+                        console.log(`成功获取${versionHistory.length}条版本历史记录`);
+                        renderVersionHistory();
+                    } else {
+                        console.error('获取版本历史失败:', data.message || '返回数据格式不正确');
+                        console.error('返回数据:', data);
+                        // 使用测试数据
+                        useTestData();
+                    }
+                })
+                .catch(error => {
+                    console.error('获取版本历史失败:', error);
+                    // 使用测试数据
+                    useTestData();
+                });
+        }
+        
+        // 使用测试数据
+        function useTestData() {
+            versionHistory = [
+                {
+                    version: "v1.5.0",
+                    releaseDate: "2023-06-01",
+                    updates: [
+                        {
+                            type: "feature",
+                            items: [
+                                "新增离线任务管理模块，支持定时执行脚本",
+                                "新增用户权限管理系统，可细化控制用户操作权限"
+                            ]
+                        },
+                        {
+                            type: "improvement",
+                            items: [
+                                "优化数据采集速度，提高30%的效率",
+                                "改进用户界面，采用响应式设计"
+                            ]
+                        },
+                        {
+                            type: "fix",
+                            items: [
+                                "修复数据导出时可能出现的乱码问题",
+                                "修复部分浏览器兼容性问题"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    version: "v1.4.0",
+                    releaseDate: "2023-05-15",
+                    updates: [
+                        {
+                            type: "feature",
+                            items: [
+                                "新增数据导出功能，支持Excel、CSV格式",
+                                "新增数据可视化图表功能"
+                            ]
+                        },
+                        {
+                            type: "fix",
+                            items: [
+                                "修复登录超时问题",
+                                "修复部分任务执行失败的问题"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    version: "v1.3.0",
+                    releaseDate: "2023-04-20",
+                    updates: [
+                        {
+                            type: "improvement",
+                            items: [
+                                "优化系统响应速度",
+                                "增强数据安全性"
+                            ]
+                        },
+                        {
+                            type: "fix",
+                            items: [
+                                "修复部分数据显示异常的问题"
+                            ]
+                        }
+                    ]
+                }
+            ];
+            renderVersionHistory();
+        }
+        
+        // 渲染版本历史
+        function renderVersionHistory() {
+            const container = document.getElementById('versionContainer');
+            container.innerHTML = '';
+            
+            // 按照版本号排序（假设版本号格式为v1.2.3，从新到旧排序）
+            versionHistory.sort((a, b) => {
+                const versionA = a.version.replace('v', '').split('.').map(Number);
+                const versionB = b.version.replace('v', '').split('.').map(Number);
+                
+                for (let i = 0; i < Math.max(versionA.length, versionB.length); i++) {
+                    const numA = i < versionA.length ? versionA[i] : 0;
+                    const numB = i < versionB.length ? versionB[i] : 0;
+                    
+                    if (numA !== numB) {
+                        return numB - numA; // 从大到小排序（新到旧）
+                    }
+                }
+                
+                return 0;
+            });
+            
+            // 渲染每个版本
+            versionHistory.forEach((version, index) => {
+                const versionSection = document.createElement('div');
+                versionSection.className = `version-section ${index === 0 ? 'latest' : ''}`;
+                
+                // 版本标题（可点击展开/折叠）
+                const versionHeader = document.createElement('div');
+                versionHeader.className = `version-header ${index === 0 ? 'expanded' : ''}`;
+                
+                const versionTitle = document.createElement('div');
+                versionTitle.innerHTML = `${version.version} <span class="version-date">${formatDate(version.releaseDate)}</span>`;
+                
+                const collapseIcon = document.createElement('span');
+                collapseIcon.className = 'collapse-icon';
+                collapseIcon.innerHTML = '&#9660;'; // 向下箭头
+                
+                versionHeader.appendChild(versionTitle);
+                versionHeader.appendChild(collapseIcon);
+                
+                // 版本内容
+                const versionContent = document.createElement('div');
+                versionContent.className = `version-content ${index === 0 ? 'active' : ''}`;
+                
+                // 按更新类型分组显示
+                const updateTypes = {
+                    feature: {title: "新功能", class: "tag-feature"},
+                    improvement: {title: "改进", class: "tag-improvement"},
+                    fix: {title: "修复", class: "tag-fix"},
+                    other: {title: "其他", class: ""}
+                };
+                
+                // 分类渲染更新项
+                version.updates.forEach(update => {
+                    const category = document.createElement('div');
+                    category.className = 'update-category';
+                    
+                    const categoryTitle = document.createElement('div');
+                    categoryTitle.className = 'category-title';
+                    
+                    const updateType = updateTypes[update.type] || updateTypes.other;
+                    categoryTitle.innerHTML = `<span class="tag ${updateType.class}">${updateType.title}</span>`;
+                    
+                    const updateList = document.createElement('ul');
+                    updateList.className = 'update-list';
+                    
+                    update.items.forEach(item => {
+                        const listItem = document.createElement('li');
+                        listItem.className = 'update-item';
+                        listItem.textContent = item;
+                        updateList.appendChild(listItem);
+                    });
+                    
+                    category.appendChild(categoryTitle);
+                    category.appendChild(updateList);
+                    versionContent.appendChild(category);
+                });
+                
+                // 组装版本区块
+                versionSection.appendChild(versionHeader);
+                versionSection.appendChild(versionContent);
+                container.appendChild(versionSection);
+                
+                // 添加点击事件
+                versionHeader.addEventListener('click', () => {
+                    versionHeader.classList.toggle('expanded');
+                    versionContent.classList.toggle('active');
+                });
+            });
+        }
+        
+        // 设置事件监听器
+        function setupEventListeners() {
+            const modal = document.getElementById('versionModal');
+            const addBtn = document.getElementById('addVersionBtn');
+            const closeBtn = document.querySelector('.close-btn');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const versionForm = document.getElementById('versionForm');
+            const addCategoryBtn = document.getElementById('addCategoryBtn');
+            
+            // 打开添加版本模态框
+            addBtn.onclick = () => {
+                modal.style.display = 'flex';
+            };
+            
+            // 关闭模态框
+            closeBtn.onclick = () => {
+                modal.style.display = 'none';
+            };
+            
+            cancelBtn.onclick = () => {
+                modal.style.display = 'none';
+            };
+            
+            // 点击模态框外部关闭
+            window.onclick = (event) => {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            };
+            
+            // 添加分类
+            addCategoryBtn.onclick = () => {
+                addCategory();
+            };
+            
+            // 提交表单
+            versionForm.onsubmit = (e) => {
+                e.preventDefault();
+                saveVersion();
+            };
+        }
+        
+        // 添加分类
+        function addCategory() {
+            const container = document.getElementById('updateCategories');
+            
+            const categoryGroup = document.createElement('div');
+            categoryGroup.className = 'category-group';
+            
+            categoryGroup.innerHTML = `
+                <div class="category-header">
+                    <select class="category-type">
+                        <option value="feature">新功能</option>
+                        <option value="improvement">改进</option>
+                        <option value="fix">修复</option>
+                        <option value="other">其他</option>
+                    </select>
+                    <button type="button" class="remove-btn" onclick="removeCategory(this)">删除</button>
+                </div>
+                <div class="category-items">
+                    <div class="item-row">
+                        <input type="text" class="item-text" placeholder="更新内容描述">
+                        <button type="button" class="remove-btn" onclick="removeItem(this)">删除</button>
+                    </div>
+                </div>
+                <button type="button" class="add-item-btn" onclick="addItem(this)">添加项目</button>
+            `;
+            
+            container.appendChild(categoryGroup);
+        }
+        
+        // 添加项目
+        function addItem(btn) {
+            const categoryItems = btn.previousElementSibling;
+            
+            const itemRow = document.createElement('div');
+            itemRow.className = 'item-row';
+            
+            itemRow.innerHTML = `
+                <input type="text" class="item-text" placeholder="更新内容描述">
+                <button type="button" class="remove-btn" onclick="removeItem(this)">删除</button>
+            `;
+            
+            categoryItems.appendChild(itemRow);
+        }
+        
+        // 移除分类
+        function removeCategory(btn) {
+            const categoryGroup = btn.closest('.category-group');
+            categoryGroup.remove();
+        }
+        
+        // 移除项目
+        function removeItem(btn) {
+            const itemRow = btn.closest('.item-row');
+            const categoryItems = itemRow.parentElement;
+            
+            // 确保至少有一个项目
+            if (categoryItems.children.length > 1) {
+                itemRow.remove();
+            } else {
+                alert('每个分类至少需要一个更新项目');
+            }
+        }
+        
+        // 保存版本
+        function saveVersion() {
+            const versionNumber = document.getElementById('versionNumber').value;
+            const releaseDate = document.getElementById('releaseDate').value;
+            
+            // 验证版本号格式
+            if (!versionNumber.match(/^v\d+\.\d+\.\d+$/)) {
+                alert('请输入正确的版本号格式 (例如: v1.2.0)');
+                return;
+            }
+            
+            // 检查是否已存在相同版本号
+            const existingVersion = versionHistory.find(v => v.version === versionNumber);
+            if (existingVersion) {
+                alert('该版本号已存在，请输入新的版本号');
+                return;
+            }
+            
+            // 构建更新内容
+            const updates = [];
+            const categoryGroups = document.querySelectorAll('.category-group');
+            
+            categoryGroups.forEach(group => {
+                const type = group.querySelector('.category-type').value;
+                const items = [];
+                
+                group.querySelectorAll('.item-text').forEach(input => {
+                    const text = input.value.trim();
+                    if (text) {
+                        items.push(text);
+                    }
+                });
+                
+                if (items.length > 0) {
+                    updates.push({ type, items });
+                }
+            });
+            
+            // 验证是否有更新内容
+            if (updates.length === 0) {
+                alert('请添加至少一项更新内容');
+                return;
+            }
+            
+            // 创建新版本对象
+            const newVersion = {
+                version: versionNumber,
+                releaseDate,
+                updates
+            };
+            
+            // 添加到版本历史
+            versionHistory.unshift(newVersion);
+            
+            // 保存到服务器
+            saveVersionToServer(newVersion);
+            
+            // 关闭模态框并重置表单
+            document.getElementById('versionForm').reset();
+            document.getElementById('versionModal').style.display = 'none';
+            
+            // 重新渲染版本历史
+            renderVersionHistory();
+        }
+        
+        // 保存版本到服务器
+        function saveVersionToServer(version) {
+            fetch('/docs/addVersionHistory', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(version)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.code === 200) {
+                    console.log('版本保存成功');
+                } else {
+                    console.error('版本保存失败:', data.message);
+                    alert('版本保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('版本保存失败:', error);
+                // 本地操作已成功，不显示错误
+            });
+        }
+        
+        // 格式化日期显示
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            
+            const date = new Date(dateString);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            
+            return `${year}-${month}-${day}`;
+        }
+        
+        // 检查用户登录状态
+        function checkUserLoginStatus() {
+            fetch('/docs/user_status')
+                .then(response => response.json())
+                .then(data => {
+                    const addBtn = document.getElementById('addVersionBtn');
+                    if (data.authenticated) {
+                        // 已登录，显示添加按钮
+                        addBtn.style.display = 'block';
+                    } else {
+                        // 未登录，隐藏添加按钮
+                        addBtn.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    console.error('获取用户状态失败:', error);
+                    // 出错时，默认隐藏添加按钮
+                    document.getElementById('addVersionBtn').style.display = 'none';
+                });
+        }
+    </script>
+</body>
+</html> 
