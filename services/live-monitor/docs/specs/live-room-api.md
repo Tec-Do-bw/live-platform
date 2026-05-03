@@ -33,7 +33,7 @@
 { "mateUrl": "https://www.tiktok.com/@xxx/live" }
 ```
 - 响应示例
-  - 成功（示例来自 `docs/example_data/TiktokLive.json`）：
+  - 成功（示例来自 `example_data/TiktokLive.json`）：
 ```json
 {
   "code": 200,
@@ -90,7 +90,7 @@
 { "mateUrl": "https://my.shp.ee/xxxx" }
 ```
 - 响应示例
-  - 成功（示例来自 `docs/example_data/ShopeeLive.json`）：
+  - 成功（示例来自 `example_data/ShopeeLive.json`）：
 ```json
 {
   "code": 200,
@@ -139,7 +139,7 @@
 { "mateUrl": "https://s.lazada.com.xx/xxxx" }
 ```
 - 响应示例
-  - 成功（示例来自 `docs/example_data/LazadaLive.json`）：
+  - 成功（示例来自 `example_data/LazadaLive.json`）：
 ```json
 {
   "code": 200,

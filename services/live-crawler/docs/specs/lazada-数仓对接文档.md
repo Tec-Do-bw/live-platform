@@ -182,7 +182,7 @@
 }
 ```
 
-**响应**: 数据量较大，见 `productrooms_response.json`
+**响应**: 数据量较大，见 `example_data/productrooms_response.json`
 
 ---
 
@@ -236,7 +236,7 @@
 }
 ```
 
-**响应**: 数据量较大，见 `products_response.json`
+**响应**: 数据量较大，见 `example_data/products_response.json`
 
 ---
 
@@ -248,7 +248,7 @@
 
 **请求参数**: 无额外参数
 
-**响应**: 数据量较大，见 `realtime_trend_response.json`
+**响应**: 数据量较大，见 `example_data/realtime_trend_response.json`
 
 ---
 
@@ -465,7 +465,7 @@
 }
 ```
 
-**响应**: 见 `product_performance_revenue.json`（包含商品详细信息：营收、订单、访客等）
+**响应**: 见 `example_data/product_performance_revenue.json`（包含商品详细信息：营收、订单、访客等）
 
 ---
 
@@ -492,7 +492,7 @@
 }
 ```
 
-**响应**: 见 `product_performance_ipvuv.json`（包含商品详细信息：访客数、营收、转化率等）
+**响应**: 见 `example_data/product_performance_ipvuv.json`（包含商品详细信息：访客数、营收、转化率等）
 
 ---
 
@@ -607,7 +607,7 @@
 }
 ```
 
-**响应**: 见 `querylivesbystatus.json`
+**响应**: 见 `example_data/querylivesbystatus.json`
 
 ---
 

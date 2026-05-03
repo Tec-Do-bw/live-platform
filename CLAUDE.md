@@ -102,5 +102,10 @@ Windows 环境下 Git Bash 可能找不到 `gh` 命令，需要用完整路径�
 
 - **单一权威源**：每份技术文档只在一个位置维护，其他位置通过路径引用，禁止复制副本
 - **层级继承**：子项目 CLAUDE.md 不重复根 CLAUDE.md 的通用规则，仅记录子项目特有约束
-- **历史文档归档**：已完成的计划、被取代的设计 → 移入 `docs/archive/`
-- **目录约定**：`docs/superpowers/` 放 plans/specs，`{子项目}/doc/documentation/` 放对接文档，`{子项目}/doc/specs/` 放功能规格
+- **统一目录结构**：根目录与各服务的 `docs/` 一律按下列四类组织（不再使用 `doc/`、`documentation/`、`memory-bank/` 等命名）：
+  - `specs/` — 接口规范与对接文档（"是什么"）；接口响应/数据样本统一放 `specs/example_data/`
+  - `designs/` — 设计方案与技术决策（"怎么做"）
+  - `plans/` — 实施计划（含 `- [ ]` 勾选项）
+  - `archive/` — 已完成或被取代的历史文档
+- **Superpowers 例外**：根 `docs/superpowers/` 沿用 Superpowers Skill 体系生成的 plans/specs，不强制并入上述四类
+- **命名约定**：新文件优先 kebab-case 英文（如 `deployment-guide.md`）；带日期文档使用 `YYYY-MM-DD-<topic>.md` 前缀

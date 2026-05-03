@@ -29,8 +29,7 @@ adspower-server/
 │   │   └── logger.py          # 日志配置
 │   ├── config.py              # 配置管理
 │   └── main.py                # FastAPI 应用入口
-└── memory-bank/
-    └── architecture.md        # 项目架构文档（保留作为参考）
+└── docs/                       # 技术设计与对接文档
 ```
 
 ## 运行命令
