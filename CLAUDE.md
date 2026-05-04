@@ -93,7 +93,6 @@ cd services/live-crawler/monitor/frontend && npm install
 | `read-before-write.md` | 编辑 `services/*/` 下文件时 | 先读对应子项目 CLAUDE.md |
 | `update-docs-on-structure-change.md` | 新增/删除文件时 | 更新对应 CLAUDE.md 架构章节 |
 | `chinese-comments.md` | 写代码时 | 注释、docstring、commit message 用中文 |
-| `test-before-done.md` | 完成实现时 | 必须运行 pytest 验证 |
 | `single-source-of-truth.md` | 创建/编辑文档时 | 禁止复制副本，用路径引用 |
 
 其他规则：

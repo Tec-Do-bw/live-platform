@@ -68,7 +68,7 @@
 
 ### Task 1.5: 删除孤岛文档
 
-- [ ] 检查 `docs/AI-Coding执行流程手册.md` 是否有引用
+- [ ] 检查 `docs/archive/AI-Coding执行流程手册.md` 是否有引用
 - [ ] 若无引用，移动到 `docs/archive/`
 - [ ] Commit: `docs: 归档孤岛文档 AI-Coding执行流程手册.md`
 

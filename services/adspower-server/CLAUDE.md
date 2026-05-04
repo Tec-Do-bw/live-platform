@@ -29,15 +29,17 @@ adspower-server/
 │   │   └── logger.py          # 日志配置
 │   ├── config.py              # 配置管理
 │   └── main.py                # FastAPI 应用入口
-└── docs/                       # 技术设计与对接文档
+├── README.md                   # 启动方式与接口总览
+└── docs/                       # 技术设计与归档文档
+    └── archive/               # 历史方案与测试草稿
 ```
 
 ## 运行命令
 
 ```bash
 pip install -r requirements.txt
-python -m app.main                              # 启动服务（默认端口 8000）
-uvicorn app.main:app --reload --port 8000       # 开发模式（热重载）
+python -m app.main                              # 启动服务（默认端口 8080）
+uvicorn app.main:app --reload --port 8080       # 开发模式（热重载）
 ```
 
 ## 登录回调规则
@@ -50,7 +52,7 @@ uvicorn app.main:app --reload --port 8000       # 开发模式（热重载）
 | `error` | 登录失败 | 超时、店铺不匹配、监听异常等 |
 | `closed` | 主动关闭 | API关闭、WebSocket断开、应用关闭等（未完成登录流程） |
 
-详细 reason 字段说明、Lazada 双端口登录流程、WebSocket 投屏功能见 `../.claude/references/login-callback-spec.md`。
+详细 reason 字段说明、Lazada 双端口登录流程、WebSocket 投屏功能见 `../../.claude/references/login-callback-spec.md`。
 
 ## 浏览器环境管理规则
 

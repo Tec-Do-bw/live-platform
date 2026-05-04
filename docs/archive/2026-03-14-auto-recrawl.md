@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 / FastAPI / SQLite (WAL) / Vue3 + Element Plus / AdsPower API
 
-**Spec:** `docs/superpowers/specs/2026-03-14-auto-recrawl-design.md`
+**Spec:** `docs/archive/2026-03-14-auto-recrawl-design.md`
 
 ---
 
