@@ -15,6 +15,8 @@
 - 采集模式与登出恢复：`collection-mode-rules.md`
 - 登录回调规格：`login-callback-spec.md`
 - Shopee 特殊规则：`shopee-special-rules.md`
+- HTTP 重采集规格：`recrawl-http-spec.md`
+- 登出恢复流程：`logout-recovery-flow.md`
 
 ## 技术栈
 
@@ -33,7 +35,7 @@
 
 ## 命令
 
-> **环境**：Windows 11 + CMD（.bat 启动）/ Git Bash（git 操作，使用 Unix 风格路径）。pytest 必须从各服务目录运行。
+> **环境**：macOS Darwin + zsh。pytest 必须从各服务目录运行。
 
 ### 快速启动
 
@@ -84,19 +86,15 @@ cd services/live-crawler/monitor/frontend && npm install
 
 ## IMPORTANT: 工作流规则
 
+详见 `.claude/rules/` 目录（Phase 2 创建后回填）。
+
+核心规则：
 1. **写代码前**必须阅读对应子项目的 CLAUDE.md
 2. **新增/删除文件后**更新对应子项目的 CLAUDE.md 架构章节
 3. **重要技术决策**记录到对应子项目 CLAUDE.md 中
 4. **先 Plan 再编码**：复杂任务先用 Plan Mode 输出步骤，确认后再实现
 5. **必须提供验证**：实现后运行测试/lint，不要产出未验证的代码
 6. **任务追踪**：功能/Bug/待办用 `gh issue create` 创建 Issue，完成后提交时用 `fixes #编号` 自动关闭
-
-## gh CLI 路径问题
-
-Windows 环境下 Git Bash 可能找不到 `gh` 命令，需要用完整路径：
-```bash
-"/c/Program Files/GitHub CLI/gh.exe" pr create ...
-```
 
 ## 文档管理规则
 
