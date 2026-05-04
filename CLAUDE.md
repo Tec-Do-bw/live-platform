@@ -86,15 +86,20 @@ cd services/live-crawler/monitor/frontend && npm install
 
 ## IMPORTANT: 工作流规则
 
-详见 `.claude/rules/` 目录（Phase 2 创建后回填）。
+详见 `.claude/rules/` 目录：
 
-核心规则：
-1. **写代码前**必须阅读对应子项目的 CLAUDE.md
-2. **新增/删除文件后**更新对应子项目的 CLAUDE.md 架构章节
-3. **重要技术决策**记录到对应子项目 CLAUDE.md 中
-4. **先 Plan 再编码**：复杂任务先用 Plan Mode 输出步骤，确认后再实现
-5. **必须提供验证**：实现后运行测试/lint，不要产出未验证的代码
-6. **任务追踪**：功能/Bug/待办用 `gh issue create` 创建 Issue，完成后提交时用 `fixes #编号` 自动关闭
+| 规则文件 | 触发条件 | 核心要求 |
+|----------|----------|----------|
+| `read-before-write.md` | 编辑 `services/*/` 下文件时 | 先读对应子项目 CLAUDE.md |
+| `update-docs-on-structure-change.md` | 新增/删除文件时 | 更新对应 CLAUDE.md 架构章节 |
+| `chinese-comments.md` | 写代码时 | 注释、docstring、commit message 用中文 |
+| `test-before-done.md` | 完成实现时 | 必须运行 pytest 验证 |
+| `single-source-of-truth.md` | 创建/编辑文档时 | 禁止复制副本，用路径引用 |
+
+其他规则：
+- **先 Plan 再编码**：复杂任务先用 Plan Mode 输出步骤，确认后再实现
+- **重要技术决策**：记录到对应子项目 CLAUDE.md 中
+- **任务追踪**：功能/Bug/待办用 `gh issue create` 创建 Issue，完成后提交时用 `fixes #编号` 自动关闭
 
 ## 文档管理规则
 
