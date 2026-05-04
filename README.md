@@ -49,9 +49,9 @@ live-platform/
 
 ## 快速开始
 
-各模块独立运行，详见各自 README：
+各模块独立运行，详见各自子项目文档：
 
-- [直播间监控](services/live-monitor/README.md)
-- [直播流录制](services/live-stream/) 
+- [直播间监控](services/live-monitor/CLAUDE.md)
+- [直播流录制](services/live-stream/CLAUDE.md)
 - [浏览器管理](services/adspower-server/README.md)
 - [数据采集](services/live-crawler/README.md)

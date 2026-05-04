@@ -91,7 +91,7 @@ cd services/live-crawler/monitor/frontend && npm install
 | 规则文件 | 触发条件 | 核心要求 |
 |----------|----------|----------|
 | `read-before-write.md` | 编辑 `services/*/` 下文件时 | 先读对应子项目 CLAUDE.md |
-| `update-docs-on-structure-change.md` | 新增/删除文件时 | 更新对应 CLAUDE.md 架构章节 |
+| `update-docs-on-structure-change.md` | 新增/删除文件时 | 更新对应子项目 README.md 目录树（不动 CLAUDE.md） |
 | `chinese-comments.md` | 写代码时 | 注释、docstring、commit message 用中文 |
 | `single-source-of-truth.md` | 创建/编辑文档时 | 禁止复制副本，用路径引用 |
 
