@@ -48,7 +48,7 @@ Shopee API 请求中的 `endDate` 参数必须动态计算为对应国家时区�
 
 通过 `run_js_fetch()` 在页面加载后直接调用 API，不依赖网络拦截。
 
-接口规范详见 `live_dp/doc/documentation/shopee 数仓对接文档.md`。
+接口规范详见 `services/live-crawler/docs/specs/shopee-数仓对接文档.md`。
 
 ## 规则五：补采自动跳过
 

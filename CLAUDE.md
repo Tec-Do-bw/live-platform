@@ -15,6 +15,8 @@
 - 采集模式与登出恢复：`collection-mode-rules.md`
 - 登录回调规格：`login-callback-spec.md`
 - Shopee 特殊规则：`shopee-special-rules.md`
+- HTTP 重采集规格：`recrawl-http-spec.md`
+- 登出恢复流程：`logout-recovery-flow.md`
 
 ## 技术栈
 
@@ -33,7 +35,7 @@
 
 ## 命令
 
-> **环境**：Windows 11 + CMD（.bat 启动）/ Git Bash（git 操作，使用 Unix 风格路径）。pytest 必须从各服务目录运行。
+> **环境**：macOS Darwin + zsh。pytest 必须从各服务目录运行。
 
 ### 快速启动
 
@@ -84,23 +86,28 @@ cd services/live-crawler/monitor/frontend && npm install
 
 ## IMPORTANT: 工作流规则
 
-1. **写代码前**必须阅读对应子项目的 CLAUDE.md
-2. **新增/删除文件后**更新对应子项目的 CLAUDE.md 架构章节
-3. **重要技术决策**记录到对应子项目 CLAUDE.md 中
-4. **先 Plan 再编码**：复杂任务先用 Plan Mode 输出步骤，确认后再实现
-5. **必须提供验证**：实现后运行测试/lint，不要产出未验证的代码
-6. **任务追踪**：功能/Bug/待办用 `gh issue create` 创建 Issue，完成后提交时用 `fixes #编号` 自动关闭
+详见 `.claude/rules/` 目录：
 
-## gh CLI 路径问题
+| 规则文件 | 触发条件 | 核心要求 |
+|----------|----------|----------|
+| `read-before-write.md` | 编辑 `services/*/` 下文件时 | 先读对应子项目 CLAUDE.md |
+| `update-docs-on-structure-change.md` | 新增/删除文件时 | 更新对应子项目 README.md 目录树（不动 CLAUDE.md） |
+| `chinese-comments.md` | 写代码时 | 注释、docstring、commit message 用中文 |
+| `single-source-of-truth.md` | 创建/编辑文档时 | 禁止复制副本，用路径引用 |
 
-Windows 环境下 Git Bash 可能找不到 `gh` 命令，需要用完整路径：
-```bash
-"/c/Program Files/GitHub CLI/gh.exe" pr create ...
-```
+其他规则：
+- **先 Plan 再编码**：复杂任务先用 Plan Mode 输出步骤，确认后再实现
+- **重要技术决策**：记录到对应子项目 CLAUDE.md 中
+- **任务追踪**：功能/Bug/待办用 `gh issue create` 创建 Issue，完成后提交时用 `fixes #编号` 自动关闭
 
 ## 文档管理规则
 
 - **单一权威源**：每份技术文档只在一个位置维护，其他位置通过路径引用，禁止复制副本
 - **层级继承**：子项目 CLAUDE.md 不重复根 CLAUDE.md 的通用规则，仅记录子项目特有约束
-- **历史文档归档**：已完成的计划、被取代的设计 → 移入 `docs/archive/`
-- **目录约定**：`docs/superpowers/` 放 plans/specs，`{子项目}/doc/documentation/` 放对接文档，`{子项目}/doc/specs/` 放功能规格
+- **统一目录结构**：根目录与各服务的 `docs/` 一律按下列四类组织（不再使用 `doc/`、`documentation/`、`memory-bank/` 等命名）：
+  - `specs/` — 接口规范与对接文档（"是什么"）；接口响应/数据样本统一放 `specs/example_data/`
+  - `designs/` — 设计方案与技术决策（"怎么做"）
+  - `plans/` — 实施计划（含 `- [ ]` 勾选项）
+  - `archive/` — 已完成或被取代的历史文档
+- **Superpowers 例外**：根 `docs/superpowers/` 沿用 Superpowers Skill 体系生成的 plans/specs，不强制并入上述四类
+- **命名约定**：新文件优先 kebab-case 英文（如 `deployment-guide.md`）；带日期文档使用 `YYYY-MM-DD-<topic>.md` 前缀
