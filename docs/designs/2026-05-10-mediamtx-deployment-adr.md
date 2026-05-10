@@ -11,16 +11,24 @@
 
 **最终决策：Phase 1 采用 Docker Compose 部署，配置 `network_mode: host` + bind mount。**
 
-**核心理由（Top 3）：**
-1. **I/O 担忧不成立**：host 网络 + bind mount 性能损耗 < 3%，20 MB/s 写入仅占容量 1.1%，远低于瓶颈
-2. **官方与社区共识**：MediaMTX 官方明确推荐 Docker 用于生产，社区 2800 路并发案例验证，GitHub issues 无 Docker I/O 瓶颈抱怨
-3. **运维效率提升 4 倍**：灾难恢复从 2 小时降至 30 分钟，环境一致性消除漂移风险，横向扩展路径清晰
+**核心决策理由（不是性能，是可复现性）：**
+
+选择 Docker 的核心理由**不是性能**（host 网络 + bind mount 下 Docker 与裸机性能打平，< 3% 差异），而是用"声明式工件"把部署从"人肉操作序列"升级为"可复现的工程产物"。
+
+**5 项可复现性价值：**
+1. **运行时可复现**：image digest 锁定 MediaMTX + FFmpeg 版本，避免 `wget latest` 漂移
+2. **部署可复现**：docker-compose.yml 自包含所有配置（网络、卷、限额、日志），纳入 git 版本控制
+3. **验证可复现**：dev/staging/prod 使用同一镜像 digest，消除环境漂移
+4. **入门可复现**：新成员 `docker compose up` 即可本地调试，无需手动安装 MediaMTX + FFmpeg
+5. **故障域可隔离**：cgroup v2 独立 memory.high，Python OOM 不会误杀 MediaMTX（对应 Phase 1 SLO "断流重连成功率 >95%"）
 
 **推翻原决策的关键证据：**
 - 性能分析师量化：Docker host 网络延迟 < 10 μs（与裸机等价），bind mount 磁盘吞吐 1.8 GB/s vs 裸机 1.85 GB/s（损耗 < 3%）
-- Scout 调研：官方文档明文 "Docker is recommended for production environments"，社区高 I/O 场景主动选择容器化
+- Scout 调研：官方文档明文 "Docker is recommended for production environments"，社区高 I/O 场景主动选择容器化，GitHub issues 无 Docker I/O 瓶颈抱怨
 - 架构师评估：Docker 在可维护性、扩展性、环境一致性、运维成本四维度加权评分 8.3 vs Native 6.4
 - 魔鬼代言人挑战：原生部署需 9 步手动操作，Docker Compose 仅 10 行 YAML，"简单性"是错觉
+
+**8 维度价值评估：5 显著 + 1 Docker 胜 + 2 低，零维度裸机胜**
 
 ---
 
