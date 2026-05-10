@@ -435,7 +435,13 @@ class MediaMTXClient:
 
 ## 六、MediaMTX 部署方案
 
-### 6.1 推荐方案：systemd 服务 + 裸机二进制
+> **⚠️ 本章已被 `docs/designs/2026-05-10-mediamtx-deployment-adr.md` 覆盖。**
+>
+> 2026-05-10 经基础设施架构师、性能分析师、Scout、反方论证四方独立评估，部署方式由"Native Linux + systemd"改为 **Docker Compose + `network_mode: host` + bind mount**。核心理由：性能开销 < 3% 可忽略、灾难恢复速度提升 4 倍、环境一致性强、官方推荐。
+>
+> 以下 6.1 / 6.3 保留为历史记录，**不代表当前决策**。最新部署方案、Compose 声明、镜像治理、持久化策略、可观测性与灾难恢复计划请以 ADR 为准。实施任务同步更新于 `docs/plans/2026-05-07-live-platform-phase1-implementation.md` Phase 0.1。
+
+### 6.1 历史方案：systemd 服务 + 裸机二进制（已废弃）
 
 **选型理由：**
 
@@ -448,7 +454,7 @@ class MediaMTXClient:
 | 升级便捷性 | 内置 `--upgrade` 一键升级 |
 | 资源占用 | 预估 2-4 核 CPU + 2-4 GB 内存（80 路） |
 
-### 6.2 部署架构图
+### 6.2 历史部署架构图（已废弃）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -473,7 +479,7 @@ class MediaMTXClient:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 6.3 systemd 服务配置
+### 6.3 历史 systemd 服务配置（已废弃）
 
 ```ini
 # /etc/systemd/system/mediamtx.service
@@ -499,7 +505,7 @@ Nice=-10
 WantedBy=multi-user.target
 ```
 
-### 6.4 资源占用预估
+### 6.4 历史资源占用预估（已废弃）
 
 | 资源 | 预估值（80 路流拷贝） |
 |------|---------------------|

@@ -7,6 +7,11 @@
 ```text
 services/live-platform/
 ├── main.py                         # FastAPI 与调度器入口
+├── Dockerfile                      # live-platform 镜像构建（含 FFmpeg）
+├── docker-compose.yml              # MediaMTX + live-platform 编排（host 网络）
+├── .dockerignore
+├── config/
+│   └── mediamtx.yml                # MediaMTX 配置（bind mount 进容器）
 ├── api/
 │   ├── internal.py                 # MediaMTX 内部回调接口
 │   └── routes.py                   # 对外兼容接口
@@ -34,6 +39,22 @@ services/live-platform/
 ```
 
 ## 启动
+
+### 推荐：Docker Compose（生产与联调）
+
+依据 ADR `docs/designs/2026-05-10-mediamtx-deployment-adr.md`，Phase 1 统一使用 Docker Compose + `network_mode: host` + bind mount：
+
+```bash
+# 宿主机首次准备目录
+sudo mkdir -p /data/recordings /data/live-platform/db /data/live-platform/logs
+
+cd services/live-platform
+cp .env.example .env   # 按需填写 OSS/Kafka/token 等
+docker compose up -d
+docker compose logs -f live-platform
+```
+
+### 本地直跑（仅限开发调试）
 
 ```bash
 cd services/live-platform

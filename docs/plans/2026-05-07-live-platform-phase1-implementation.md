@@ -42,42 +42,47 @@
 
 ## Phase 0：准备工作（1 天）
 
-### 0.1 部署 MediaMTX
+> **部署方式已于 2026-05-10 由 Native systemd 调整为 Docker Compose + `network_mode: host` + bind mount。** 详见 `docs/designs/2026-05-10-mediamtx-deployment-adr.md`。
 
-- [ ] **安装 MediaMTX**
+### 0.1 部署 MediaMTX（Docker Compose）
+
+- [ ] **准备宿主机目录与文件系统**
   ```bash
-  cd /opt
-  wget https://github.com/bluenviron/mediamtx/releases/latest/download/mediamtx_v1.x.x_linux_amd64.tar.gz
-  tar -xzf mediamtx_v1.x.x_linux_amd64.tar.gz
-  sudo mv mediamtx /usr/local/bin/
-  sudo mv mediamtx.yml /etc/mediamtx.yml
+  sudo mkdir -p /data/recordings /data/live-platform/db
+  # 推荐 XFS + noatime，提升大文件顺序写性能
+  sudo chown -R 1000:1000 /data/recordings /data/live-platform
   ```
 
-- [ ] **创建专用用户**
+- [ ] **准备 `docker-compose.yml`（位于 `services/live-platform/`）**
+  - [ ] MediaMTX 与 live-platform 均使用 `network_mode: host`，消除 NAT/bridge 开销
+  - [ ] `image: bluenviron/mediamtx:1.9.3-ffmpeg`（精确版本，禁用 `:latest`）
+  - [ ] bind mount `/data/recordings:/data/recordings`、`./config/mediamtx.yml:/mediamtx.yml:ro`
+  - [ ] `ulimits.nofile: 65536`、`restart: unless-stopped`、`logging.max-size: 50m`
+
+- [ ] **准备 `config/mediamtx.yml`**
+  - [ ] `api: yes, apiAddress: 127.0.0.1:9997`
+  - [ ] `metrics: yes, metricsAddress: 127.0.0.1:9998`
+  - [ ] `recordPath: /data/recordings/%path/%Y-%m-%d_%H-%M-%S-%f`
+  - [ ] `recordSegmentDuration: 10s`（与健康检查超时 30s 对齐）
+  - [ ] `writeQueueSize: 2048`（80 路并发防 write queue full）
+  - [ ] `readTimeout: 30s` / `writeTimeout: 30s`
+  - [ ] `runOnRecordSegmentComplete` 回调指向 `http://localhost:8080/internal/segment-ready`
+
+- [ ] **启动服务**
   ```bash
-  sudo useradd -r -s /bin/false mediamtx
-  sudo mkdir -p /data/recordings
-  sudo chown -R mediamtx:mediamtx /data/recordings
+  cd services/live-platform
+  docker compose up -d mediamtx
   ```
-
-- [ ] **配置 systemd 服务**
-  - [ ] 创建 `/etc/systemd/system/mediamtx.service`
-  - [ ] 配置资源限制（LimitNOFILE=65536）
-  - [ ] 启动服务：`sudo systemctl start mediamtx`
-  - [ ] 设置开机自启：`sudo systemctl enable mediamtx`
-
-- [ ] **配置 MediaMTX**
-  - [ ] 编辑 `/etc/mediamtx.yml`
-  - [ ] 启用 API：`api: yes, apiAddress: 127.0.0.1:9997`
-  - [ ] 启用 metrics：`metrics: yes, metricsAddress: 127.0.0.1:9998`
-  - [ ] 配置录制路径：`recordPath: /data/recordings/%path/%Y-%m-%d_%H-%M-%S-%f`
-  - [ ] 配置切片时长：`recordSegmentDuration: 10s`（与健康检查超时 30s 对齐）
-  - [ ] 配置切片回调：`runOnRecordSegmentComplete`
 
 - [ ] **验证 MediaMTX**
-  - [ ] 检查服务状态：`systemctl status mediamtx`
-  - [ ] 测试 API：`curl http://localhost:9997/v3/paths/list`
-  - [ ] 测试 metrics：`curl http://localhost:9998/metrics`
+  - [ ] 容器状态：`docker compose ps`（`mediamtx` 应为 `running (healthy)`）
+  - [ ] 日志：`docker compose logs --tail=100 mediamtx`
+  - [ ] API：`curl http://localhost:9997/v3/paths/list`
+  - [ ] Metrics：`curl http://localhost:9998/metrics`
+
+- [ ] **开机自启**
+  - [ ] 宿主机启用 Docker 服务：`sudo systemctl enable --now docker`
+  - [ ] `restart: unless-stopped` 已配置，宿主机重启后容器自动拉起
 
 ### 0.2 准备开发环境
 
@@ -89,6 +94,13 @@
 - [ ] **初始化依赖**
   - [ ] 创建 `requirements.txt`
   - [ ] 安装依赖：`pip install -r requirements.txt`
+
+- [ ] **编写 Docker 构建与编排骨架**
+  - [ ] `services/live-platform/Dockerfile`（基于 `python:3.12-slim`，分层缓存：先 `COPY requirements.txt` 再 `pip install`，最后 `COPY` 源码）
+  - [ ] `services/live-platform/.dockerignore`（排除 `.venv/`、`__pycache__/`、`logs/`、`data/`、`tests/` 等）
+  - [ ] `services/live-platform/docker-compose.yml`（MediaMTX + live-platform 两服务，均 `network_mode: host`）
+  - [ ] `services/live-platform/config/mediamtx.yml`（MediaMTX 配置）
+  - [ ] 本地自检：`docker compose config` 通过 + `docker compose build` 构建成功
 
 ---
 
@@ -393,6 +405,12 @@
   - [ ] 无内存泄漏
   - [ ] 无文件描述符耗尽
   - [ ] 断流重连成功率 > 95%
+
+- [ ] **Native vs Docker 性能对比**
+  - [ ] 基线：Native 部署下 80 路并发 2 小时的 CPU / 内存 / 磁盘 I/O / 网络带宽 / 切片回调延迟 / 上传成功率
+  - [ ] 对比：Docker Compose（host 网络 + bind mount）部署下相同负载相同时长的同一组指标
+  - [ ] 验收条件：Docker 相对 Native 各项指标劣化 < 5%，否则需定位根因后再推进生产部署
+  - [ ] 结果回写到 `docs/designs/2026-05-10-mediamtx-deployment-adr.md` 的"下次复审"章节
 
 ---
 
