@@ -16,7 +16,7 @@
 
 仍需在真实环境执行：
 
-- MediaMTX 安装、systemd、录制 hook 配置与 API/metrics 联通验证。
+- MediaMTX Docker Compose 部署、录制 hook 配置与 API/metrics 联通验证。
 - 使用真实 OSS、Kafka、平台直播 URL 执行端到端录制验证。
 - 80 路并发 24 小时压力测试、生产部署、3 天观察与旧服务下线。
 
@@ -416,59 +416,87 @@
 
 ## Phase 10：生产部署（1 天）
 
-### 10.1 部署 live-platform
+> 部署方式：Docker Compose + `network_mode: host` + bind mount。详见 `docs/designs/2026-05-10-mediamtx-deployment-adr.md`。
 
-- [ ] **打包代码**
+### 10.1 准备生产服务器
+
+- [ ] **安装 Docker 与 Docker Compose**
   ```bash
-  cd services/live-platform
-  tar -czf live-platform.tar.gz .
+  # 安装 Docker（如已安装则跳过）
+  curl -fsSL https://get.docker.com | sh
+  sudo systemctl enable --now docker
   ```
 
-- [ ] **上传到生产服务器**
+- [ ] **准备宿主机目录与文件系统**
   ```bash
-  scp live-platform.tar.gz user@server:/opt/
+  sudo mkdir -p /data/recordings /data/live-platform/db /data/live-platform/logs
+  sudo chown -R 1000:1000 /data/recordings /data/live-platform
+  # 推荐 XFS + noatime（如有独立数据盘）
   ```
 
-- [ ] **解压并安装依赖**
+- [ ] **拉取代码到生产服务器**
   ```bash
-  cd /opt
-  tar -xzf live-platform.tar.gz
-  pip install -r requirements.txt
+  git clone <repo-url> /opt/live-platform
+  cd /opt/live-platform/services/live-platform
   ```
 
-- [ ] **配置 systemd 服务**
-  - [ ] 创建 `/etc/systemd/system/live-platform.service`
-  - [ ] 启动服务：`sudo systemctl start live-platform`
-  - [ ] 设置开机自启：`sudo systemctl enable live-platform`
-
-### 10.2 验证部署
-
-- [ ] **检查服务状态**
+- [ ] **准备环境变量**
   ```bash
-  systemctl status live-platform
-  systemctl status mediamtx
+  cp .env.example .env
+  # 编辑 .env，填入 OSS、Kafka、数据库等真实配置
+  vim .env
   ```
+
+### 10.2 构建与启动
+
+- [ ] **构建 live-platform 镜像**
+  ```bash
+  cd /opt/live-platform/services/live-platform
+  docker compose build live-platform
+  ```
+
+- [ ] **启动全部服务**
+  ```bash
+  docker compose up -d
+  ```
+
+- [ ] **确认容器状态**
+  ```bash
+  docker compose ps
+  # mediamtx 和 live-platform 均应为 running (healthy)
+  ```
+
+### 10.3 验证部署
 
 - [ ] **检查日志**
   ```bash
-  journalctl -u live-platform -f
-  journalctl -u mediamtx -f
+  docker compose logs --tail=100 mediamtx
+  docker compose logs --tail=100 live-platform
   ```
 
 - [ ] **测试核心接口**
   ```bash
   curl http://localhost:8080/health
   curl http://localhost:9997/v3/paths/list
+  curl http://localhost:9998/metrics
   ```
 
-### 10.3 观察运行
+### 10.4 灰度放量
+
+- [ ] **灰度切流**
+  - [ ] 10 路：观察 2 小时，确认切片回调、OSS 上传、Kafka 推送正常
+  - [ ] 40 路：观察 4 小时，确认资源占用线性增长无异常
+  - [ ] 80 路：观察 24 小时，确认全量稳定
+
+### 10.5 观察运行
 
 - [ ] **观察 3 天**
-  - [ ] 每天检查日志
+  - [ ] 每天检查日志：`docker compose logs --since 24h`
   - [ ] 监控断流率
-  - [ ] 监控资源占用
+  - [ ] 监控资源占用：`docker stats`
   - [ ] 验证开播检测延迟 < 60 秒
   - [ ] 验证断流重连成功率 > 95%
+  - [ ] 检查磁盘空间：`df -h /data/recordings`
 
 ---
 
@@ -551,10 +579,11 @@
 
 1. **立即回滚**
    ```bash
-   # 停止新服务
-   systemctl stop live-platform
-   
-   # 恢复旧代码
+   # 停止 Docker 容器
+   cd /opt/live-platform/services/live-platform
+   docker compose down
+
+   # 恢复旧服务
    git checkout main
    cd services/live-monitor && python main.py &
    cd services/live-stream && bash start.sh &
@@ -564,6 +593,12 @@
    - 检查旧服务是否正常运行
    - 验证核心功能
    - 通知团队
+
+3. **根因分析**
+   ```bash
+   # 收集 Docker 日志用于排查
+   docker compose logs --since 1h > /tmp/live-platform-crash.log 2>&1
+   ```
 
 ---
 

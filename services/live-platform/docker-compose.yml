@@ -45,7 +45,7 @@ services:
       MEDIAMTX_RTMP_BASE_URL: "rtmp://127.0.0.1:1935/live"
       LIVE_PLATFORM_SQLITE_PATH: "/data/live-platform/db/live-platform.sqlite3"
     volumes:
-      - /data/recordings:/data/recordings:ro
+      - /data/recordings:/data/recordings
       - /data/live-platform/db:/data/live-platform/db
       - /data/live-platform/logs:/app/logs
     ulimits:
