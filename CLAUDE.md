@@ -99,6 +99,7 @@ cd services/live-crawler/monitor/frontend && npm install
 - **先 Plan 再编码**：复杂任务先用 Plan Mode 输出步骤，确认后再实现
 - **重要技术决策**：记录到对应子项目 CLAUDE.md 中
 - **任务追踪**：功能/Bug/待办用 `gh issue create` 创建 Issue，完成后提交时用 `fixes #编号` 自动关闭
+- **上下文加载策略**：详见 `.claude/docs/context-loading-guide.md`
 
 ## 文档管理规则
 
