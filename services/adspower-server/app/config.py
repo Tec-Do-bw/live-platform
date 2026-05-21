@@ -117,8 +117,8 @@ class Settings:
         "DYNAMIC_PROXY_API_URL",
         "https://www.kkoip.com/pickdynamicips"
     )
-    DYNAMIC_PROXY_SIGN: str = os.getenv("DYNAMIC_PROXY_SIGN", "043aeed6e29af919f54ba2fbead2b32e")
-    DYNAMIC_PROXY_ACCESS_ID: str = os.getenv("DYNAMIC_PROXY_ACCESS_ID", "1687631")
+    DYNAMIC_PROXY_SIGN: str = os.getenv("DYNAMIC_PROXY_SIGN", "d14379c4d98fc1247618ef21ce6394cb")
+    DYNAMIC_PROXY_ACCESS_ID: str = os.getenv("DYNAMIC_PROXY_ACCESS_ID", "7758105")
     # 环境清理配置
     PROFILE_CLEANUP_THRESHOLD: int = int(os.getenv("PROFILE_CLEANUP_THRESHOLD", "60"))  # 触发清理的环境数量阈值
     PROFILE_CLEANUP_COUNT: int = int(os.getenv("PROFILE_CLEANUP_COUNT", "10"))  # 每次清理的环境数量

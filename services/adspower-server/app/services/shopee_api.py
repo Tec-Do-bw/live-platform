@@ -54,10 +54,15 @@ class ShopeeApiService:
             response = await self.client.get(url, params=params)
             response.raise_for_status()
 
-            data = response.json()
-            cb_option = data.get("data", {}).get("cb_option")
+            data = response.json().get("data", {})
+            cb_option = data.get("cb_option")
+            is_verified = data.get("is_shopee_verified", False)
 
             if cb_option is not None:
+                # 跨境优选/Choice 走本土站（特殊隔离），将 cb_option 改写为 0
+                if is_verified:
+                    logger.info(f"店铺 {shop_id} 是跨境优选/Choice，改写 cb_option=1 -> 0（走本土站）")
+                    return 0
                 logger.info(f"店铺 {shop_id} cb_option={cb_option} ({'跨境' if cb_option == 1 else '本土'})")
                 return int(cb_option)
             else:
@@ -78,3 +83,12 @@ class ShopeeApiService:
 
 # 全局单例
 shopee_api_service = ShopeeApiService()
+
+
+if __name__ == '__main__':
+    async def main():
+        cb_option = await shopee_api_service.get_shop_cb_option("my", "188678203")
+        print(cb_option)
+
+    import asyncio
+    asyncio.run(main())
