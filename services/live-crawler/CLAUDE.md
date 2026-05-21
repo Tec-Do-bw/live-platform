@@ -63,7 +63,7 @@
 
 - 并发采集（`--workers N`）仅在 `--mode full` 时生效
 - `crawl_single_account` **必须**定义在模块顶层（Windows spawn 要求）
-- **不要**在 `crawl_single_account` 内操作 `CollectionTracker`
+- **不要**在 `crawl_single_account` 内操作 `CollectionTracker`——子进程各自有独立内存副本，标记不会回传主进程，会导致追踪数据丢失。并发模式下应在主进程 `as_completed` 循环中统一标记，且仅在全量采集成功后标记（失败不标记以便下次重试）
 
 ### 运行时数据不入 git
 
