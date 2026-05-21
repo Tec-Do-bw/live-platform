@@ -106,6 +106,6 @@ if __name__ == '__main__':
     logger.info(f'支持的平台: {LiveCrawler.get_supported_platforms()}')
     
     # 使用工厂类创建TikTok爬虫
-    crawler = LiveCrawler(platform='shopee', browser_id='k16y6938',full_collection=True, group_name='马来西亚')
+    crawler = LiveCrawler(platform='shopee', browser_id='k1a60tog',full_collection=False, group_name='马来西亚')
     result = crawler.start_crawl()
     logger.info(f'采集结果: {result}')

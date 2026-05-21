@@ -74,7 +74,7 @@ def send_http_callback(collection_id: str, login_status: str, platform: str,
 
     try:
         logger.info(f'发送登录回调: status={login_status}, platform={platform}, '
-                    f'collection_id={collection_id}')
+                    f'collection_id={collection_id}, url={callback_url}')
         response = requests.post(callback_url, headers=headers, json=payload,
                                  timeout=timeout)
 

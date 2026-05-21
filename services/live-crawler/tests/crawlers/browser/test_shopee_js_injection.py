@@ -111,6 +111,12 @@ def _load_shopee_module():
     fake_request_module.RequestSession = DummyRequestSession
     _swap_module("utils.request", fake_request_module)
 
+    fake_adspower_module = types.ModuleType("utils.adspower_client")
+    fake_adspower_module.get_adspower_client = MagicMock()
+    fake_adspower_module.AdsPowerRateLimitError = type("AdsPowerRateLimitError", (Exception,), {})
+    fake_adspower_module.AdsPowerApiError = type("AdsPowerApiError", (Exception,), {})
+    _swap_module("utils.adspower_client", fake_adspower_module)
+
     fake_config_module = types.ModuleType("core.config")
 
     class DummySettings:
@@ -175,12 +181,26 @@ def _make_crawler(full_collection: bool = False):
 def test_check_login_status_reads_required_cookies():
     """登录检测应识别 Shopee 关键 cookies。"""
     crawler = _make_crawler()
+    crawler.is_cross_border = False
     crawler.tab.cookies.return_value = [
         {"name": "SPC_SC_SESSION", "value": "session-token"},
         {"name": "SC_SSO", "value": "sso-token"},
     ]
+    crawler._verify_login_by_api = MagicMock(return_value=(True, {"id": "u", "shopid": "s"}))
 
-    assert crawler._check_login_status() is True
+    assert crawler._check_login_status() == "logged_in"
+
+
+def test_check_login_status_passes_without_sc_sso():
+    """缺少 SC_SSO 但 API 验证通过时，应继续采集而非视为无权限。"""
+    crawler = _make_crawler()
+    crawler.is_cross_border = False
+    crawler.tab.cookies.return_value = [
+        {"name": "SPC_SC_SESSION", "value": "session-token"},
+    ]
+    crawler._verify_login_by_api = MagicMock(return_value=(True, {"id": "u", "shopid": "s"}))
+
+    assert crawler._check_login_status() == "logged_in"
 
 
 def test_fetch_login_info_via_js_captures_media_ids():

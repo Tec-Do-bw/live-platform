@@ -188,7 +188,7 @@ def extract_target_date(request_body: dict) -> str | None:
     """从 live/stats 请求体中提取目标日期
 
     payload 结构：request.params[0].time_selector.start_timestamp
-    target_date = start + 1天（因为 start 是 D-1 的 UTC 00:00）
+    自定义时间模式下 start 即目标日的 UTC 00:00
     """
     try:
         params = request_body.get('request', {}).get('params', [])
@@ -199,7 +199,6 @@ def extract_target_date(request_body: dict) -> str | None:
         if not start_ts:
             return None
         start_dt = datetime.fromtimestamp(start_ts, tz=timezone.utc)
-        target_dt = start_dt + timedelta(days=1)
-        return target_dt.strftime('%Y-%m-%d')
+        return start_dt.strftime('%Y-%m-%d')
     except Exception:
         return None

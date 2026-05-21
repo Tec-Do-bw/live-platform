@@ -57,7 +57,7 @@ def send_login_callback(
 
                 logger.info(
                     f'发送登录回调: status={login_status}, '
-                    f'platform={platform}, browser_id={browser_id}'
+                    f'platform={platform}, browser_id={browser_id}, url={callback_url}'
                 )
                 response = requests.post(
                     callback_url, headers=headers, json=payload, timeout=timeout

@@ -9,7 +9,7 @@ import json
 import random
 import time
 from typing import Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as tz
 
 from utils.logger import logger
 from crawlers.browser.tiktok import TikTokLiveCrawler
@@ -188,12 +188,30 @@ class MxTikTokLiveCrawler(TikTokLiveCrawler):
             if not stats:
                 return
 
-            # 增量模式：计算昨天的时间戳用于过滤
+            # 增量模式：基于账号时区计算前三天起始时间戳用于过滤
             if not self.full_collection:
-                now = datetime.now()
-                yesterday = now - timedelta(days=1)
-                yesterday_start = datetime(yesterday.year, yesterday.month, yesterday.day, 0, 0, 0)
-                yesterday_timestamp = int(yesterday_start.timestamp())
+                tz_offset_seconds = 0
+                try:
+                    params = request.get("request", {}).get("params", [])
+                    if params:
+                        tz_offset_seconds = params[0].get("time_selector", {}).get("timezone_offset", 0)
+                        if isinstance(tz_offset_seconds, str):
+                            tz_offset_seconds = int(tz_offset_seconds)
+                except (ValueError, TypeError, IndexError):
+                    pass
+
+                account_tz = tz(timedelta(seconds=tz_offset_seconds))
+                now = datetime.now(account_tz)
+                three_days_ago = now - timedelta(days=3)
+                three_days_ago_start = datetime(
+                    three_days_ago.year, three_days_ago.month, three_days_ago.day,
+                    0, 0, 0, tzinfo=account_tz
+                )
+                three_days_ago_timestamp = int(three_days_ago_start.timestamp())
+                logger.info(
+                    f'增量过滤：账号时区 UTC{tz_offset_seconds//3600:+d}，当地日期 {now.strftime("%Y-%m-%d")}，'
+                    f'过滤 {three_days_ago.strftime("%Y-%m-%d")} 00:00:00 之前的直播间'
+                )
 
             # 筛选直播间
             room_id_list = []
@@ -205,15 +223,14 @@ class MxTikTokLiveCrawler(TikTokLiveCrawler):
                     continue
 
                 if not self.full_collection:
-                    live_start_timestamp = stat.get('live_start_timestamp', 0)
-                    if live_start_timestamp < yesterday_timestamp:
+                    if live_end_timestamp < three_days_ago_timestamp:
                         continue
 
                 room_id_list.append(room_id)
                 self.processed_room_ids.add(room_id)
 
             if room_id_list:
-                mode_desc = '全部' if self.full_collection else '昨天的'
+                mode_desc = '全部' if self.full_collection else '近三天的'
                 logger.info(f'找到 {len(room_id_list)} 个{mode_desc}直播间，将依次点击进入详情页')
 
                 # 依次点击进入详情页采集

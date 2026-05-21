@@ -241,7 +241,7 @@ class TestExtractTargetDate:
             }
         }
         result = extract_target_date(body)
-        assert result == '2024-03-13'  # start + 1 天
+        assert result == '2024-03-12'  # 自定义时间模式下 start 即目标日
 
     def test_extract_returns_none_for_empty_body(self):
         """空请求体应返回 None"""

@@ -21,6 +21,20 @@ from crawlers.browser.base import BaseLiveCrawler
 from utils.request import RequestSession
 from core.config import Settings
 from monitor import get_monitor
+from utils.adspower_client import get_adspower_client, AdsPowerRateLimitError, AdsPowerApiError
+
+# 国家代码 → 货币符号映射（与 scripts/list_shopee_accounts.py 保持一致）
+CURRENCY_MAPPING = {
+    "id": {"currency": "IDR", "symbol": "Rp"},
+    "my": {"currency": "MYR", "symbol": "RM"},
+    "th": {"currency": "THB", "symbol": "฿"},
+    "vn": {"currency": "VND", "symbol": "₫"},
+    "ph": {"currency": "PHP", "symbol": "₱"},
+    "sg": {"currency": "SGD", "symbol": "$"},
+    "tw": {"currency": "TWD", "symbol": "NT$"},
+    "br": {"currency": "BRL", "symbol": "R$"},
+    "mx": {"currency": "MXN", "symbol": "$"},
+}
 
 class ShopeeLiveCrawler(BaseLiveCrawler):
     """Shopee平台直播数据采集爬虫"""
@@ -60,6 +74,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         # Shopee登录信息携带的媒体ID
         self.media_user_id = None
         self.media_shop_id = None
+        self.username =  None
         # 缓存待发送的API数据，直到拿到媒体ID
         self.pending_messages = []
 
@@ -184,17 +199,11 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             logger.warning('检测到登出，尝试自动重新登录...')
             relogin_status = self._auto_relogin()
             if relogin_status != "logged_in":
-                reason = "cookies 缺失且自动登录失败" if relogin_status == "logged_out" else "自动登录后仍无卖家权限"
-                self.send_login_callback("logout", reason=reason)
+                self.send_login_callback("logout", reason="cookies 缺失且自动登录失败")
                 self.login_status = False
                 return None
             logger.info('自动重新登录成功')
             self._open_collection_page(target_url)
-        elif login_status == "no_permission":
-            logger.error('账号已登录但无卖家中心权限（缺少 SC_SSO cookie）')
-            self.send_login_callback("success", reason="账号无卖家中心权限，无法采集商家数据")
-            self.login_status = False
-            return None
 
         if not self._fetch_login_info_via_js():
             logger.error('获取 media IDs 失败')
@@ -204,12 +213,10 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
 
         validate_id = self._get_validate_id_from_remark()
         if validate_id and not self.is_cross_border:
-            # 跨境店不做域名修正，始终使用 cn 域名
             shop_country = self._get_shop_country_by_id(validate_id)
             if shop_country:
                 correct_domain = self._country_code_to_domain(shop_country)
-                # 跨境店不做域名修正（保持 cn 域名）
-                if not self.is_cross_border and correct_domain != self.country_domain:
+                if correct_domain != self.country_domain:
                     old_domain = self.country_domain
                     logger.warning(
                         f'检测到域名不匹配：分组推断={old_domain}, '
@@ -219,10 +226,19 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
                     target_url = self._replace_shopee_domain(target_url)
                     logger.info(f'已更新 country_domain: {self.country_domain}，同步更新配置 URL')
 
-                # 传入已获取的 shop_country，避免重复查询
                 self._sync_remark_country_if_needed(validate_id, shop_country)
             else:
                 logger.warning(f'无法查询店铺 {validate_id} 的国家，保持当前域名: {self.country_domain}')
+
+        # 跨境店：反查实际国家用于币种上报（不改域名，始终保持 cn）
+        if validate_id and self.is_cross_border:
+            country_from_remark = self._get_country_from_remark()
+            if not country_from_remark:
+                shop_country = self._get_cross_border_shop_country(validate_id)
+                if shop_country:
+                    self._sync_remark_country_if_needed(validate_id, shop_country)
+                else:
+                    logger.warning(f'跨境店无法查询店铺 {validate_id} 的国家，币种上报可能为空')
 
         if not self._ensure_correct_shop(target_url):
             logger.error('店铺切换失败，终止采集')
@@ -308,9 +324,16 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         return result
 
     def _fetch_login_info_via_js(self) -> bool:
-        """通过 JS 注入获取 login 接口数据。"""
+        """通过 JS 注入获取 login 接口数据。
+
+        跨境店使用 CN 接口（get_session），本土店使用 MY 接口（api/v2/login）。
+        """
         try:
-            login_url = f'{self._get_base_url()}/api/v2/login/'
+            if self.is_cross_border:
+                login_url = 'https://seller.shopee.cn/api/cnsc/selleraccount/get_session/'
+            else:
+                login_url = f'{self._get_base_url()}/api/v2/login/'
+
             headers = self._build_request_headers({
                 'referer': getattr(self.tab, 'url', self._get_base_url()),
             })
@@ -333,13 +356,33 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             response = results[0]['response']
             response_json = json.loads(response) if isinstance(response, str) else response
 
-            self.media_user_id = response_json.get('id')
-            self.media_shop_id = response_json.get('shopid')
+            if self.is_cross_border:
+                results = self.browser_api.run_js_fetch(
+                    self.tab,
+                    [{
+                        'url': 'https://seller.shopee.cn/api/supply/lm/sellercenter/userInfo',
+                        'method': 'GET',
+                        'headers': headers,
+                        'credentials': 'include',
+                    }],
+                    max_retries=2,
+                )
+                userinfo_response = results[0]['response']
+                response_json['sub_account_info']['id'] = userinfo_response['data']['userId']
+                sub_account_info = response_json.get('sub_account_info', {}) or {}
+                self.media_user_id = sub_account_info.get('id')
+                self.media_shop_id = sub_account_info.get('current_shop_id')
+                self.username = userinfo_response['data']['userName']
+            else:
+                self.media_user_id = response_json.get('id')
+                self.media_shop_id = response_json.get('shopid')
+                self.username = response_json.get('username')
 
             if self.media_user_id and self.media_shop_id:
                 logger.info(
                     f'获取 media IDs 成功: user_id={self.media_user_id}, shop_id={self.media_shop_id}'
                 )
+                self._send_data({'url': login_url, 'response': response_json})
                 return True
 
             logger.error('login 接口返回数据异常')
@@ -358,22 +401,17 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             return self._remark_cache
 
         try:
-            api_url = Settings.ADSPOWER_CONFIG["api_url"]
-            time.sleep(2)
-            resp = requests.get(
-                f"{api_url}/api/v1/user/list",
-                params={"user_id": self.browser_id},
-                timeout=10
-            ).json()
-            if resp.get('code') != 0:
-                self._remark_cache = ''
-                return ''
+            client = get_adspower_client()
+            resp = client.get('/api/v1/user/list', params={"user_id": self.browser_id})
             users = resp.get('data', {}).get('list', [])
             if not users:
                 self._remark_cache = ''
                 return ''
             self._remark_cache = users[0].get('remark', '')
             return self._remark_cache
+        except (AdsPowerRateLimitError, AdsPowerApiError) as e:
+            logger.warning(f'获取 remark 失败: {e}')
+            return ''
         except Exception as e:
             logger.warning(f'获取 remark 失败: {e}')
             return ''
@@ -415,7 +453,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         parsed = self._parse_remark(remark)
         return parsed['cb'] == 1
 
-    def _resolve_prelogin_country_domain(self) -> str:
+    def _resolve_prelogin_country_domain(self, replay_domain=False) -> str:
         """登录前解析国家域名（四层来源）
 
         优先级：
@@ -428,7 +466,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             国家域名后缀，如 'cn', 'com.my', 'sg', 'co.id'
         """
         # 第零层：跨境店统一使用 cn 域名
-        if self.is_cross_border:
+        if self.is_cross_border and not replay_domain:
             logger.info('跨境店，使用 seller.shopee.cn 域名')
             return 'cn'
 
@@ -471,23 +509,15 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             new_remark = "|".join(parts)
 
             # 调用 AdsPower API 更新
-            api_url = Settings.ADSPOWER_CONFIG["api_url"]
-            resp = requests.post(
-                f"{api_url}/api/v1/user/update",
-                json={
-                    "user_id": self.browser_id,
-                    "remark": new_remark
-                },
-                timeout=10
-            ).json()
+            client = get_adspower_client()
+            resp = client.post('/api/v1/user/update', json={
+                "user_id": self.browser_id,
+                "remark": new_remark
+            })
 
-            if resp.get('code') == 0:
-                logger.info(f'已更新 remark: {new_remark}')
-                self._remark_cache = new_remark  # 更新缓存
-                return True
-            else:
-                logger.warning(f'更新 remark 失败: {resp.get("msg")}')
-                return False
+            logger.info(f'已更新 remark: {new_remark}')
+            self._remark_cache = new_remark
+            return True
 
         except Exception as e:
             logger.error(f'更新 remark 异常: {e}')
@@ -496,12 +526,29 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
     def _get_shop_country_by_id(self, shop_id: str) -> str | None:
         """通过 shop_id 查询店铺所属国家
 
+        优先使用 get_shop_list 接口（主账号 / 被授权多店铺的子账号可用），
+        若失败（单店铺权限子账号无该接口权限）则回退到 shop_info 接口。
+
         Args:
             shop_id: 店铺 ID（validate_id）
 
         Returns:
             国家代码，例如 'sg', 'my', 'id', 'th'
             如果查询失败则返回 None
+        """
+        country = self._get_shop_country_by_shop_list(shop_id)
+        if country:
+            return country
+
+        logger.info(f'get_shop_list 未取到店铺 {shop_id} 的国家，回退到 shop_info 接口')
+        return self._get_shop_country_by_shop_info(shop_id)
+
+    def _get_shop_country_by_shop_list(self, shop_id: str) -> str | None:
+        """通过 subaccount/get_shop_list 查询店铺国家。
+
+        适用账号类型：主账号 / 被授权多店铺权限的子账号。
+        单店铺权限子账号（Sub-account）请求该接口会因权限不足失败，
+        调用方需自行回退到 _get_shop_country_by_shop_info。
         """
         try:
             # 使用当前域名构建 API URL（初始域名作为入口）
@@ -554,6 +601,122 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             logger.error(f'查询店铺国家失败: {e}')
             return None
 
+    def _get_shop_country_by_shop_info(self, shop_id: str) -> str | None:
+        """通过 selleraccount/shop_info 查询当前登录店铺的国家。
+
+        适用账号类型：单店铺权限子账号（Sub-account），其无 get_shop_list 权限。
+        该接口返回当前登录上下文的店铺信息，不接受 shop_id 参数，因此仅在
+        响应中的 shop_id 与传入的 shop_id 匹配时才视为命中（避免店铺切换前误判）。
+
+        响应示例：
+            {"code":0, "data":{"shop_id":1015334690, "shop_region":"MY", ...}}
+        """
+        try:
+            api_url = f'https://seller.shopee.{self.country_domain}/api/selleraccount/shop_info/'
+
+            headers = self._build_request_headers({
+                'referer': getattr(self.tab, 'url', self._get_base_url()),
+            })
+
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': api_url,
+                    'method': 'GET',
+                    'headers': headers,
+                    'credentials': 'include',
+                }],
+                max_retries=2,
+            )
+
+            if not results or not results[0] or not results[0].get('response'):
+                logger.warning('shop_info 接口返回数据异常')
+                return None
+
+            response = results[0]['response']
+            response_json = json.loads(response) if isinstance(response, str) else response
+
+            if response_json.get('code') != 0:
+                logger.warning(f'shop_info 接口返回错误: {response_json.get("message")}')
+                return None
+
+            data = response_json.get('data') or {}
+            resp_shop_id = data.get('shop_id')
+            shop_region = (data.get('shop_region') or '').lower()
+
+            if not shop_region:
+                logger.warning('shop_info 响应中缺少 shop_region')
+                return None
+
+            # shop_info 返回的是当前登录店铺；只有 shop_id 一致才认定为目标店铺
+            if str(resp_shop_id) != str(shop_id):
+                logger.warning(
+                    f'shop_info 当前店铺 {resp_shop_id} 与目标 {shop_id} 不一致，'
+                    f'shop_region={shop_region} 暂不采用'
+                )
+                return None
+
+            logger.info(f'shop_info 查询到店铺 {shop_id} 所属国家: {shop_region}')
+            return shop_region
+
+        except Exception as e:
+            logger.error(f'shop_info 查询店铺国家失败: {e}')
+            return None
+
+    def _get_cross_border_shop_country(self, shop_id: str) -> str | None:
+        """通过跨境店 CN 接口查询店铺所属国家
+
+        Args:
+            shop_id: 店铺 ID（cnsc_shop_id / validate_id）
+
+        Returns:
+            国家代码（小写），例如 'my', 'id', 'th'
+            如果查询失败则返回 None
+        """
+        try:
+            api_url = 'https://seller.shopee.cn/api/cnsc/selleraccount/get_or_set_shop/'
+            headers = self._build_request_headers({
+                'referer': getattr(self.tab, 'url', 'https://seller.shopee.cn/'),
+                'content-type': 'application/json',
+            })
+
+            body = json.dumps({"cnsc_shop_id": int(shop_id)}, separators=(',', ':'))
+
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': api_url,
+                    'method': 'POST',
+                    'headers': headers,
+                    'credentials': 'include',
+                    'body': body,
+                }],
+                max_retries=2,
+            )
+
+            if not results or not results[0] or not results[0].get('response'):
+                logger.warning('跨境店 get_or_set_shop 接口返回数据异常')
+                return None
+
+            response = results[0]['response']
+            response_json = json.loads(response) if isinstance(response, str) else response
+
+            if response_json.get('code') != 0:
+                logger.warning(f'跨境店 get_or_set_shop 接口返回错误: {response_json.get("message")}')
+                return None
+
+            shop_region = response_json.get('shop_region', '').lower()
+            if shop_region:
+                logger.info(f'跨境店查询到店铺 {shop_id} 所属国家: {shop_region}')
+                return shop_region
+
+            logger.warning(f'跨境店 get_or_set_shop 响应中未找到 shop_region')
+            return None
+
+        except Exception as e:
+            logger.error(f'跨境店查询店铺国家失败: {e}')
+            return None
+
     def _country_code_to_domain(self, country_code: str) -> str:
         """将国家代码转换为 Shopee 域名后缀
 
@@ -576,6 +739,36 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             'mx': 'com.mx',
         }
         return code_to_domain.get(country_code.lower(), 'com.my')
+
+    def _get_current_country_code(self) -> str:
+        """获取当前国家代码，优先从 remark 取，否则从 country_domain 推导
+
+        Returns:
+            国家代码（小写），如 'my', 'id', 'sg'；若无法推导则返回空字符串
+        """
+        # 优先从 remark 获取
+        country_from_remark = self._get_country_from_remark()
+        if country_from_remark:
+            return country_from_remark
+
+        # 从 country_domain 反推（如 'com.my' -> 'my', 'sg' -> 'sg'）
+        if not self.country_domain:
+            return ''
+
+        # 提取域名后缀最后一段作为国家代码
+        parts = self.country_domain.split('.')
+        return parts[-1] if parts else ''
+
+    def _get_currency_symbol(self, country_code: str) -> str:
+        """根据国家代码获取货币符号
+
+        Args:
+            country_code: 国家代码（小写），如 'my', 'id'
+
+        Returns:
+            货币符号，如 'RM', 'Rp'；若无映射则返回空字符串
+        """
+        return CURRENCY_MAPPING.get(country_code, {}).get('symbol', '')
 
     def _sync_remark_country_if_needed(self, shop_id: str, shop_country: str | None = None) -> None:
         """检查并补充 remark 中的国家信息（如果缺失或不匹配）
@@ -1149,11 +1342,16 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         else:
             base_extra = request_body
 
-        # 合并媒体ID
+        # 合并媒体ID、国家和货币符号
         base_extra = base_extra if isinstance(base_extra, dict) else {"raw": str(base_extra)}
+        country_code = self._get_current_country_code()
         base_extra.update({
             "media_user_id": self.media_user_id,
-            "media_shop_id": self.media_shop_id
+            "media_shop_id": self.media_shop_id,
+            "username": self.username,
+            "country": country_code,
+            "symbol": self._get_currency_symbol(country_code),
+            "cross_border": 1 if self.is_cross_border else 0,
         })
         extra_str = json.dumps(base_extra, ensure_ascii=False)
 
@@ -1279,8 +1477,8 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         if not self.media_user_id:
             logger.warning('media_user_id 未获取，跳过回放数据采集')
             return stats
-
-        base_url = f"https://live.shopee.{self.country_domain}/api/v1/shop_page/live/replay_list"
+        country_domain = self._resolve_prelogin_country_domain(replay_domain=True)
+        base_url = f"https://live.shopee.{country_domain}/api/v1/shop_page/live/replay_list"
         limit = 50
         offset = 0
         max_pages = 20  # 防止无限循环
@@ -1323,7 +1521,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             if not record_id:
                 continue
             try:
-                detail_url = f"https://live.shopee.{self.country_domain}/api/v1/replay/{record_id}"
+                detail_url = f"https://live.shopee.{country_domain}/api/v1/replay/{record_id}"
                 detail_res = self.session.get(detail_url, timeout=30)
                 if detail_res.status_code == 200:
                     detail_data = detail_res.json()
@@ -1363,28 +1561,109 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         _ = (url, response, kwargs)
         return 0
     
-    def _check_login_status(self) -> str:
-        """检测账号登录状态，区分未登录与无权限
+    def _verify_login_by_api(self) -> tuple[bool, dict | None]:
+        """通过 API 验证 Shopee 登录态是否有效。
+
+        跨境店使用 CN 专属验证接口（seller.shopee.cn），本土店使用当前域名接口。
+        - CN: code == 0 → 登录有效，sub_account_info 包含 account_id/current_shop_id
+        - MY: errcode == 0 → 登录有效
 
         Returns:
-            str: "logged_in"（已登录且有卖家权限）| "no_permission"（已登录但无卖家权限）| "logged_out"（未登录）
+            tuple: (is_logged_in, response_data or None)
+        """
+        try:
+            if self.is_cross_border:
+                api_label = 'CN'
+                api_url = 'https://seller.shopee.cn/api/cnsc/selleraccount/get_session/'
+            else:
+                api_label = '本土'
+                api_url = f'{self._get_base_url()}/api/v2/login/'
+
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{'url': api_url, 'method': 'GET', 'credentials': 'include'}],
+                max_retries=1,
+                retry_delay=1.0,
+            )
+
+            result = results[0] if results else None
+            if not result or not result.get('response'):
+                logger.warning(f'[{self.browser_id}] Shopee login API ({api_label}) 无响应')
+                return False, None
+
+            response = result['response']
+            response_data = json.loads(response) if isinstance(response, str) else response
+
+            if self.is_cross_border:
+                # CN API: {"code": 0, "sub_account_info": {"account_id": ..., "current_shop_id": ...}, "message": "success"}
+                code = response_data.get('code')
+                if code == 0:
+                    sub_info = response_data.get('sub_account_info', {}) or {}
+                    logger.info(
+                        f'[{self.browser_id}] Shopee API (CN) 验证登录成功: '
+                        f'account_id={sub_info.get("account_id")}, current_shop_id={sub_info.get("current_shop_id")}'
+                    )
+                    return True, response_data
+                else:
+                    logger.warning(
+                        f'[{self.browser_id}] Shopee API (CN) 验证登录失败: '
+                        f'code={code}, message={response_data.get("message")}'
+                    )
+                    return False, None
+            else:
+                errcode = response_data.get('errcode')
+                if errcode == 0:
+                    logger.info(
+                        f'[{self.browser_id}] Shopee API (MY) 验证登录成功: '
+                        f'user_id={response_data.get("id")}, shop_id={response_data.get("shopid")}'
+                    )
+                    return True, response_data
+                else:
+                    logger.warning(f'[{self.browser_id}] Shopee API (MY) 验证登录失败: errcode={errcode}')
+                    return False, None
+
+        except Exception as e:
+            logger.warning(f'[{self.browser_id}] Shopee API 验证异常: {e}')
+            return False, None
+
+    def _check_login_status(self) -> str:
+        """检测账号登录状态
+
+        本土店：Cookie 预检 + API 二次验证
+        跨境店：跳过 Cookie 预检（cn 域名 cookie 名称不同），直接 API 验证
+
+        Returns:
+            str: "logged_in"（已登录）| "logged_out"（未登录）
         """
         try:
             cookies = self.tab.cookies(all_info=True)
             cookie_dict = {c.get('name'): c.get('value') for c in cookies if c.get('name')}
 
-            has_session = bool(cookie_dict.get('SPC_SC_SESSION'))
-            has_sso = bool(cookie_dict.get('SC_SSO'))
+            if self.is_cross_border:
+                # 跨境店 cookie 名称与本土店不同，跳过 cookie 预检，直接 API 验证
+                api_ok, _ = self._verify_login_by_api()
+                if api_ok:
+                    logger.info('跨境店 Shopee 登录验证通过（API 确认）')
+                    return "logged_in"
+                else:
+                    logger.warning('跨境店 Shopee API 验证登录失败，判定为登出')
+                    return "logged_out"
 
-            if has_session and has_sso:
-                logger.info('检测到有效的 Shopee 登录 cookies')
-                return "logged_in"
-            elif has_session:
-                logger.warning('账号已登录但缺少 SC_SSO cookie，可能无卖家中心权限')
-                return "no_permission"
-            else:
+            has_session = bool(cookie_dict.get('SPC_SC_SESSION'))
+
+            if not has_session :
                 logger.warning('Shopee 登录 cookies 缺失（无 SPC_SC_SESSION）')
                 return "logged_out"
+
+            # Cookie 存在，通过 API 二次验证登录态
+            api_ok, _ = self._verify_login_by_api()
+            if api_ok:
+                logger.info('Shopee 登录验证通过（API 确认）')
+                return "logged_in"
+            else:
+                logger.warning('Shopee Cookie 存在但 API 验证失败，判定为登出')
+                return "logged_out"
+
         except Exception as e:
             logger.error(f'检测登录状态失败: {e}')
             return "logged_out"
@@ -1394,7 +1673,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         """检测到登出后自动重新登录：先导航到登录页，再点击已保存账号。
 
         Returns:
-            str: "logged_in"（登录成功）| "no_permission"（登录成功但无权限）| "logged_out"（登录失败）
+            str: "logged_in"（登录成功）| "logged_out"（登录失败）
         """
         button_selector = 'xpath://*[@class="gLYGM2"]'
         click_button_selector = 'xpath://*[@class="account-item"]/div'
@@ -1436,7 +1715,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             password: 密码
 
         Returns:
-            str: "logged_in" | "no_permission" | "logged_out"
+            str: "logged_in" | "logged_out"
         """
         account_selector = 'xpath://*[contains(@class, "shopee-input__input") and @type="text"]'
         password_selector = 'xpath://*[contains(@class, "shopee-input__input") and @type="password"]'
