@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -316,28 +318,60 @@ class AdsPowerService:
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.request(method, url, json=json_data, headers=headers)
-        except httpx.RequestError as exc:
-            logger.error("AdsPower 连接失败: {}", exc)
-            raise AdsPowerConnectionError(str(exc)) from exc
 
-        try:
-            data = response.json()
-        except ValueError as exc:
-            logger.error("AdsPower 响应解析失败: {}", response.text)
-            raise AdsPowerApiError("AdsPower 响应不是有效 JSON") from exc
+        # 限流重试参数
+        max_retries = 5
+        delay = 3.0  # 初始延迟（秒）
+        backoff_factor = 1.5
 
-        if response.status_code != 200:
-            logger.error("AdsPower HTTP 错误: {} {}", response.status_code, data)
-            raise AdsPowerApiError(f"AdsPower HTTP 错误: {response.status_code}", data=data)
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.request(method, url, json=json_data, headers=headers)
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                # 连接异常，重试
+                if attempt >= max_retries:
+                    logger.error("AdsPower 连接失败（已重试 {} 次）: {}", max_retries, exc)
+                    raise AdsPowerConnectionError(str(exc)) from exc
+                logger.warning("AdsPower 连接异常，第 {}/{} 次重试，等待 {:.1f}s: {}", attempt, max_retries, delay, exc)
+                await asyncio.sleep(delay)
+                delay *= backoff_factor
+                continue
+            except httpx.RequestError as exc:
+                # 其他请求异常，不重试，直接抛出
+                logger.error("AdsPower 连接失败: {}", exc)
+                raise AdsPowerConnectionError(str(exc)) from exc
 
-        if isinstance(data, dict) and data.get("code") != 0:
-            logger.error("AdsPower API 错误: {}", data)
-            raise AdsPowerApiError(data.get("msg", "AdsPower API 错误"), data=data)
+            try:
+                data = response.json()
+            except ValueError as exc:
+                logger.error("AdsPower 响应解析失败: {}", response.text)
+                raise AdsPowerApiError("AdsPower 响应不是有效 JSON") from exc
 
-        return data
+            if response.status_code != 200:
+                logger.error("AdsPower HTTP 错误: {} {}", response.status_code, data)
+                raise AdsPowerApiError(f"AdsPower HTTP 错误: {response.status_code}", data=data)
+
+            # 判断是否触发限流：code == -1 且 msg 含 "too many" 或 "rate"
+            if isinstance(data, dict) and data.get("code") == -1:
+                msg = data.get("msg", "")
+                if re.search(r"too many|rate", msg, re.IGNORECASE):
+                    if attempt >= max_retries:
+                        logger.error("AdsPower 限流重试耗尽（已重试 {} 次）: {}", max_retries, msg)
+                        raise AdsPowerApiError(msg, data=data)
+                    logger.warning("AdsPower 触发限流，第 {}/{} 次重试，等待 {:.1f}s: {}", attempt, max_retries, delay, msg)
+                    await asyncio.sleep(delay)
+                    delay *= backoff_factor
+                    continue
+
+            # 非限流的业务错误，保持原有行为
+            if isinstance(data, dict) and data.get("code") != 0:
+                logger.error("AdsPower API 错误: {}", data)
+                raise AdsPowerApiError(data.get("msg", "AdsPower API 错误"), data=data)
+
+            return data
 
 
 def parse_proxy(proxy_string: str) -> Dict[str, str]:

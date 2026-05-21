@@ -157,7 +157,7 @@
 
       const payload = { country, media, advertiser_name: advertiser, live_account: liveAccount, validate_id: String(validateId) };
 
-      const resp = await fetch('http://192.168.88.76:8080/api/browser/profile/create', {
+      const resp = await fetch('http://127.0.0.1:8080/api/browser/profile/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -178,7 +178,7 @@
       if (!sessionId) {
         return;
       }
-      await fetch('http://192.168.88.76:8080/api/browser/profile/close', {
+      await fetch('http://127.0.0.1:8080/api/browser/profile/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId })

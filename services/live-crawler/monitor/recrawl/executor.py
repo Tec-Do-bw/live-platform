@@ -396,14 +396,14 @@ def _build_time_selector(target_date: str) -> dict | None:
     """
     try:
         d = datetime.strptime(target_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        # start_timestamp = (D - 1 天) 的 UTC 00:00
-        start = d - timedelta(days=1)
+        # start_timestamp = D 的 UTC 00:00
+        start = d
         # end_timestamp = (D + 1 天) 的 UTC 00:00
         end = d + timedelta(days=1)
 
         return {
             'period': 2,
-            'granularity': 11,
+            'granularity': 1,
             'start_timestamp': int(start.timestamp()),
             'end_timestamp': int(end.timestamp()),
             'timezone_offset': '0',

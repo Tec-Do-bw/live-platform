@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from app.config import settings, _LAZADA_COUNTRY_DOMAIN
+from app.config import settings, _LAZADA_COUNTRY_DOMAIN, get_shopee_seller_domain
 from app.services.adspower import AdsPowerApiError, AdsPowerConnectionError, AdsPowerService
 from app.services.session import Session, session_manager
 from loguru import logger
@@ -36,7 +36,8 @@ class LoginMonitorService:
         "api/v2/login",
         "subaccount/get_shop_list",
         "selleraccount/shop_info",
-        "shop_info/get_shop_inactive_status"
+        "shop_info/get_shop_inactive_status",
+        "cnsc/selleraccount/get_session"
     ]
 
     # TikTok 登录验证 Cookie Key
@@ -87,23 +88,25 @@ class LoginMonitorService:
 
         login_shop_id = result.get("login_shop_id")
         shop_list_ids = result.get("shop_list_ids", [])
+        api_login_verified = result.get("api_login_verified", False)
 
         # 验证逻辑：任一接口匹配成功即为 success
         validate_id = str(session.validate_id)
 
-        # 检查 login 接口
-        if login_shop_id and str(login_shop_id) == validate_id:
-            # 立即设置状态，防止竞态条件导致 closed 回调
-            session.login_status = "success"
-            await self._handle_result(session, status="success", reason="", shop_id=login_shop_id)
-            return
+        if api_login_verified:
+            # 检查 login 接口
+            if login_shop_id and str(login_shop_id) == validate_id:
+                # 立即设置状态，防止竞态条件导致 closed 回调
+                session.login_status = "success"
+                await self._handle_result(session, status="success", reason="", shop_id=login_shop_id)
+                return
 
-        # 检查 get_shop_list 接口
-        if validate_id in [str(sid) for sid in shop_list_ids]:
-            # 立即设置状态，防止竞态条件导致 closed 回调
-            session.login_status = "success"
-            await self._handle_result(session, status="success", reason="", shop_id=int(validate_id) if validate_id.isdigit() else None)
-            return
+            # 检查 get_shop_list 接口
+            if validate_id in [str(sid) for sid in shop_list_ids]:
+                # 立即设置状态，防止竞态条件导致 closed 回调
+                session.login_status = "success"
+                await self._handle_result(session, status="success", reason="", shop_id=int(validate_id) if validate_id.isdigit() else None)
+                return
 
         # 两者都不匹配
         # 立即设置状态，防止竞态条件导致 closed 回调
@@ -344,12 +347,24 @@ class LoginMonitorService:
                 if shop_id and shop_id != 0:
                     login_shop_id = shop_id
                     logger.info("从兜底接口获取到 shop_id: {}", shop_id)
+            elif "cnsc/selleraccount/get_session" in url:
+                shop_id = self._extract_shop_id_from_cn_session(parsed_body)
+                if shop_id and shop_id != 0:
+                    login_shop_id = shop_id
+                    logger.info("从 CN get_session 接口获取到 shop_id: {}", shop_id)
 
             # 如果任一接口已匹配成功，立即返回
             if login_shop_id and str(login_shop_id) == str(session.validate_id):
                 break
             if str(session.validate_id) in [str(sid) for sid in shop_list_ids]:
                 break
+
+        # 始终通过 API 验证账号是否登录成功（作为登录成功的必要条件）
+        api_login_verified = False
+        api_success, _ = self._verify_shopee_login_by_api(tab, session)
+        if api_success:
+            api_login_verified = True
+            logger.info("通过 API 验证确认账号已登录成功")
 
         try:
             tab.listen.stop()
@@ -359,6 +374,7 @@ class LoginMonitorService:
         return {
             "login_shop_id": login_shop_id,
             "shop_list_ids": shop_list_ids,
+            "api_login_verified": api_login_verified,
         }
 
     def _parse_body(self, body: Any) -> Any:
@@ -434,6 +450,15 @@ class LoginMonitorService:
             return None
         return self._to_int(data.get("shop_id"))
 
+    def _extract_shop_id_from_cn_session(self, body: Any) -> Optional[int]:
+        """从 CN get_session 响应的 sub_account_info.current_shop_id 中提取 shop_id"""
+        if not isinstance(body, dict):
+            return None
+        sub_info = body.get("sub_account_info")
+        if not isinstance(sub_info, dict):
+            return None
+        return self._to_int(sub_info.get("current_shop_id"))
+
     def _check_session_cookie(self, tab) -> bool:
         """检查 SPC_SC_SESSION Cookie 是否存在且有效"""
         try:
@@ -449,6 +474,98 @@ class LoginMonitorService:
         except Exception as e:
             logger.debug("检查 Cookie 失败: {}", e)
             return False
+
+    def _verify_shopee_login_by_api(self, tab, session: Session) -> tuple[bool, dict | None]:
+        """通过 API 验证 Shopee 登录态（JS 注入 + 轮询）。
+
+        跨境店（cb_option=1）使用 CN 专属验证接口，本土店使用当前国家域名接口。
+
+        Returns:
+            tuple: (is_logged_in, response_data or None)
+        """
+        try:
+            if session.cb_option == 1:
+                api_label = "CN"
+                api_url = "https://seller.shopee.cn/api/cnsc/selleraccount/get_session/"
+            else:
+                domain = get_shopee_seller_domain(session.country)
+                api_label = domain
+                api_url = f"https://{domain}/api/v2/login/"
+
+            ts = int(time.time() * 1000)
+            result_key = f"__shopee_login_check_{ts}"
+
+            js_code = f"""
+            window['{result_key}'] = null;
+            fetch({json.dumps(api_url)}, {{
+                method: 'GET',
+                credentials: 'include'
+            }})
+            .then(async response => {{
+                try {{
+                    const data = await response.json();
+                    window['{result_key}'] = {{ status: response.status, response: data }};
+                }} catch (e) {{
+                    window['{result_key}'] = {{ error: 'parse_error: ' + String(e) }};
+                }}
+            }})
+            .catch(e => {{
+                window['{result_key}'] = {{ error: String(e) }};
+            }});
+            """
+            tab.run_js(js_code)
+
+            poll_timeout = 10.0
+            poll_interval = 0.5
+            start_time = time.time()
+            result = None
+            while time.time() - start_time < poll_timeout:
+                val = tab.run_js(f"return window['{result_key}'];")
+                if val is not None:
+                    result = val
+                    break
+                time.sleep(poll_interval)
+
+            try:
+                tab.run_js(f"delete window['{result_key}'];")
+            except Exception:
+                pass
+
+            if not result or 'error' in result:
+                logger.warning("Shopee login API ({}) 验证失败: {}", api_label, result)
+                return False, None
+
+            response_data = result.get('response', {})
+
+            if session.cb_option == 1:
+                # CN API: {"code": 0, "sub_account_info": {"account_id": ..., "current_shop_id": ...}, "message": "success"}
+                code = response_data.get('code')
+                if code == 0:
+                    sub_info = response_data.get('sub_account_info', {}) or {}
+                    logger.info(
+                        "Shopee API (CN) 验证登录成功: account_id={}, current_shop_id={}",
+                        sub_info.get('account_id'), sub_info.get('current_shop_id')
+                    )
+                    return True, response_data
+                else:
+                    logger.warning("Shopee API (CN) 验证登录失败: code={}, message={}",
+                                   code, response_data.get('message'))
+                    return False, None
+            else:
+                errcode = response_data.get('errcode')
+                if errcode == 0:
+                    logger.info(
+                        "Shopee API ({}) 验证登录成功: user_id={}, shop_id={}",
+                        api_label, response_data.get('id'), response_data.get('shopid')
+                    )
+                    return True, response_data
+                else:
+                    logger.warning("Shopee API ({}) 验证登录失败: errcode={}", api_label, errcode)
+                    return False, None
+
+        except Exception as e:
+            logger.warning("Shopee API 验证异常: {}", e)
+            return False, None
 
     def _trigger_shop_info(self, tab, session: Session) -> None:
         """主动导航到页面触发 shop_id 接口"""

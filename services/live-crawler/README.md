@@ -78,6 +78,15 @@ python main.py --mode full
 # 全量采集（多进程并发）
 python main.py --mode full --workers N
 
+# 指定平台采集（只采集 TikTok）
+python main.py --mode full --platform tiktok
+
+# 指定多个平台采集
+python main.py --mode full --platform tiktok --platform shopee
+
+# 增量模式也支持平台过滤
+python main.py --mode once --platform lazada
+
 # 启动 Cookie 养号服务（独立进程）
 python -m cookie_keeper
 
@@ -172,8 +181,10 @@ live_dp/
 │   └── browserapi.py         # AdsPower API 封装
 ├── scripts/                   # 辅助脚本
 │   ├── init_tracker.py       # 初始化采集追踪文件
+│   ├── list_shopee_accounts.py # 列出 Shopee 账号
 │   └── mock_monitor_data.py  # 注入监控模拟数据
 ├── utils/                     # 工具模块
+│   ├── adspower_client.py    # AdsPower API 统一客户端（含限流重试，见规则七）
 │   ├── kafka_client.py       # Kafka 客户端
 │   └── logger.py             # loguru 日志
 └── tests/                     # 测试

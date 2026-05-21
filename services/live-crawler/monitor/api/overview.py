@@ -4,12 +4,11 @@ import time
 import sqlite3
 from datetime import datetime, timedelta
 
-import requests
 from fastapi import APIRouter, Query
 
-from core.config import Settings
 from monitor.db import get_connection
 from monitor.registry import get_expected_account_types, get_expected_room_types, get_room_types_for_completion
+from utils.adspower_client import get_adspower_client, AdsPowerRateLimitError, AdsPowerApiError
 from utils.logger import logger
 
 router = APIRouter(prefix='/api', tags=['overview'])
@@ -46,21 +45,17 @@ def _get_account_names(account_ids: list[str]) -> dict[str, str]:
         return {aid: _account_name_cache.get(aid, aid) for aid in account_ids}
 
     try:
-        api_url = Settings.ADSPOWER_CONFIG.get('api_url', 'http://127.0.0.1:50325')
+        client = get_adspower_client()
 
         # 查询所有分组的环境列表
         all_profiles: dict[str, str] = {}
-        group_resp = requests.get(f'{api_url}/api/v1/group/list', params={'page_size': 100}, timeout=10)
-        groups = group_resp.json().get('data', {}).get('list', [])
+        group_data = client.get('/api/v1/group/list', params={'page_size': 100})
+        groups = group_data.get('data', {}).get('list', [])
 
         for group in groups:
             gid = group.get('group_id', '0')
-            user_resp = requests.get(
-                f'{api_url}/api/v1/user/list',
-                params={'group_id': gid, 'page_size': 100},
-                timeout=10,
-            )
-            for u in user_resp.json().get('data', {}).get('list', []):
+            user_data = client.get('/api/v1/user/list', params={'group_id': gid, 'page_size': 100})
+            for u in user_data.get('data', {}).get('list', []):
                 uid = u.get('user_id', '')
                 if uid:
                     all_profiles[uid] = u.get('name', '') or uid
@@ -69,6 +64,8 @@ def _get_account_names(account_ids: list[str]) -> dict[str, str]:
         _cache_time = now
         logger.info(f'已缓存 {len(all_profiles)} 个 AdsPower 账号名称')
 
+    except (AdsPowerRateLimitError, AdsPowerApiError) as e:
+        logger.warning(f'获取 AdsPower 账号名称失败（API 异常）: {e}')
     except Exception as e:
         logger.warning(f'获取 AdsPower 账号名称失败: {e}')
 

@@ -13,7 +13,7 @@ import requests
 from typing import Any, Dict, List
 from datetime import timezone as tz
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from utils.logger import logger
 from crawlers.browser.base import BaseLiveCrawler
@@ -346,6 +346,9 @@ class TikTokLiveCrawler(BaseLiveCrawler):
             # 保留 live/list 原始 URL 的查询参数（user_language, locale, aid, fp 等），
             # 不同账号/地区的参数不同，trend/chart 请求需要继承这些参数否则返回 no login
             self._api_query_string = parsed.query or ""
+            # 提取 carrier_region（供 core/stats 请求使用）
+            _query_params = parse_qs(parsed.query)
+            self._carrier_region = _query_params.get('carrier_region', [''])[0].upper()
 
             # 采集监控：持久化请求上下文，供补采模块复用
             if self.batch_id and headers:
@@ -405,8 +408,12 @@ class TikTokLiveCrawler(BaseLiveCrawler):
                 response_json = response
 
             # 提取直播间列表
-            stats = response_json.get('data', {}).get('segments', [{}])[0]\
-                .get('timed_lists', [{}])[0].get('stats', [])
+            _first_segment = response_json.get('data', {}).get('segments', [{}])[0]
+            stats = _first_segment.get('timed_lists', [{}])[0].get('stats', [])
+
+            # 提取 creator_id（供 core/stats 请求使用）
+            _creator_id_list = _first_segment.get('filter', {}).get('creator_id', [])
+            self._creator_id = _creator_id_list[0] if _creator_id_list else ''
 
             if not stats:
                 # 账号无直播间，记录 live_list 采集成功（空列表）
@@ -494,6 +501,8 @@ class TikTokLiveCrawler(BaseLiveCrawler):
                 success_count = 0
                 fail_count = 0
                 failed_rooms = []
+                core_stats_success = 0
+                core_stats_fail = 0
 
                 # 依次 JS 注入获取趋势数据
                 for i, room_id in enumerate(room_id_list):
@@ -513,12 +522,31 @@ class TikTokLiveCrawler(BaseLiveCrawler):
                         fail_count += 1
                         failed_rooms.append(room_id)
 
+                    # core/stats：采集直播大屏核心统计数据
+                    try:
+                        core_result = self._fetch_core_stats_via_js(
+                            room_id, headers,
+                            creator_id=self._creator_id,
+                            country=self._carrier_region
+                        )
+                        if core_result['success']:
+                            core_stats_success += 1
+                        else:
+                            core_stats_fail += 1
+                    except Exception as e:
+                        logger.error(f'JS注入获取核心统计异常 {room_id}: {e}')
+                        core_stats_fail += 1
+
                     # 间隔 2~4 秒，避免请求过快
                     if i < len(room_id_list) - 1:
                         time.sleep(random.uniform(2, 4))
 
                 # 汇总日志
-                logger.info(f'直播趋势采集完成：总计 {len(room_id_list)} 个, 成功 {success_count} 个, 失败 {fail_count} 个')
+                logger.info(
+                    f'直播采集完成：总计 {len(room_id_list)} 个, '
+                    f'trend 成功 {success_count} 失败 {fail_count}, '
+                    f'core_stats 成功 {core_stats_success} 失败 {core_stats_fail}'
+                )
                 if failed_rooms:
                     logger.warning(f'采集失败的直播间: {failed_rooms}')
 
@@ -693,6 +721,74 @@ class TikTokLiveCrawler(BaseLiveCrawler):
             _m = get_monitor()
             _m.record(self.batch_id, self.browser_id, 'trend_gmv', room_id=str(room_id), status='failed')
             _m.record(self.batch_id, self.browser_id, 'trend_stats', room_id=str(room_id), status='failed')
+        return {'success': False, 'sent_count': 0, 'error': error_msg}
+
+    def _fetch_core_stats_via_js(self, room_id: str, headers: dict,
+                                 creator_id: str, country: str,
+                                 max_retries: int = 2) -> dict:
+        """通过 JS 注入获取直播大屏核心统计数据（流量分析-流量转化）"""
+        core_stats_path = "/api/v1/insights/workbench/live/detail/core/stats"
+
+        # core/stats 的 query params 与 live/list 不同，需要从 live/list 中提取公共设备参数
+        # 并替换 app_name、添加 vertical=3、移除不需要的参数
+        raw_qs = getattr(self, '_api_query_string', '')
+        params = parse_qs(raw_qs, keep_blank_values=True)
+        # 只保留设备/浏览器相关参数
+        KEEP_KEYS = {
+            'device_id', 'fp', 'device_platform', 'cookie_enabled',
+            'screen_width', 'screen_height', 'browser_language', 'browser_platform',
+            'browser_name', 'browser_version', 'browser_online', 'timezone_name',
+        }
+        core_params = {k: v[0] for k, v in params.items() if k in KEEP_KEYS}
+        core_params['app_name'] = 'i18n_ecom_shop'
+        core_params['vertical'] = '3'
+        core_qs = '&'.join(f'{k}={v}' for k, v in core_params.items())
+        core_stats_url = f"{self._api_base_url}{core_stats_path}?{core_qs}" if core_qs else f"{self._api_base_url}{core_stats_path}"
+
+        body = json.dumps({
+            "request": {
+                "room_filter": {
+                    "room_id": room_id,
+                    "is_content_type": 1,
+                    "creator_id": creator_id,
+                    "country": country
+                },
+                "stats_types": [
+                    23, 20, 325, 310, 39, 29, 312, 313, 332, 330, 10, 323,
+                    315, 314, 349, 241, 3, 2, 5, 18, 290, 291, 292,
+                    -23, -20, -39, -330, -10, -3, -2, -18
+                ]
+            }
+        }, separators=(',', ':'))
+
+
+        fetch_headers = {k: v for k, v in headers.items() if not k.startswith(':')}
+        if not any(k.lower() == 'content-type' for k in fetch_headers):
+            fetch_headers['Content-Type'] = 'application/json'
+
+        results = self.browser_api.run_js_fetch(
+            self.tab,
+            [{'url': core_stats_url, 'method': 'POST', 'headers': fetch_headers,
+              'credentials': 'include', 'body': body}],
+            max_retries=max_retries,
+            retry_delay=2.0,
+        )
+        result = results[0]
+
+        if result and result.get('response'):
+            cookies = self.browser_api.get_cookies(self.tab)
+            msg = self.format_api_message(
+                url=core_stats_url,
+                request_body=body,
+                response_body=result['response'],
+                cookies=cookies
+            )
+            sent = self.send_api_request(msg)
+            logger.info(f'room {room_id} 核心统计数据{"上报成功" if sent else "上报失败"}')
+            return {'success': True, 'sent_count': 1 if sent else 0, 'error': None}
+
+        error_msg = f"{'有error' if result and isinstance(result, dict) and result.get('error') else '超时'}"
+        logger.error(f'room {room_id} 核心统计数据获取失败（已重试 {max_retries} 次）: {error_msg}')
         return {'success': False, 'sent_count': 0, 'error': error_msg}
 
     def _detect_and_handle_slider(self) -> bool:

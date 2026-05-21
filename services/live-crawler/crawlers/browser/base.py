@@ -332,7 +332,10 @@ class BaseLiveCrawler(ABC):
                         headers["accessToken"] = access_token
 
                     # 发送回调请求
-                    logger.info(f'发送登录回调: status={login_status}, platform={self.platform}, browser_id={self.browser_id}')
+                    logger.info(
+                        f'发送登录回调: status={login_status}, platform={self.platform}, '
+                        f'browser_id={self.browser_id}, url={callback_url}'
+                    )
                     response = requests.post(
                         callback_url,
                         headers=headers,

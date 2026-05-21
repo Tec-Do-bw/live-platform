@@ -73,19 +73,20 @@ def run_scheduler():
         sys.exit(1)
 
 
-def run_once(full_collection: bool = False, workers: int = 1, crawl_type: str = 'history'):
+def run_once(full_collection: bool = False, workers: int = 1, crawl_type: str = 'history', platforms: list[str] | None = None):
     """手动执行一次采集任务
 
     Args:
         full_collection: 是否全量采集模式
         workers: 并发进程数，>=2 时开启并发（仅 full 模式生效）
         crawl_type: 采集类型（'realtime' 或 'history'，仅 HTTP 爬虫使用）
+        platforms: 指定要采集的平台列表，None 表示采集所有平台
     """
     with logger.contextualize(crawl_type=crawl_type):
-        _run_once_impl(full_collection, workers, crawl_type)
+        _run_once_impl(full_collection, workers, crawl_type, platforms)
 
 
-def _run_once_impl(full_collection: bool, workers: int, crawl_type: str):
+def _run_once_impl(full_collection: bool, workers: int, crawl_type: str, platforms: list[str] | None = None):
     # 采集监控：生成批次ID并记录开始
     mode = 'full' if full_collection else 'once'
     batch_id = dt.now().strftime('%Y-%m-%d_%H:%M')
@@ -94,12 +95,20 @@ def _run_once_impl(full_collection: bool, workers: int, crawl_type: str):
 
     mode_name = '全量采集' if full_collection else '增量采集'
     concurrent_info = f'（{workers}进程并发）' if workers >= 2 else '（串行）'
+    platform_filter = f'（仅 {", ".join(platforms)}）' if platforms else '（所有平台）'
     logger.info('='*60)
-    logger.info(f'直播数据采集系统 - 手动{mode_name}模式 {concurrent_info}')
+    logger.info(f'直播数据采集系统 - 手动{mode_name}模式 {concurrent_info} {platform_filter}')
     logger.info('='*60)
-    
+
     # 获取所有平台配置
     platform_configs = Settings.PLATFORM_CONFIG
+
+    # 平台过滤
+    if platforms:
+        platform_configs = {k: v for k, v in platform_configs.items() if k in platforms}
+        if not platform_configs:
+            logger.error(f'指定的平台 {platforms} 未在配置中找到')
+            sys.exit(1)
     
     if not platform_configs:
         logger.error('未找到任何平台配置')
@@ -367,6 +376,14 @@ def main():
         help='采集类型（仅 HTTP 爬虫使用）：realtime=实时采集, history=历史采集'
     )
 
+    parser.add_argument(
+        '--platform',
+        type=str,
+        action='append',
+        dest='platforms',
+        help='指定要采集的平台（可多次使用，如 --platform tk --platform shopee），不指定则采集所有平台'
+    )
+
     args = parser.parse_args()
     
     # 显示配置信息
@@ -378,9 +395,9 @@ def main():
     if args.mode == 'scheduler':
         run_scheduler()
     elif args.mode == 'full':
-        run_once(full_collection=True, workers=args.workers, crawl_type=args.crawl_type)
+        run_once(full_collection=True, workers=args.workers, crawl_type=args.crawl_type, platforms=args.platforms)
     else:
-        run_once(crawl_type=args.crawl_type)
+        run_once(crawl_type=args.crawl_type, platforms=args.platforms)
 
 
 if __name__ == '__main__':

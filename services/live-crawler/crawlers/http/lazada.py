@@ -1205,8 +1205,242 @@ class LazadaHttpCrawler(BaseHttpCrawler):
             parsed['_retried_text'] = retry_dr.text
         return parsed
 
+    # ------------------------------------------------------------------
+    # 登录态检测（任务 8.1~8.3）
+    # ------------------------------------------------------------------
+
+    def _send_probe_request(self, task: Task) -> DownloadResult | None:
+        """发送探测请求的通用方法。
+
+        Args:
+            task: Task 对象
+
+        Returns:
+            DownloadResult 对象，失败时返回 None
+        """
+        from downloader import Downloader
+
+        try:
+            proxy = self.get_proxy()
+            dl = Downloader(proxy=proxy, timeout=10)
+            results = dl.run([task])
+
+            if results and results[0].success:
+                return results[0]
+
+            logger.warning(
+                f'探测请求失败，账号={self.browser_id}，URL={task.url}，'
+                f'错误={results[0].error if results else "无响应"}'
+            )
+            return None
+        except Exception as e:
+            logger.warning(f'探测请求异常，账号={self.browser_id}，URL={task.url}，错误={e}')
+            return None
+
+    def _probe_sellercenter_login(self, cookies: dict) -> tuple[bool, bool]:
+        """探测 Sellercenter 登录态。
+
+        Args:
+            cookies: sellercenter Cookie 字典
+
+        Returns:
+            (is_valid, is_token_expired)
+            - is_valid: True=登录有效, False=已登出
+            - is_token_expired: 始终为 False（Sellercenter 无 Token 自动更新机制）
+        """
+        today = self._get_country_today()
+        date_str = self._format_date_ba(today - timedelta(days=1))
+        url = f'{self.sellercenter_base}/dashboard/key/overviewV2.json'
+        params = {'dateRange': f'{date_str}|{date_str}', 'dateType': 'day'}
+        headers = {'Cookie': self._cookie_header(cookies), 'Accept': 'application/json'}
+
+        task = Task(url=url, params=params, headers=headers, meta={'api_type': 'probe_sellercenter'})
+        result = self._send_probe_request(task)
+        if not result:
+            return (False, False)
+
+        try:
+            data = json.loads(result.text)
+            return (data.get('code') == 0, False)
+        except Exception:
+            # 返回 HTML/text 或 JSON 解析失败，说明已登出
+            return (False, False)
+
+    def _probe_live_login(self, cookies: dict) -> tuple[bool, bool]:
+        """探测 LazLive 登录态。
+
+        Args:
+            cookies: live Cookie 字典
+
+        Returns:
+            (is_valid, is_token_expired)
+            - is_valid: True=登录有效, False=已登出
+            - is_token_expired: True=仅 Token 过期（可自动更新）
+        """
+        utc_offset = LAZADA_TIMEZONE_MAP.get(self.country_domain, 8)
+        data = {
+            '_timezone': -utc_offset,
+            'roomStatus': 'Online',
+            'orderByRoomStatus': 'Online',
+            'pageNum': 1,
+            'pageSize': 1,
+        }
+
+        task = self._build_mtop_task(
+            api='mtop.lazada.live.querylivesbystatus',
+            api_type='probe_live',
+            data=data,
+            cookies=cookies,
+            page_num=1,
+            page_size=1,
+            method='POST',
+        )
+
+        result = self._send_probe_request(task)
+        if not result:
+            return (False, False)
+
+        try:
+            resp_data = json.loads(result.text)
+            ret = resp_data.get('ret', [])
+
+            # 有效：ret 包含 "SUCCESS"
+            if any('SUCCESS' in str(r) for r in ret):
+                return (True, False)
+
+            # Token 过期：检查响应头是否有新 Token
+            if any('FAIL_SYS_TOKEN_EXOIRED' in str(r) or 'FAIL_SYS_TOKEN_EXPIRED' in str(r) for r in ret):
+                new_tokens = self._extract_token_from_headers(result.headers)
+                if '_m_h5_tk' in new_tokens and '_m_h5_tk_enc' in new_tokens:
+                    logger.info(f'LazLive Token 过期，准备自动更新，账号={self.browser_id}')
+                    self._update_token_from_response(result.headers)
+                    return (True, True)
+
+            # 其他失败情况（SESSION_EXPIRED / TOKEN_ILLEGAL）视为登出
+            return (False, False)
+        except (json.JSONDecodeError, KeyError):
+            return (False, False)
+
+    def _check_login_state(self, cookies: dict) -> dict:
+        """检测登录态是否有效（采集前预检）。
+
+        Args:
+            cookies: {'sellercenter': {...}, 'live': {...}}
+
+        Returns:
+            {
+                'sellercenter_valid': bool,  # Sellercenter 端是否有效
+                'live_valid': bool,          # LazLive 端是否有效
+                'needs_refresh': bool,       # 是否需要刷新 Cookie
+                'error': str | None,         # 探测失败的错误信息
+            }
+        """
+        result = {
+            'sellercenter_valid': False,
+            'live_valid': False,
+            'needs_refresh': False,
+            'error': None,
+        }
+
+        sc_cookies = cookies.get('sellercenter')
+        live_cookies = cookies.get('live')
+
+        # 实时模式：只检测 LazLive 端
+        if self.crawl_type == 'realtime':
+            if not live_cookies:
+                result['error'] = 'live_cookie_missing'
+                result['needs_refresh'] = True
+                return result
+
+            is_valid, is_token_expired = self._probe_live_login(live_cookies)
+            result['live_valid'] = is_valid
+
+            if not is_valid:
+                result['needs_refresh'] = True
+                result['error'] = 'live_login_invalid'
+            elif is_token_expired:
+                logger.info(f'LazLive Token 自动更新成功，跳过 Cookie 刷新，账号={self.browser_id}')
+
+            return result
+
+        # 历史模式：检测两端
+        invalid_endpoints = []
+
+        # 检测 Sellercenter
+        if sc_cookies:
+            is_valid, _ = self._probe_sellercenter_login(sc_cookies)
+            result['sellercenter_valid'] = is_valid
+            if not is_valid:
+                invalid_endpoints.append('sellercenter')
+        else:
+            invalid_endpoints.append('sellercenter')
+
+        # 检测 LazLive
+        if live_cookies:
+            is_valid, is_token_expired = self._probe_live_login(live_cookies)
+            result['live_valid'] = is_valid
+            if not is_valid:
+                invalid_endpoints.append('live')
+            elif is_token_expired:
+                logger.info(f'LazLive Token 自动更新成功，账号={self.browser_id}')
+        else:
+            invalid_endpoints.append('live')
+
+        # 设置刷新标记和错误信息
+        if invalid_endpoints:
+            result['needs_refresh'] = True
+            if len(invalid_endpoints) == 2:
+                result['error'] = 'both_endpoints_invalid'
+            elif 'sellercenter' in invalid_endpoints:
+                result['error'] = 'sellercenter_invalid'
+            else:
+                result['error'] = 'live_invalid'
+
+        return result
+
+    def _update_token_from_response(self, response_headers: dict) -> bool:
+        """从响应头提取并更新 Token。
+
+        Args:
+            response_headers: HTTP 响应头
+
+        Returns:
+            True=更新成功, False=更新失败
+        """
+        # 1. 提取新 Token
+        new_tokens = self._extract_token_from_headers(response_headers)
+        if '_m_h5_tk' not in new_tokens or '_m_h5_tk_enc' not in new_tokens:
+            logger.error(f'Token 提取失败，响应头: {response_headers}')
+            return False
+
+        # 2. 更新数据库中的 Cookie（sellercenter + live 两个端口）
+        try:
+            cookies = self.get_cookies()
+            if cookies:
+                for endpoint in ('sellercenter', 'live'):
+                    ep_cookies = cookies.get(endpoint)
+                    if ep_cookies:
+                        updated = ep_cookies.copy()
+                        updated.update(new_tokens)
+                        cookie_manager.save_cookies(self.browser_id, 'lazada', endpoint, updated)
+
+            # 3. 更新内存中的 Cookie 字典（后续任务自动使用新 Token）
+            for attr in ('_sc_cookies', '_live_cookies'):
+                mem_cookies = getattr(self, attr, None)
+                if mem_cookies is not None:
+                    mem_cookies.update(new_tokens)
+
+            logger.info(
+                f'Token 更新成功，账号={self.browser_id}, '
+                f'新 Token: {new_tokens["_m_h5_tk"][:20]}...'
+            )
+            return True
+        except Exception as e:
+            logger.error(f'Token 更新失败，账号={self.browser_id}，错误={e}')
+            return False
+
     def _refresh_cookies(self) -> bool:
-        """刷新 Cookie（每次采集前都执行）"""
+        """刷新 Cookie（通过浏览器自动登录）"""
         logger.info(f'开始刷新 Cookie，账号={self.browser_id}')
 
         credentials = cookie_manager.get_account_credentials(
@@ -1248,28 +1482,52 @@ class LazadaHttpCrawler(BaseHttpCrawler):
     # ------------------------------------------------------------------
 
     def start_crawl(self) -> dict[str, Any]:
-        """覆写基类方法，添加 Cookie 预刷新 + 单端口缺失的 partial 状态上报。"""
-        self._refresh_cookies()
+        """覆写基类方法，添加登录态预检 + Cookie 条件刷新 + 单端口缺失的 partial 状态上报。"""
+        # 1. 获取 Cookie
+        cookies = self.get_cookies()
 
+        # 2. Cookie 不存在或为空，直接刷新
+        if not cookies or (not cookies.get('sellercenter') and not cookies.get('live')):
+            logger.warning(f'Cookie 不存在或为空，直接刷新，账号={self.browser_id}')
+            if not self._refresh_cookies():
+                logger.error(f'Cookie 刷新失败，终止采集，账号={self.browser_id}')
+                return {'success': False, 'error': 'refresh_failed'}
+        else:
+            # 3. 预检登录态
+            login_state = self._check_login_state(cookies)
+
+            # 4. 根据检测结果决定是否刷新
+            if login_state['needs_refresh']:
+                logger.info(
+                    f'登录态失效，开始刷新 Cookie，账号={self.browser_id}，'
+                    f'原因={login_state.get("error")}'
+                )
+                if not self._refresh_cookies():
+                    logger.error(f'Cookie 刷新失败，终止采集，账号={self.browser_id}')
+                    return {'success': False, 'error': 'refresh_failed'}
+            elif login_state.get('error') and not login_state['sellercenter_valid'] and not login_state['live_valid']:
+                # 探测失败且两端都无效，降级策略：跳过刷新，直接采集（让被动检测处理）
+                logger.warning(
+                    f'登录态探测失败，跳过刷新直接采集，账号={self.browser_id}，'
+                    f'错误={login_state["error"]}'
+                )
+            else:
+                logger.info(f'登录态有效，跳过 Cookie 刷新，账号={self.browser_id}')
+
+        # 5. 执行采集
         result = super().start_crawl()
 
-        # 检查是否有跳过的 api_type
+        # 6. 处理跳过的 api_type（单端口 Cookie 缺失）
         if self.skipped_api_types and result.get('success'):
-            # 区分两种情况：实时模式主动跳过 vs Cookie 真的缺失
             if self.crawl_type == 'realtime':
-                # 实时模式：主动跳过 sellercenter 接口，这是正常行为，不发送告警
-                logger.info(
-                    f'实时模式：主动跳过 {len(self.skipped_api_types)} 个 sellercenter 接口'
-                )
-                # 不修改状态为 partial，保持 success
+                # 实时模式：主动跳过 sellercenter 接口，这是正常行为
+                logger.info(f'实时模式：主动跳过 {len(self.skipped_api_types)} 个 sellercenter 接口')
             else:
-                # 历史模式：Cookie 缺失导致跳过接口，这是异常情况，需要告警
+                # 历史模式：Cookie 缺失导致跳过接口，这是异常情况
                 logger.warning(
                     f'单端口 Cookie 缺失，跳过 {len(self.skipped_api_types)} 个接口: '
                     f'{", ".join(self.skipped_api_types)}'
                 )
-
-                # 修改状态为 partial
                 result['status'] = 'partial'
                 result['skipped_api_types'] = self.skipped_api_types
 
@@ -1300,4 +1558,4 @@ class LazadaHttpCrawler(BaseHttpCrawler):
 
 
 if __name__ == '__main__':
-    LazadaHttpCrawler(browser_id="k1c0io17",group_name = '泰国团队-lazada',crawl_type='realtime').start_crawl()
+    LazadaHttpCrawler(browser_id="k1c0io17",group_name = '泰国团队-lazada',crawl_type='history').start_crawl()

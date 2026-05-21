@@ -47,8 +47,8 @@ def generate_daily_payloads(original_payload, timezone_str, full_collection, now
     today_local = now_local.date()
 
     if full_collection:
-        first_day = today_local.replace(day=1)
         yesterday = today_local - timedelta(days=1)
+        first_day = yesterday - timedelta(days=27)
         target_dates = []
         current = first_day
         while current <= yesterday:
@@ -236,16 +236,16 @@ class TestGenerateDailyPayloads:
         assert ts['end_timestamp'] == _ts(2026, 3, 10)
 
     def test_full_collection_singapore(self):
-        """新加坡全量：3/1 到 3/9，共 9 条"""
+        """新加坡全量：近 28 天（2/10 到 3/9，共 28 条）"""
         payloads = generate_daily_payloads(
             MOCK_PAYLOAD, 'Asia/Singapore', True, MOCK_NOW_UTC
         )
-        assert len(payloads) == 9
+        assert len(payloads) == 28
 
-        # 第一条 3/1: start=2/28 00:00 UTC, end=3/2 00:00 UTC
+        # 第一条 2/10: start=2/9 00:00 UTC, end=2/11 00:00 UTC
         ts_first = payloads[0]['request']['params'][0]['time_selector']
-        assert ts_first['start_timestamp'] == _ts(2026, 2, 28)
-        assert ts_first['end_timestamp'] == _ts(2026, 3, 2)
+        assert ts_first['start_timestamp'] == _ts(2026, 2, 9)
+        assert ts_first['end_timestamp'] == _ts(2026, 2, 11)
 
         # 最后一条 3/9: start=3/8 00:00 UTC, end=3/10 00:00 UTC
         ts_last = payloads[-1]['request']['params'][0]['time_selector']
@@ -253,11 +253,11 @@ class TestGenerateDailyPayloads:
         assert ts_last['end_timestamp'] == _ts(2026, 3, 10)
 
     def test_full_collection_new_york(self):
-        """纽约全量：当地 3/10 → 3/1 到 3/9，共 9 条"""
+        """纽约全量：近 28 天，共 28 条"""
         payloads = generate_daily_payloads(
             MOCK_PAYLOAD, 'America/New_York', True, MOCK_NOW_UTC
         )
-        assert len(payloads) == 9
+        assert len(payloads) == 28
 
     def test_payload_structure(self):
         """验证 Payload 结构：params 长度为 1，granularity 为 11"""
@@ -341,8 +341,8 @@ class TestTikTokLiveListThreshold:
                                     },
                                     {
                                         'live_id': 'skip-room',
-                                        'live_start_timestamp': int(datetime(2026, 3, 8, 23, 59, 59, tzinfo=timezone.utc).timestamp()),
-                                        'live_end_timestamp': int(datetime(2026, 3, 9, 1, 0, 0, tzinfo=timezone.utc).timestamp()),
+                                        'live_start_timestamp': int(datetime(2026, 3, 8, 22, 0, 0, tzinfo=timezone.utc).timestamp()),
+                                        'live_end_timestamp': int(datetime(2026, 3, 8, 23, 59, 59, tzinfo=timezone.utc).timestamp()),
                                     },
                                 ]
                             }]

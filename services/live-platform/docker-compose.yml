@@ -1,0 +1,59 @@
+# live-platform Phase 1 部署编排
+# 依据：docs/designs/2026-05-10-mediamtx-deployment-adr.md
+# network_mode: host 消除 NAT/bridge 开销，localhost 即宿主机
+# bind mount 绕过 overlay2，直达宿主机文件系统
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3-ffmpeg
+    container_name: live-platform-mediamtx
+    network_mode: "host"
+    restart: unless-stopped
+    volumes:
+      - ./config/mediamtx.yml:/mediamtx.yml:ro
+      - /data/recordings:/data/recordings
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "15"
+          memory: 8G
+
+  live-platform:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: live-platform:local
+    container_name: live-platform
+    network_mode: "host"
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+    env_file:
+      - .env
+    environment:
+      LIVE_PLATFORM_PORT: "8080"
+      MEDIAMTX_API_BASE_URL: "http://127.0.0.1:9997"
+      MEDIAMTX_RTMP_BASE_URL: "rtmp://127.0.0.1:1935/live"
+      LIVE_PLATFORM_SQLITE_PATH: "/data/live-platform/db/live-platform.sqlite3"
+    volumes:
+      - /data/recordings:/data/recordings
+      - /data/live-platform/db:/data/live-platform/db
+      - /data/live-platform/logs:/app/logs
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"

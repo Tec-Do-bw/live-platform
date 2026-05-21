@@ -169,8 +169,8 @@ def read_csv(file_path: str) -> list[dict]:
 
 def main():
     # CSV 文件路径
-    project_root = Path(__file__).resolve().parents[3]
-    csv_path = project_root / "docs" / "specs" / "example_data" / "shopee直播_多站点标记结果.csv"
+    project_root = Path(__file__).resolve().parent.parent.parent
+    csv_path = project_root / "docs" / "shopee直播_多站点标记结果.csv"
 
     if not csv_path.exists():
         logger.error(f"CSV 文件不存在: {csv_path}")

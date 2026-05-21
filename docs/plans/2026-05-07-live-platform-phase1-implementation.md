@@ -3,7 +3,22 @@
 > **开始日期：** 2026-05-07  
 > **预计完成：** 2026-05-21（2 周）  
 > **负责人：** XBW  
-> **状态：** 待开始
+> **状态：** 代码实施完成，待真实 MediaMTX / 压测 / 生产验证
+
+## 2026-05-07 执行记录
+
+已在 `codex/live-platform-phase1` 分支完成仓库内可执行部分：
+
+- 新建 `services/live-platform/` 服务骨架，包含 FastAPI 入口、配置、日志、SQLite 房间仓储、README 与 CLAUDE 约束文档。
+- 实现显式房间状态机、健康检查、断流进入重连、资源清理、FFmpeg relay 进程管理与 MediaMTX API 客户端。
+- 实现调度器、TikTok/Shopee/Lazada 取流适配入口、OSS worker、Kafka worker、上传编排、对外兼容 API 与内部切片回调 API。
+- 补齐状态机、调度器、FFmpeg、上传编排、API 与端到端链路单测，已通过 `services/live-platform/.venv/bin/python -m pytest`，结果：`12 passed`。
+
+仍需在真实环境执行：
+
+- MediaMTX Docker Compose 部署、录制 hook 配置与 API/metrics 联通验证。
+- 使用真实 OSS、Kafka、平台直播 URL 执行端到端录制验证。
+- 80 路并发 24 小时压力测试、生产部署、3 天观察与旧服务下线。
 
 ---
 
@@ -11,58 +26,63 @@
 
 | 阶段 | 任务 | 时间 | 优先级 | 状态 |
 |------|------|------|--------|------|
-| 准备 | MediaMTX 部署与验证 | 1 天 | P0 | ⏳ 待开始 |
-| 开发 | 搭建 live-platform 骨架 | 1 天 | P0 | ⏳ 待开始 |
-| 开发 | 实现房间状态机 | 2 天 | P0 | ⏳ 待开始 |
-| 开发 | 实现调度器与取流适配 | 2 天 | P0 | ⏳ 待开始 |
-| 开发 | 实现 FFmpeg 协议转换 | 1 天 | P0 | ⏳ 待开始 |
-| 开发 | 实现上传与 Kafka worker | 2 天 | P0 | ⏳ 待开始 |
-| 开发 | 实现 API 与内部接口 | 1 天 | P1 | ⏳ 待开始 |
-| 测试 | 单元测试与集成测试 | 2 天 | P0 | ⏳ 待开始 |
-| 测试 | 端到端验证 | 1 天 | P0 | ⏳ 待开始 |
-| 测试 | 80 路并发压力测试 | 1 天 | P0 | ⏳ 待开始 |
-| 部署 | 生产环境部署与验证 | 1 天 | P0 | ⏳ 待开始 |
+| 准备 | MediaMTX 部署与验证 | 1 天 | P0 | ⏳ 待真实环境执行 |
+| 开发 | 搭建 live-platform 骨架 | 1 天 | P0 | ✅ 代码完成 |
+| 开发 | 实现房间状态机 | 2 天 | P0 | ✅ 代码完成 |
+| 开发 | 实现调度器与取流适配 | 2 天 | P0 | ✅ 代码完成 |
+| 开发 | 实现 FFmpeg 协议转换 | 1 天 | P0 | ✅ 代码完成 |
+| 开发 | 实现上传与 Kafka worker | 2 天 | P0 | ✅ 代码完成 |
+| 开发 | 实现 API 与内部接口 | 1 天 | P1 | ✅ 代码完成 |
+| 测试 | 单元测试与集成测试 | 2 天 | P0 | ✅ 本地通过 |
+| 测试 | 端到端验证 | 1 天 | P0 | ⏳ 待真实环境执行 |
+| 测试 | 80 路并发压力测试 | 1 天 | P0 | ⏳ 待真实环境执行 |
+| 部署 | 生产环境部署与验证 | 1 天 | P0 | ⏳ 待真实环境执行 |
 
 ---
 
 ## Phase 0：准备工作（1 天）
 
-### 0.1 部署 MediaMTX
+> **部署方式已于 2026-05-10 由 Native systemd 调整为 Docker Compose + `network_mode: host` + bind mount。** 详见 `docs/designs/2026-05-10-mediamtx-deployment-adr.md`。
 
-- [ ] **安装 MediaMTX**
+### 0.1 部署 MediaMTX（Docker Compose）
+
+- [ ] **准备宿主机目录与文件系统**
   ```bash
-  cd /opt
-  wget https://github.com/bluenviron/mediamtx/releases/latest/download/mediamtx_v1.x.x_linux_amd64.tar.gz
-  tar -xzf mediamtx_v1.x.x_linux_amd64.tar.gz
-  sudo mv mediamtx /usr/local/bin/
-  sudo mv mediamtx.yml /etc/mediamtx.yml
+  sudo mkdir -p /data/recordings /data/live-platform/db
+  # 推荐 XFS + noatime，提升大文件顺序写性能
+  sudo chown -R 1000:1000 /data/recordings /data/live-platform
   ```
 
-- [ ] **创建专用用户**
+- [ ] **准备 `docker-compose.yml`（位于 `services/live-platform/`）**
+  - [ ] MediaMTX 与 live-platform 均使用 `network_mode: host`，消除 NAT/bridge 开销
+  - [ ] `image: bluenviron/mediamtx:1.9.3-ffmpeg`（精确版本，禁用 `:latest`）
+  - [ ] bind mount `/data/recordings:/data/recordings`、`./config/mediamtx.yml:/mediamtx.yml:ro`
+  - [ ] `ulimits.nofile: 65536`、`restart: unless-stopped`、`logging.max-size: 50m`
+
+- [ ] **准备 `config/mediamtx.yml`**
+  - [ ] `api: yes, apiAddress: 127.0.0.1:9997`
+  - [ ] `metrics: yes, metricsAddress: 127.0.0.1:9998`
+  - [ ] `recordPath: /data/recordings/%path/%Y-%m-%d_%H-%M-%S-%f`
+  - [ ] `recordSegmentDuration: 10s`（与健康检查超时 30s 对齐）
+  - [ ] `writeQueueSize: 2048`（80 路并发防 write queue full）
+  - [ ] `readTimeout: 30s` / `writeTimeout: 30s`
+  - [ ] `runOnRecordSegmentComplete` 回调指向 `http://localhost:8080/internal/segment-ready`
+
+- [ ] **启动服务**
   ```bash
-  sudo useradd -r -s /bin/false mediamtx
-  sudo mkdir -p /data/recordings
-  sudo chown -R mediamtx:mediamtx /data/recordings
+  cd services/live-platform
+  docker compose up -d mediamtx
   ```
-
-- [ ] **配置 systemd 服务**
-  - [ ] 创建 `/etc/systemd/system/mediamtx.service`
-  - [ ] 配置资源限制（LimitNOFILE=65536）
-  - [ ] 启动服务：`sudo systemctl start mediamtx`
-  - [ ] 设置开机自启：`sudo systemctl enable mediamtx`
-
-- [ ] **配置 MediaMTX**
-  - [ ] 编辑 `/etc/mediamtx.yml`
-  - [ ] 启用 API：`api: yes, apiAddress: 127.0.0.1:9997`
-  - [ ] 启用 metrics：`metrics: yes, metricsAddress: 127.0.0.1:9998`
-  - [ ] 配置录制路径：`recordPath: /data/recordings/%path/%Y-%m-%d_%H-%M-%S-%f`
-  - [ ] 配置切片时长：`recordSegmentDuration: 10s`（与健康检查超时 30s 对齐）
-  - [ ] 配置切片回调：`runOnRecordSegmentComplete`
 
 - [ ] **验证 MediaMTX**
-  - [ ] 检查服务状态：`systemctl status mediamtx`
-  - [ ] 测试 API：`curl http://localhost:9997/v3/paths/list`
-  - [ ] 测试 metrics：`curl http://localhost:9998/metrics`
+  - [ ] 容器状态：`docker compose ps`（`mediamtx` 应为 `running (healthy)`）
+  - [ ] 日志：`docker compose logs --tail=100 mediamtx`
+  - [ ] API：`curl http://localhost:9997/v3/paths/list`
+  - [ ] Metrics：`curl http://localhost:9998/metrics`
+
+- [ ] **开机自启**
+  - [ ] 宿主机启用 Docker 服务：`sudo systemctl enable --now docker`
+  - [ ] `restart: unless-stopped` 已配置，宿主机重启后容器自动拉起
 
 ### 0.2 准备开发环境
 
@@ -74,6 +94,13 @@
 - [ ] **初始化依赖**
   - [ ] 创建 `requirements.txt`
   - [ ] 安装依赖：`pip install -r requirements.txt`
+
+- [ ] **编写 Docker 构建与编排骨架**
+  - [ ] `services/live-platform/Dockerfile`（基于 `python:3.12-slim`，分层缓存：先 `COPY requirements.txt` 再 `pip install`，最后 `COPY` 源码）
+  - [ ] `services/live-platform/.dockerignore`（排除 `.venv/`、`__pycache__/`、`logs/`、`data/`、`tests/` 等）
+  - [ ] `services/live-platform/docker-compose.yml`（MediaMTX + live-platform 两服务，均 `network_mode: host`）
+  - [ ] `services/live-platform/config/mediamtx.yml`（MediaMTX 配置）
+  - [ ] 本地自检：`docker compose config` 通过 + `docker compose build` 构建成功
 
 ---
 
@@ -379,63 +406,97 @@
   - [ ] 无文件描述符耗尽
   - [ ] 断流重连成功率 > 95%
 
+- [ ] **Native vs Docker 性能对比**
+  - [ ] 基线：Native 部署下 80 路并发 2 小时的 CPU / 内存 / 磁盘 I/O / 网络带宽 / 切片回调延迟 / 上传成功率
+  - [ ] 对比：Docker Compose（host 网络 + bind mount）部署下相同负载相同时长的同一组指标
+  - [ ] 验收条件：Docker 相对 Native 各项指标劣化 < 5%，否则需定位根因后再推进生产部署
+  - [ ] 结果回写到 `docs/designs/2026-05-10-mediamtx-deployment-adr.md` 的"下次复审"章节
+
 ---
 
 ## Phase 10：生产部署（1 天）
 
-### 10.1 部署 live-platform
+> 部署方式：Docker Compose + `network_mode: host` + bind mount。详见 `docs/designs/2026-05-10-mediamtx-deployment-adr.md`。
 
-- [ ] **打包代码**
+### 10.1 准备生产服务器
+
+- [ ] **安装 Docker 与 Docker Compose**
   ```bash
-  cd services/live-platform
-  tar -czf live-platform.tar.gz .
+  # 安装 Docker（如已安装则跳过）
+  curl -fsSL https://get.docker.com | sh
+  sudo systemctl enable --now docker
   ```
 
-- [ ] **上传到生产服务器**
+- [ ] **准备宿主机目录与文件系统**
   ```bash
-  scp live-platform.tar.gz user@server:/opt/
+  sudo mkdir -p /data/recordings /data/live-platform/db /data/live-platform/logs
+  sudo chown -R 1000:1000 /data/recordings /data/live-platform
+  # 推荐 XFS + noatime（如有独立数据盘）
   ```
 
-- [ ] **解压并安装依赖**
+- [ ] **拉取代码到生产服务器**
   ```bash
-  cd /opt
-  tar -xzf live-platform.tar.gz
-  pip install -r requirements.txt
+  git clone <repo-url> /opt/live-platform
+  cd /opt/live-platform/services/live-platform
   ```
 
-- [ ] **配置 systemd 服务**
-  - [ ] 创建 `/etc/systemd/system/live-platform.service`
-  - [ ] 启动服务：`sudo systemctl start live-platform`
-  - [ ] 设置开机自启：`sudo systemctl enable live-platform`
-
-### 10.2 验证部署
-
-- [ ] **检查服务状态**
+- [ ] **准备环境变量**
   ```bash
-  systemctl status live-platform
-  systemctl status mediamtx
+  cp .env.example .env
+  # 编辑 .env，填入 OSS、Kafka、数据库等真实配置
+  vim .env
   ```
+
+### 10.2 构建与启动
+
+- [ ] **构建 live-platform 镜像**
+  ```bash
+  cd /opt/live-platform/services/live-platform
+  docker compose build live-platform
+  ```
+
+- [ ] **启动全部服务**
+  ```bash
+  docker compose up -d
+  ```
+
+- [ ] **确认容器状态**
+  ```bash
+  docker compose ps
+  # mediamtx 和 live-platform 均应为 running (healthy)
+  ```
+
+### 10.3 验证部署
 
 - [ ] **检查日志**
   ```bash
-  journalctl -u live-platform -f
-  journalctl -u mediamtx -f
+  docker compose logs --tail=100 mediamtx
+  docker compose logs --tail=100 live-platform
   ```
 
 - [ ] **测试核心接口**
   ```bash
   curl http://localhost:8080/health
   curl http://localhost:9997/v3/paths/list
+  curl http://localhost:9998/metrics
   ```
 
-### 10.3 观察运行
+### 10.4 灰度放量
+
+- [ ] **灰度切流**
+  - [ ] 10 路：观察 2 小时，确认切片回调、OSS 上传、Kafka 推送正常
+  - [ ] 40 路：观察 4 小时，确认资源占用线性增长无异常
+  - [ ] 80 路：观察 24 小时，确认全量稳定
+
+### 10.5 观察运行
 
 - [ ] **观察 3 天**
-  - [ ] 每天检查日志
+  - [ ] 每天检查日志：`docker compose logs --since 24h`
   - [ ] 监控断流率
-  - [ ] 监控资源占用
+  - [ ] 监控资源占用：`docker stats`
   - [ ] 验证开播检测延迟 < 60 秒
   - [ ] 验证断流重连成功率 > 95%
+  - [ ] 检查磁盘空间：`df -h /data/recordings`
 
 ---
 
@@ -518,10 +579,11 @@
 
 1. **立即回滚**
    ```bash
-   # 停止新服务
-   systemctl stop live-platform
-   
-   # 恢复旧代码
+   # 停止 Docker 容器
+   cd /opt/live-platform/services/live-platform
+   docker compose down
+
+   # 恢复旧服务
    git checkout main
    cd services/live-monitor && python main.py &
    cd services/live-stream && bash start.sh &
@@ -531,6 +593,12 @@
    - 检查旧服务是否正常运行
    - 验证核心功能
    - 通知团队
+
+3. **根因分析**
+   ```bash
+   # 收集 Docker 日志用于排查
+   docker compose logs --since 1h > /tmp/live-platform-crash.log 2>&1
+   ```
 
 ---
 

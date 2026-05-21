@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from urllib.parse import urlencode, parse_qs, urlsplit
 from typing import List, Dict, Any, Optional
 from utils.logger import logger
+from utils.adspower_client import get_adspower_client, AdsPowerRateLimitError, AdsPowerApiError
 from DrissionPage import Chromium, ChromiumOptions
 from core.config import Settings
 
@@ -23,8 +24,7 @@ from core.config import Settings
 class BrowserApi():
     flag = True
 
-    # 数据结算阈值：当地时间超过该小时数，认为 T-1 数据已就绪
-    SETTLEMENT_HOUR = 12
+    # 增量模式固定取 T-1（昨天）作为最新可用日期，不再做结算延迟判断
 
     # 时区映射：根据 group_name 关键词推断时区
     TIMEZONE_MAP = {
@@ -112,22 +112,17 @@ class BrowserApi():
         now_local = datetime.now(tz)
         today_local = now_local.date()
 
-        # 数据结算延迟：当地时间未过 SETTLEMENT_HOUR 则 T-1 数据尚未就绪，需回退到 T-2
-        if now_local.hour < self.SETTLEMENT_HOUR:
-            latest_available_date = today_local - timedelta(days=2)
-        else:
-            latest_available_date = today_local - timedelta(days=1)
+        latest_available_date = today_local - timedelta(days=1)
 
         logger.info(
-            f'动态安全可用日期推算: 时区={timezone_str}, 当地时间={now_local.strftime("%Y-%m-%d %H:%M")}, '
-            f'当前小时={now_local.hour}, 结算阈值={self.SETTLEMENT_HOUR}, '
+            f'动态可用日期推算: 时区={timezone_str}, 当地时间={now_local.strftime("%Y-%m-%d %H:%M")}, '
             f'latest_available_date={latest_available_date}'
         )
 
         # 确定目标日期列表
         if full_collection:
-            # 全量：当月 1 号到 latest_available_date
-            first_day = latest_available_date.replace(day=1)
+            # 全量：近 28 天（latest_available_date - 27 ~ latest_available_date，含端点）
+            first_day = latest_available_date - timedelta(days=27)
             target_dates = []
             current = first_day
             while current <= latest_available_date:
@@ -141,11 +136,11 @@ class BrowserApi():
                 latest_available_date - timedelta(days=2),
             ]
 
-        # 为每个日期生成 Payload（48 小时 UTC 窗口）
+        # 为每个日期生成 Payload（24 小时 UTC 窗口，自定义时间模式）
         payloads = []
         for target_date in target_dates:
-            # start_timestamp = (D - 1 day) at UTC 00:00:00
-            start_dt = datetime.combine(target_date - timedelta(days=1), datetime.min.time())
+            # start_timestamp = D at UTC 00:00:00
+            start_dt = datetime.combine(target_date, datetime.min.time())
             start_dt_utc = start_dt.replace(tzinfo=timezone.utc)
             start_timestamp = int(start_dt_utc.timestamp())
 
@@ -158,7 +153,7 @@ class BrowserApi():
             payload = copy.deepcopy(original_payload)
             time_selector = {
                 "period": 2,
-                "granularity": 11,  # 天级聚合
+                "granularity": 1,  # 自定义时间
                 "end_timestamp": end_timestamp,
                 "start_timestamp": start_timestamp,
                 "timezone_offset": "0"
@@ -291,8 +286,13 @@ class BrowserApi():
         Returns:
             List[str]: 匹配的 group_id 列表
         """
+        from utils.adspower_client import AdsPowerClient
+
+        # 根据是否传入自定义 api_url 构造客户端
         if api_url is None:
-            api_url = Settings.ADSPOWER_CONFIG["api_url"]
+            client = get_adspower_client()
+        else:
+            client = AdsPowerClient(base_url=api_url)
 
         matched_groups = []
 
@@ -300,25 +300,7 @@ class BrowserApi():
             logger.info(f'动态查询分组，筛选 platform={platform}')
 
             # 调用 /api/v1/group/list 获取所有分组
-            group_resp = None
-            for attempt in range(1, 4):
-                try:
-                    group_resp = requests.get(
-                        f"{api_url}/api/v1/group/list",
-                        params={"page_size": 100},
-                        timeout=10
-                    ).json()
-                    if group_resp.get('code') == 0:
-                        break
-                    logger.error(f'查询分组列表失败: {group_resp.get("msg")} (第{attempt}次尝试)')
-                except Exception as e:
-                    logger.error(f'查询分组列表异常: {e} (第{attempt}次尝试)')
-                if attempt < 3:
-                    time.sleep(2)
-
-            if not group_resp or group_resp.get('code') != 0:
-                logger.error('查询分组列表在重试后仍失败')
-                return []
+            group_resp = client.get('/api/v1/group/list', params={"page_size": 100})
 
             groups = group_resp.get('data', {}).get('list', [])
             logger.info(f'获取到 {len(groups)} 个分组')
@@ -340,6 +322,9 @@ class BrowserApi():
             logger.info(f'筛选完成，匹配到 {len(matched_groups)} 个分组')
             return [g['group_id'] for g in matched_groups]
 
+        except (AdsPowerRateLimitError, AdsPowerApiError) as e:
+            logger.error(f'查询分组列表失败: {e}')
+            return []
         except Exception as e:
             logger.exception(f'动态获取分组失败: {e}')
             return []
@@ -357,8 +342,12 @@ class BrowserApi():
         Returns:
             List[Dict]: 包含 user_id、group_name、name 的字典列表
         """
+        from utils.adspower_client import AdsPowerClient
+
         if api_url is None:
-            api_url = Settings.ADSPOWER_CONFIG["api_url"]
+            client = get_adspower_client()
+        else:
+            client = AdsPowerClient(base_url=api_url)
 
         all_users = []
 
@@ -366,24 +355,10 @@ class BrowserApi():
             for group_id in group_ids:
                 logger.info(f'查询分组ID {group_id} 下的环境...')
 
-                user_resp = None
-                for attempt in range(1, 4):
-                    try:
-                        user_resp = requests.get(
-                            f"{api_url}/api/v1/user/list",
-                            params={"group_id": group_id, "page_size": 100},
-                            timeout=10
-                        ).json()
-                        if user_resp.get('code') == 0:
-                            break
-                        logger.error(f'查询环境失败: {user_resp.get("msg")} (第{attempt}次尝试)')
-                    except Exception as e:
-                        logger.error(f'查询环境异常: {e} (第{attempt}次尝试)')
-                    if attempt < 3:
-                        time.sleep(2)
-
-                if not user_resp or user_resp.get('code') != 0:
-                    logger.error(f'查询环境在重试后仍失败，跳过分组ID: {group_id}')
+                try:
+                    user_resp = client.get('/api/v1/user/list', params={"group_id": group_id, "page_size": 100})
+                except (AdsPowerRateLimitError, AdsPowerApiError) as e:
+                    logger.error(f'查询环境失败，跳过分组ID {group_id}: {e}')
                     continue
 
                 users = user_resp.get('data', {}).get('list', [])
@@ -417,8 +392,12 @@ class BrowserApi():
         Returns:
             List[Dict]: 包含 user_id、group_name、name 的字典列表
         """
+        from utils.adspower_client import AdsPowerClient
+
         if api_url is None:
-            api_url = Settings.ADSPOWER_CONFIG["api_url"]
+            client = get_adspower_client()
+        else:
+            client = AdsPowerClient(base_url=api_url)
 
         all_users = []
 
@@ -426,25 +405,10 @@ class BrowserApi():
             for group_name in group_names:
                 # 1. 查询分组获取group_id
                 logger.info(f'查询分组: {group_name}')
-                group_params = {"group_name": group_name, "page_size": 100}
-                group_resp = None
-                for attempt in range(1, 4):
-                    try:
-                        group_resp = requests.get(
-                            f"{api_url}/api/v1/group/list",
-                            params=group_params,
-                            timeout=10
-                        ).json()
-                        if group_resp.get('code') == 0:
-                            break
-                        logger.error(f'查询分组失败: {group_resp.get("msg")} (第{attempt}次尝试)')
-                    except Exception as e:
-                        logger.error(f'查询分组异常: {e} (第{attempt}次尝试)')
-                    if attempt < 3:
-                        time.sleep(2)
-
-                if not group_resp or group_resp.get('code') != 0:
-                    logger.error(f'查询分组在重试后仍失败，跳过该分组: {group_name}')
+                try:
+                    group_resp = client.get('/api/v1/group/list', params={"group_name": group_name, "page_size": 100})
+                except (AdsPowerRateLimitError, AdsPowerApiError) as e:
+                    logger.error(f'查询分组失败，跳过该分组 {group_name}: {e}')
                     continue
 
                 groups = group_resp.get('data', {}).get('list', [])
@@ -457,25 +421,10 @@ class BrowserApi():
 
                 # 2. 根据group_id查询用户列表
                 logger.info(f'查询分组 {group_name} 下的环境...')
-                user_params = {"group_id": group_id, "page_size": 100}
-                user_resp = None
-                for attempt in range(1, 4):
-                    try:
-                        user_resp = requests.get(
-                            f"{api_url}/api/v1/user/list",
-                            params=user_params,
-                            timeout=10
-                        ).json()
-                        if user_resp.get('code') == 0:
-                            break
-                        logger.error(f'查询环境失败: {user_resp.get("msg")} (第{attempt}次尝试)')
-                    except Exception as e:
-                        logger.error(f'查询环境异常: {e} (第{attempt}次尝试)')
-                    if attempt < 3:
-                        time.sleep(2)
-
-                if not user_resp or user_resp.get('code') != 0:
-                    logger.error(f'查询环境在重试后仍失败，跳过该分组: {group_name}')
+                try:
+                    user_resp = client.get('/api/v1/user/list', params={"group_id": group_id, "page_size": 100})
+                except (AdsPowerRateLimitError, AdsPowerApiError) as e:
+                    logger.error(f'查询环境失败，跳过该分组 {group_name}: {e}')
                     continue
 
                 users = user_resp.get('data', {}).get('list', [])
@@ -501,20 +450,16 @@ class BrowserApi():
     @staticmethod
     def get_driver(id):
         """获取浏览器驱动实例
-        
+
         Args:
             id: 浏览器ID
-            api_url: AdsPower API地址，默认从配置读取
-            
+
         Returns:
             Chromium: DrissionPage浏览器实例
         """
-        url = Settings.ADSPOWER_CONFIG["api_url"]
-
-        # 打开浏览器
-        params = {"user_id": str(id)}
-        user_resp = requests.get(f"{url}/api/v1/browser/start",
-                            params=params,timeout=10).json()
+        # 通过统一客户端启动浏览器
+        client = get_adspower_client()
+        user_resp = client.get('/api/v1/browser/start', params={"user_id": str(id)})
         logger.info(f'打开浏览器响应: {user_resp}')
         debuggerAddress = user_resp['data']['ws']['selenium']
         chrome_driver = user_resp['data']['webdriver']
