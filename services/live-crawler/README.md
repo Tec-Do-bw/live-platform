@@ -181,8 +181,10 @@ live_dp/
 │   └── browserapi.py         # AdsPower API 封装
 ├── scripts/                   # 辅助脚本
 │   ├── init_tracker.py       # 初始化采集追踪文件
+│   ├── list_shopee_accounts.py # 列出 Shopee 账号
 │   └── mock_monitor_data.py  # 注入监控模拟数据
 ├── utils/                     # 工具模块
+│   ├── adspower_client.py    # AdsPower API 统一客户端（含限流重试，见规则七）
 │   ├── kafka_client.py       # Kafka 客户端
 │   └── logger.py             # loguru 日志
 └── tests/                     # 测试
