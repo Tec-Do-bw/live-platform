@@ -34,6 +34,18 @@
 
 详见 `../../.claude/references/recrawl-http-spec.md`。
 
+### 规则七：AdsPower API 调用必须通过统一客户端
+
+所有 AdsPower API 调用**必须**通过 `utils/adspower_client.py` 的 `AdsPowerClient` 发起，**禁止**裸用 `requests.get/post` 直接请求 AdsPower。
+
+- 工厂函数 `get_adspower_client()` 从 Settings 读取 base_url；自定义 base_url 用 `AdsPowerClient(base_url=url)`
+- 内置限流重试（识别 `code=-1` + msg 含 "too many"/"rate"，指数退避 5 次）与连接异常重试
+- 调用方只需处理 `AdsPowerRateLimitError`（重试耗尽）与 `AdsPowerApiError`（业务错误）
+
+### 规则八：TikTok 采集时间窗口
+
+详见 `../../.claude/references/tiktok-collection-time.md`。
+
 ## 设计决策
 
 ### 平台识别基于 `account_sessions.platform` 字段
