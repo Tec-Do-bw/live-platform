@@ -78,6 +78,15 @@ python main.py --mode full
 # 全量采集（多进程并发）
 python main.py --mode full --workers N
 
+# 指定平台采集（只采集 TikTok）
+python main.py --mode full --platform tiktok
+
+# 指定多个平台采集
+python main.py --mode full --platform tiktok --platform shopee
+
+# 增量模式也支持平台过滤
+python main.py --mode once --platform lazada
+
 # 启动 Cookie 养号服务（独立进程）
 python -m cookie_keeper
 
