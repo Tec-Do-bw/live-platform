@@ -64,3 +64,6 @@ tiktok*.json
 
 # === 临时克隆目录 ===
 _tmp_*/
+
+# === Playwright CLI 持久化会话 ===
+.playwright-cli/
