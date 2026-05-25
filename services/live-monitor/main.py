@@ -20,6 +20,14 @@ from config import brower_config
 from starlette.middleware.sessions import SessionMiddleware
 import secrets
 import importlib
+from utils.api_response import (
+    classify_tiktok_result,
+    classify_shopee_result,
+    classify_lazada_result,
+    success_response,
+    error_response,
+    ErrorReason,
+)
 
 
 def get_requests_config():
@@ -350,118 +358,129 @@ def get_error_room_url():
     return live_error_room_url
 
 
+def _check_error_url(mate_url: str, platform: str) -> dict | None:
+    """检查 URL 是否在已知错误列表中，命中则返回标准错误响应"""
+    try:
+        error_urls = get_error_room_url()
+        if mate_url in error_urls:
+            return error_response(
+                code=4041,
+                reason=ErrorReason.ROOM_NOT_FOUND,
+                detail="命中已知错误链接列表",
+                platform=platform,
+                mate_url=mate_url,
+            )
+    except FileNotFoundError:
+        pass
+    return None
+
+
 # 获取TT直播间信息
 @app.post("/liveRoom/portInfo")
 async def portInfo(request: Request):
-    # 获取请求头
     headers = request.headers
-    # 获取请求体
     body = await request.json()
-    # 验证access-token
+
     access_token = headers.get('access-token')
     if access_token != 'AFDD0B4AD2EC172C586E2150770FBF9E':
         return JSONResponse(content={'code': 401, 'message': 'Unauthorized'}, status_code=401)
-    # # 解析请求数据
+
     mateUrl = body.get('mateUrl')
+    if not mateUrl:
+        return JSONResponse(content=error_response(
+            code=4001, reason=ErrorReason.INVALID_PARAM,
+            detail="mateUrl 为空", platform="tiktok", mate_url=""
+        ))
 
-    # 首先通过request直接进行尝试获取
+    err_resp = _check_error_url(mateUrl, "tiktok")
+    if err_resp:
+        return JSONResponse(content=err_resp)
+
     cookie_list = tiktokTool.get_cookie_list()
-
-    # 创建不带代理的临时实例用于路由请求
     tiktok_no_proxy = TiktokTool(ipList)
-    port_info = tiktok_no_proxy.getLiveStreamInfo_requests(mateUrl, cookie_list, OP)
-    # 判断采集是否成功：flv_url != "error" 表示成功（包括正在直播和未直播两种情况）
-    if port_info is not None and port_info.get("flv_url") != "error":
-        response = {
-            'code': 200,
-            'message': 'success',
-            'data': {
-                'port_info': port_info,
-                'mateUrl': mateUrl
-            }
-        }
-    else:
-        # 采集失败，返回实际的错误信息
-        response = {
-            'code': 200,
-            'message': 'success',
-            'data': {
-                'port_info': port_info if port_info else {'flv_url': 'error', 'roomId': '', 'message': '采集失败', 'filePath': ''},
-                'mateUrl': mateUrl
-            }
-        }
-    return JSONResponse(content=response)
+    raw = tiktok_no_proxy.getLiveStreamInfo_requests(mateUrl, cookie_list, OP)
+
+    outcome = classify_tiktok_result(raw, mateUrl)
+    if outcome.code == 200 or 2000 <= outcome.code < 3000:
+        return JSONResponse(content=success_response(outcome.code, outcome.port_info, mateUrl))
+    return JSONResponse(content=error_response(
+        outcome.code, outcome.error_reason, outcome.error_detail,
+        platform="tiktok", mate_url=mateUrl
+    ))
 
 
 # 获取虾皮直播间信息（校验使用）
 @app.post("/liveRoom/shopeeInfo")
 async def get_shopee_live_info(request: Request):
-    # 获取请求头
     headers = request.headers
-    # 获取请求体
     body = await request.json()
-    print("body--->", body)
-    # 验证access-token
+
     access_token = headers.get('access-token')
     if access_token != 'AFDD0B4AD2EC172C586E2150770FBF9E':
         return JSONResponse(content={'code': 401, 'message': 'Unauthorized'}, status_code=401)
-    # # 解析请求数据
+
     mateUrl = body.get('mateUrl')
+    if not mateUrl:
+        return JSONResponse(content=error_response(
+            code=4001, reason=ErrorReason.INVALID_PARAM,
+            detail="mateUrl 为空", platform="shopee", mate_url=""
+        ))
+
     logger.info(f"接收到Shopee直播间请求 | url={mateUrl}")
 
-    # 如果长度超过500，则表示直播间存在,进行解析
+    err_resp = _check_error_url(mateUrl, "shopee")
+    if err_resp:
+        return JSONResponse(content=err_resp)
+
     try:
-        port_info = shopeeTool.get_shopee_live_info(mateUrl,proxy=False)
+        raw = shopeeTool.get_shopee_live_info(mateUrl, proxy=False)
         logger.info(f"成功获取Shopee直播间信息 | url={mateUrl}")
     except Exception as e:
         logger.error(f"获取Shopee直播间失败 | url={mateUrl} error={e}", exc_info=True)
-        port_info = {'flv_url': 'error', 'roomId': '', 'message': 'shopee采集异常', 'filePath': ''}
+        raw = None
 
-    # 返回成功响应
-    response = {
-        'code': 200,
-        'message': 'success',
-        'data': {
-            'port_info': port_info,
-            'mateUrl': mateUrl
-        }
-    }
-    return JSONResponse(content=response)
+    outcome = classify_shopee_result(raw, mateUrl)
+    if outcome.code == 200 or 2000 <= outcome.code < 3000:
+        return JSONResponse(content=success_response(outcome.code, outcome.port_info, mateUrl))
+    return JSONResponse(content=error_response(
+        outcome.code, outcome.error_reason, outcome.error_detail,
+        platform="shopee", mate_url=mateUrl
+    ))
 
 
 # 获取lazada直播间信息（校验使用）
 @app.post("/liveRoom/lazadaInfo")
 async def get_lazadalive_info(request: Request):
-    # 获取请求头
     headers = request.headers
-    # 获取请求体
     body = await request.json()
-    # 验证access-token
+
     access_token = headers.get('access-token')
     if access_token != 'AFDD0B4AD2EC172C586E2150770FBF9E':
         return JSONResponse(content={'code': 401, 'message': 'Unauthorized'}, status_code=401)
-    # # 解析请求数据
+
     mateUrl = body.get('mateUrl')
+    if not mateUrl:
+        return JSONResponse(content=error_response(
+            code=4001, reason=ErrorReason.INVALID_PARAM,
+            detail="mateUrl 为空", platform="lazada", mate_url=""
+        ))
+
     logger.info(f"接收到lazada直播间请求 | url={mateUrl}")
 
-    # 如果长度超过500，则表示直播间存在,进行解析
     try:
-        port_info = lazadaTool.get_lazada_live_info(mateUrl,proxy=False)
-        logger.info(f"成功获取lazada直  播间信息 | url={mateUrl}")
+        raw = lazadaTool.get_lazada_live_info(mateUrl, proxy=False)
+        logger.info(f"成功获取lazada直播间信息 | url={mateUrl}")
     except Exception as e:
         logger.error(f"获取lazada直播间失败 | url={mateUrl} error={e}", exc_info=True)
-        port_info = {'flv_url': 'error', 'roomId': '', 'message': 'lazada采集异常', 'filePath': ''}
+        raw = None
 
-    # 返回成功响应
-    response = {
-        'code': 200,
-        'message': 'success',
-        'data': {
-            'port_info': port_info,
-            'mateUrl': mateUrl
-        }
-    }
-    return JSONResponse(content=response)
+    outcome = classify_lazada_result(raw, mateUrl)
+    if outcome.code == 200 or 2000 <= outcome.code < 3000:
+        return JSONResponse(content=success_response(outcome.code, outcome.port_info, mateUrl))
+    return JSONResponse(content=error_response(
+        outcome.code, outcome.error_reason, outcome.error_detail,
+        platform="lazada", mate_url=mateUrl
+    ))
 
 
 
