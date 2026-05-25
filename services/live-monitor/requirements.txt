@@ -28,3 +28,4 @@ uvicorn==0.34.0
 websockets==15.0
 itsdangerous
 redis==7.1.0
+never_primp==2.4.2

@@ -15,7 +15,7 @@ from parseMian import *
 # ✅ 加载 .env 文件中的环境变量
 load_dotenv()
 from utils.Tools import ProducerTask, spiderLogWrite, get_current_directory
-from base import MainHelper, OperateHelper, MyThread
+from base import OperateHelper
 from config import brower_config
 from starlette.middleware.sessions import SessionMiddleware
 import secrets
@@ -88,8 +88,6 @@ BACKUP_NODE_URL = os.environ.get('BACKUP_NODE_URL', '')  # 备用节点URL
 ISTEST = int(os.environ.get('ISTEST', '1'))
 
 logger.info(f"节点配置 | NODE_ID={NODE_ID}, NODE_IP={NODE_IP}, PRIORITY={PRIORITY}, BACKUP_NODE_URL={BACKUP_NODE_URL}")
-# ✅ 全局浏览器管理对象（用于优雅关闭）
-browserObjList = None
 OP = None
 
 
@@ -110,15 +108,6 @@ async def lifespan(app: FastAPI):
         await task
     except asyncio.CancelledError:
         pass
-
-    # ✅ 关闭所有浏览器进程
-    try:
-        if OP is not None and browserObjList is not None:
-            logger.info("正在关闭浏览器进程...")
-            OP.close_browser(browserObjList)
-            logger.info("✅ 浏览器进程已全部关闭")
-    except Exception as e:
-        logger.error(f"关闭浏览器进程时出错: {e}", exc_info=True)
 
     # ✅ 关闭数据库连接池
     try:
@@ -214,23 +203,6 @@ offline_script_config_dict = {}
 
 # 甲方爸爸需求池：任务队列
 taskQ = queue.Queue()
-
-# 牛马人事册：固定消费者
-tabItemQ = queue.Queue()
-
-# 所有的tabs
-All_tabs_list = []
-
-
-# 行政专员：初始化将生成的tab对象转为单独对象放入到队列中
-def init_tabItemList_to_queue(browserObjList):
-    tabNumber = 0
-    for i in browserObjList:
-        key = [k for k in i.keys() if k != "tabs"][0]
-        for j in i["tabs"]:
-            tabItemQ.put({str(key): i[key], "tab": j})
-            tabNumber += 1
-    return tabNumber
 
 
 # HR招聘专员：哨兵巡视是否有牛马离职或者逃岗(因为意外情况或者人为因素导致浏览器关闭)
@@ -392,28 +364,14 @@ async def portInfo(request: Request):
     # # 解析请求数据
     mateUrl = body.get('mateUrl')
 
-    # 如果已经确认不存在的直播间，则直接返回
-    errorUrlPath = get_current_directory() + "/errorUrl.txt"
-    with open(errorUrlPath, "r", encoding="utf-8") as f:
-        errorUrl = f.readlines()
-        errorUrl = [url.replace("\n", "").replace("\\", "/") for url in errorUrl]
-
-    if mateUrl.replace("\\", "/") in errorUrl:
-        response = {
-            'code': 200,
-            'message': 'success',
-            'data': {
-                'port_info': {'flv_url': 'error', 'roomId': '', 'message': '直播间不存在', 'filePath': ''},
-                'mateUrl': mateUrl
-            }
-        }
-        return JSONResponse(content=response)
-
     # 首先通过request直接进行尝试获取
     cookie_list = tiktokTool.get_cookie_list()
 
-    port_info = tiktokTool.getLiveStreamInfo_requests(mateUrl, cookie_list, OP)
-    if port_info is not None and port_info.get("roomId"):
+    # 创建不带代理的临时实例用于路由请求
+    tiktok_no_proxy = TiktokTool(ipList)
+    port_info = tiktok_no_proxy.getLiveStreamInfo_requests(mateUrl, cookie_list, OP)
+    # 判断采集是否成功：flv_url != "error" 表示成功（包括正在直播和未直播两种情况）
+    if port_info is not None and port_info.get("flv_url") != "error":
         response = {
             'code': 200,
             'message': 'success',
@@ -423,11 +381,12 @@ async def portInfo(request: Request):
             }
         }
     else:
+        # 采集失败，返回实际的错误信息
         response = {
             'code': 200,
             'message': 'success',
             'data': {
-                'port_info': {'flv_url': 'error', 'roomId': '', 'message': '直播间不存在', 'filePath': ''},
+                'port_info': port_info if port_info else {'flv_url': 'error', 'roomId': '', 'message': '采集失败', 'filePath': ''},
                 'mateUrl': mateUrl
             }
         }
@@ -449,24 +408,6 @@ async def get_shopee_live_info(request: Request):
     # # 解析请求数据
     mateUrl = body.get('mateUrl')
     logger.info(f"接收到Shopee直播间请求 | url={mateUrl}")
-
-    # 如果已经确认不存在的直播间，则直接返回
-    errorUrlPath = get_current_directory() + "/errorUrl.txt"
-    with open(errorUrlPath, "r", encoding="utf-8") as f:
-        errorUrl = f.readlines()
-        errorUrl = [url.replace("\n", "").replace("\\", "/") for url in errorUrl]
-
-    if mateUrl.replace("\\", "/") in errorUrl:
-        logger.info(f"Shopee直播间在错误列表中 | url={mateUrl}")
-        response = {
-            'code': 200,
-            'message': 'success',
-            'data': {
-                'port_info': {'flv_url': 'error', 'roomId': '', 'message': '直播间不存在', 'filePath': ''},
-                'mateUrl': mateUrl
-            }
-        }
-        return JSONResponse(content=response)
 
     # 如果长度超过500，则表示直播间存在,进行解析
     try:
@@ -846,15 +787,6 @@ def signal_handler(signum, frame):
     logger.info("=" * 60)
 
     try:
-        global browserObjList, OP
-        if OP is not None and browserObjList is not None:
-            logger.info("正在关闭浏览器进程...")
-            OP.close_browser(browserObjList)
-            logger.info("✅ 浏览器进程已全部关闭")
-    except Exception as e:
-        logger.error(f"关闭浏览器进程时出错: {e}", exc_info=True)
-
-    try:
         if db_pool:
             logger.info("正在关闭数据库连接池...")
             db_pool.close()
@@ -1087,25 +1019,8 @@ if __name__ == '__main__':
         signal.signal(signal.SIGTERM, signal_handler)
     logger.info("✅ 信号处理器已注册")
 
-    useType = "Chromium"
-    # 初始化浏览器 AdsPower/Chromium(v1简化版)
-    logger.info("初始化浏览器池...")
-    MP = MainHelper(brower_config, useType=useType)
-
-    # ✅ 使用全局变量，以便在程序退出时能够清理
-    browserObjList = MP.init_browser_all_obj()
-    tabNumber = init_tabItemList_to_queue(browserObjList)
-    logger.info(f"✅ 浏览器池初始化完成 | 标签页数={tabNumber}")
-
     # 初始化操作类
-    OP = OperateHelper(browserObjList, brower_config, useType)
-
-    # 浏览器哨兵线程
-    logger.info("启动浏览器哨兵线程...")
-    sentry_thread = MyThread(target=sentryTabItem, args=([tabItemQ, browserObjList],))
-    sentry_thread.daemon = True
-    sentry_thread.start()
-    logger.info("✅ 浏览器哨兵线程已启动")
+    OP = OperateHelper(brower_config, useType="Chromium")
 
     # ###############以下是真正服务####################
     logger.info("获取Apollo配置...")
@@ -1153,7 +1068,7 @@ if __name__ == '__main__':
     all_Live_Room_dict = dict()
 
     # ✅ 初始化工具类（不再传递conn参数）
-    tiktokTool = TiktokTool(ipList, tabItemQ)
+    tiktokTool = TiktokTool(ipList)
     shopeeTool = ShopeeTool(ipList)
     lazadaTool = LazadaTool(ipList)
     logger.info("✅ 工具类初始化完成")

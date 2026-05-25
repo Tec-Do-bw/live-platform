@@ -12,16 +12,14 @@ from utils.wrapper import Wrapper
 
     
 class LazadaTool:
-    def __init__(self, ipList=[], tabItemQ=None):
+    def __init__(self, ipList=[]):
         """
         lazada工具类
-        
+
         Args:
             ipList: IP代理列表
-            tabItemQ: 标签页队列
         """
         self.ipList = ipList
-        self.tabItemQ = tabItemQ
         self.token = ''
         self.session = requests.Session()
         self.headers = {
@@ -249,14 +247,14 @@ if __name__ == '__main__':
     tabItemQ = queue.Queue()
     #在播短链  https://my.shp.ee/uUT8kkg
     #下播短链  https://my.shp.ee/pWQ78gE
-    urls = ['https://s.lazada.co.th/s.Zd2pk4']
+    urls = ['https://s.lazada.co.th/s.ZgLKoC']
     for url in urls:
         lazadaTool = LazadaTool(['1663104-6b176fb7:19545d29-BA_RepublikaSrpska_city_Bijeljina@gate-hk.kkoip.com:17723',
                                  '1663104-6b176fb7:19545d29-BA_RepublikaSrpska_city_Doboj@gate-hk.kkoip.com:17723'],
-                                tabItemQ)
+                                )
         times = []  # 用于保存每次请求耗时
 
-        for i in range(3):
+        for i in range(1):
             start_time = time.time()
             try:
                 res = lazadaTool.get_lazada_live_info(url, proxy=False)

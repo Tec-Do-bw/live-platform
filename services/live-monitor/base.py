@@ -220,20 +220,9 @@ class MainHelper:
          
 # 浏览器所有动态操作类--相关操作
 class OperateHelper:
-    def __init__(self,browserObjList,brower_config,useType):
-        self.browserObjList = browserObjList
+    def __init__(self,brower_config,useType):
         self.brower_config = brower_config
         self.useType = useType
-    # 关闭浏览器
-    def close_browser(self,browserObjList = []):
-        '''
-        browserObjList:需要关闭的浏览器对象列表,如果不传参，默认关闭所有浏览器
-        '''
-        if len(browserObjList)==0:
-            browserObjList = self.browserObjList
-        for browserObj in browserObjList:
-            killObj = [k for k in browserObj.keys() if str(k)!='tabs'][0]
-            browserObj[str(killObj)].quit()
     
     #切换到指定标签页
     def change_tabs(self,browserObj,tabid):
@@ -363,99 +352,6 @@ class OperateHelper:
                     print(f"第 {index} 个canvas保存失败：{str(e)}")
         return success_count_list
     
-    def find_new_tabs(self,browser_obj_list, new_browser_obj_list):
-        # 构建旧列表的映射：{key_value: set(tabs)}
-        old_map = {}
-        for item in browser_obj_list:
-            dynamic_keys = [k for k in item if k != 'tabs']
-            if not dynamic_keys:
-                continue  # 忽略无效条目
-            dynamic_key = dynamic_keys[0]
-            key_value = item[dynamic_key]
-            old_map[key_value] = set(item['tabs'])
-
-        # 构建新列表的映射：{key_value: {'key_name': key, 'tabs': set}}
-        new_map = {}
-        for item in new_browser_obj_list:
-            dynamic_keys = [k for k in item if k != 'tabs']
-            if not dynamic_keys:
-                continue  # 忽略无效条目
-            dynamic_key = dynamic_keys[0]
-            key_value = item[dynamic_key]
-            new_map[key_value] = {
-                'key_name': dynamic_key,
-                'tabs': set(item['tabs'])
-            }
-
-        # 计算新增的标签页（包含完全新增的key）
-        result = []
-        for key_value in new_map:
-            dynamic_key_name = new_map[key_value]['key_name']
-            new_tabs = new_map[key_value]['tabs']
-            
-            if key_value in old_map:  # 处理相同key的情况
-                old_tabs = old_map[key_value]
-                added_tabs = new_tabs - old_tabs
-            else:  # 处理新增key的情况
-                added_tabs = new_tabs
-            
-            for tab in added_tabs:
-                result.append({
-                    dynamic_key_name: key_value,
-                    'tab': tab
-                })
-        
-        return result
-
-    # 哨兵检测，传入待检测browserObjList对象，返回最新的browserObjList,对于缺失导致数量不够需要自动补充新的tab，防止牛马越来越少
-    def sentryItem(self,browserObjList):
-        # print("self.useType-->",self.useType)
-        if self.useType == "Chromium":
-            new_browserObjList = []
-            # 首先取出每一个浏览器对象
-            for cb in browserObjList:
-                new_browserObj = {}
-                port = [k for k in cb.keys() if  str(k).isdigit()][0]
-                browserinit = Chromium(int(port))
-                tabs_news = browserinit.get_tabs()
-                # print("cb-->",cb)
-                # print("tabs_news-->",tabs_news)
-                if len(tabs_news)<len(cb["tabs"]):
-                    for i in range(len(cb["tabs"])-len(tabs_news)):
-                        newtabTmpObj = browserinit.new_tab()
-                        tabs_news.append(newtabTmpObj)
-                # 未防止浏览器打开过多页面，在这里强制指定保留配置中数量的标签页，关闭多余标签页面
-                elif len(tabs_news)>len(cb["tabs"]):
-                    # print("关闭多余的tabs")
-                    for ii in range(len(tabs_news)-len(cb["tabs"])):
-                        closeObj = cb[[b for b in cb.keys() if b!="tabs"][0]]
-                        # print("tabs_news[-1].tab_id-->",tabs_news[ii].tab_id)
-                        self.close_tabs_id(closeObj,tabs_news[ii].tab_id)
-                else:
-                    pass
-                new_browserObj[str(port)] = browserinit
-                new_browserObj["tabs"] = browserinit.get_tabs()
-                new_browserObjList.append(new_browserObj)
-            # return new_browserObjList
-            result = self.find_new_tabs(browserObjList, new_browserObjList)
-            return new_browserObjList,result
-        elif self.useType == "AdsPower":
-
-            new_browserObjList = []
-            # 判断哪些浏览器没有打开，打开意外关闭的浏览器
-            # 获取最新的所有浏览器与tab页面对象
-            helperAdsPower = AdsPowerHelper(adsPort=self.brower_config["AdsPower"]["adsPort"], user_id_list=self.brower_config["AdsPower"]["user_id_list"])
-            new_browserObjList = helperAdsPower.init_browser_all_obj(isCheck=True)
-            # print("new_browserObjList--->",new_browserObjList)
-            # print('_________________________')
-            # print("browserObjList-->",browserObjList)
-            result = self.find_new_tabs(browserObjList, new_browserObjList)
-            
-            # print("result--->",result)
-            return new_browserObjList,result
-        
-        else:
-            print("不支持的浏览器类型")
 
 
 # kafka相关操作/推送到kafka

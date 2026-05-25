@@ -151,7 +151,7 @@ class ShopeeTool:
             return self._format_live_data(data)
             
         except Exception as e:
-            print(f"获取直播信息失败: {url}, 错误: {str(e)}")
+            # print(f"获取直播信息失败: {url}, 错误: {str(e)}")
             return None
 
 

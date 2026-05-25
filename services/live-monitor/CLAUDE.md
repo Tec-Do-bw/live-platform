@@ -28,10 +28,16 @@
 - T+1 插件采集
 - 基本信息采集
 
-离线脚本通过 `OfflineSpider/offlineConfig.json` 配置，支持周期执行和定时启动。哨兵线程 `sentryTabItem` 监控浏览器进程健康，自动重启异常 tab。
+离线脚本通过 `OfflineSpider/offlineConfig.json` 配置，支持周期执行和定时启动。
+
+## 直播流采集架构
+
+- TikTok 实时路由（`/route/tiktok`）走 HTTP Downloader 路径，**不再依赖浏览器标签页池**：`utils/TiktokTool.py` 通过 `utils/downloader/`（基于 `never_primp`，含 L1 网络重试 + L2 HTTP 状态码退避 + L3 失败队列）完成抓取
+- Lazada 走 `utils/LazadaTool.py`（Token 管理 + 请求签名）；Shopee 走 `utils/ShopeeTool.py`（多 UA 轮换）
+- 路由请求构造 TikTok 实例时使用 `TiktokTool(ipList, no_proxy=True)` 显式声明无代理路径，避免误用全局代理
 
 ## 与 live-stream 的交互规则
 
-- live-stream 通过 `/liveRoom/*Info` 接口获取直播流地址（`flv_url`）
+- live-stream 通过 `/liveRoom/*Info` 接口获取直播流地址（`flv_url`），接口规范见 `docs/specs/live-room-api.md`
 - 房间开播/下播事件通过 Kafka 消息通知 live-stream 启停录制
 - 共享 Apollo 配置中心的数据库与 Kafka 配置
