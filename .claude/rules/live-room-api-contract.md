@@ -30,8 +30,8 @@ paths:
 
 | 场景 | 必备字段 | 翻译为 code |
 |------|----------|-------------|
-| 直播中 | `flv_url`（非空、非 `"error"`）+ `play_urls` / `startTime` / `secUid` / `uniqueId` / `roomId` / `signature` / `id` / `nickname` / `url` / `filePath` | 200 |
-| 未开播但用户存在 | `flv_url=""` + `uniqueId`（及其他用户字段） | 2001 |
+| 直播中 | `flv_url`（非空、非 `"error"`）+ `play_urls` / `startTime` / `secUid` / `uniqueId` / `roomId` / `signature` / `id` / `nickname` / `publish_region` / `live_region` / `url` / `filePath` | 200 |
+| 未开播但用户存在 | `flv_url=""` + `uniqueId`（及其他用户字段）+ `publish_region` / `live_region=""` | 2001 |
 | 直播间不存在 | `flv_url=""` + `message` 包含 `"用户信息不存在"` 或 `"直播间不存在"` | 4041 |
 | 页面解析失败 | `flv_url=""` + `message` 包含 `"页面解析失败"` | 5002 |
 | 上游请求失败 | `flv_url="error"` + `message` 包含 `"请求直播页失败"` 或 `"请求个人页失败"` | 5001 |

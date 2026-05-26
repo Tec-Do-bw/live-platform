@@ -1,13 +1,69 @@
 # -*- coding: utf-8 -*-
+import os
 import re
 import json
 import random
 import time
+from random import randint
+from string import ascii_lowercase, ascii_uppercase, digits
+
+import execjs
+
 from utils.db_pool import db_pool
 from utils.logger import Logings
 from utils.downloader import Downloader, Task
 
 logger = Logings().get_logger()
+
+
+# ============================================================================
+# 签名 JS 加载（webcast API 签名所需）
+# ============================================================================
+
+_JS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+with open(os.path.join(_JS_DIR, "X-Bogus-new.js"), "r", encoding="UTF-8") as _f:
+    _XBOGUS = execjs.compile(_f.read())
+
+with open(os.path.join(_JS_DIR, "XGnarly5.1.3.js"), "r", encoding="UTF-8") as _f:
+    _XGnarly = execjs.compile(_f.read())
+
+
+def _sign_xbogus(params: str, user_agent: str):
+    for i in range(3):
+        try:
+            return _XBOGUS.call("generateXBogus", params, "", user_agent)
+        except Exception as e:
+            logger.warning(f"xb签名失效--{i}-{params[:80]}--{e}")
+    return ""
+
+
+def _sign_gnarly(params: str, user_agent: str):
+    for i in range(3):
+        try:
+            return _XGnarly.call("generateXGnarly", params, "", user_agent)
+        except Exception as e:
+            logger.warning(f"xg签名失效--{i}-{params[:80]}--{e}")
+    return ""
+
+
+def _get_fake_ms_token(size=107):
+    base_str = digits + ascii_uppercase + ascii_lowercase + "_-"
+    length = len(base_str) - 1
+    return "".join(base_str[randint(0, length)] for _ in range(size)) + "=="
+
+
+# 设备指纹池
+_DEVICE_IDS = (
+    "7409969176360420906,7409969278595728939,7409969404429141547,7409969858883126830,"
+    "7409969871186085422,7409969947193968174,7409969947195147822,7409969995885954606,"
+    "7409970050666956331,7409970386588173867,7409970550917072427,7409970514008753710,"
+    "7409970514009703982,7409970569075459627,7409970639061337643,7409970827531372074,"
+    "7409970962793334315,7409970967998924334,7409970983454918186,7409971029086733870,"
+    "7409971120093038122,7409971204918281770,7409971276672861742,7409971331363538478,"
+    "7409971312180069930,7409971333637162539,7409971344488973870,7409971347366397486,"
+    "7409971347952977454,7409971373597017643,7409971408130016814,7409971511216096811"
+)
 
 
 # 桌面 Chrome UA：直播页必须用桌面 UA，移动 UA 拿到的简化 HTML 无 SIGI_STATE
@@ -255,6 +311,8 @@ class TiktokTool:
             "signature": str(user.get("signature") or ""),
             "id": str(user.get("id") or ""),
             "nickname": str(user.get("nickname") or ""),
+            "publish_region": str(user.get("region") or ""),
+            "live_region": "",
             "url": record_url,
             "filePath": file_path,
         }
@@ -293,6 +351,64 @@ class TiktokTool:
         port_info["play_urls"] = play_urls
         port_info["startTime"] = str(live_room.get("startTime") or "")
         return port_info
+
+    def get_anchor_region_by_room(self, room_id):
+        """通过 webcast/gift/list/ 接口获取主播开播国家
+
+        请求 webcast.us.tiktok.com/webcast/gift/list/ 并解析
+        data.pages[0].region 字段得到国家代码。
+
+        Args:
+            room_id: 直播间 room_id（从直播页 SIGI_STATE 中获取）
+
+        Returns:
+            国家代码字符串（如 "VN"、"ID"），失败返回空字符串
+        """
+        try:
+            ua = get_random_ios_ua()
+            headers = {
+                "accept": "*/*",
+                "accept-language": "zh-CN,zh;q=0.9",
+                "cache-control": "no-cache",
+                "pragma": "no-cache",
+                "priority": "u=1, i",
+                "referer": "https://www.tiktok.com/",
+                "sec-ch-ua": '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-site",
+                "user-agent": ua,
+            }
+            ms_token = _get_fake_ms_token()
+            device_id = random.choice(_DEVICE_IDS.split(",")).replace("\n", "")
+
+            url = (
+                f"https://webcast.us.tiktok.com/webcast/gift/list/"
+                f"?aid=1988&app_language=en&channel=tiktok_web"
+                f"&device_platform=web_pc&region=US&webcast_language=en"
+                f"&room_id={room_id}&device_id={device_id}&msToken={ms_token}"
+            )
+            xb = _sign_xbogus(url, ua)
+            xg = _sign_gnarly(url, ua)
+            final_url = url + "&X-Bogus=" + xb + "&X-Gnarly=" + xg
+
+            task = Task(url=final_url, task_id="gift_list", headers=headers)
+            result = self._downloader.fetch_one(task)
+
+            if result.success and result.text and len(result.text) > 100:
+                j = json.loads(result.text)
+                pages = (j.get("data") or {}).get("pages") or []
+                if pages:
+                    region = pages[0].get("region")
+                    if region:
+                        logger.debug(f"room_id={room_id} 命中 pages[0].region={region}")
+                        return region
+                logger.info(f"room_id={room_id} 响应缺少 pages[0].region: {(result.text or '')[:200]}")
+                return ""
+        except Exception as e:
+            logger.warning(f"get_anchor_region_by_room 请求异常，重试，error: {e}")
 
     def get_tiktok_stream_data_requests(self, url, cookie_list):
         """采集流程：并发请求个人页 + 直播页，合并结果
@@ -355,8 +471,16 @@ class TiktokTool:
             )
             live_room = live_room_user_info.get("liveRoom") or {}
 
-            live_user = live_room_user_info.get("user") or user
-            return self._build_port_info(live_user, live_room, url, file_path)
+            live_user = {**user, **(live_room_user_info.get("user") or {})}
+            port_info = self._build_port_info(live_user, live_room, url, file_path)
+
+            # 通过 webcast/gift/list 获取主播开播国家
+            # 个人页 user.roomId 在主播开过播后即存在（无论当前是否在播），从未开过播则为空
+            room_id = port_info.get("roomId")
+            if room_id:
+                port_info["live_region"] = self.get_anchor_region_by_room(room_id)
+
+            return port_info
 
         except Exception as e:
             logger.error("get_tiktok_stream_data_requests 异常: %s", e, exc_info=True)
@@ -384,8 +508,8 @@ if __name__ == '__main__':
         start_time = time.time()
         try:
             # room_url = "https://www.tiktok.com/@greameofficialstore/live" #18岁禁止
-            room_url = "https://www.tiktok.com/@sanjieyou/live" #正常
-            # room_url = "https://www.tiktok.com/@koh.gen.do.my/live" #没有直播
+            # room_url = "https://www.tiktok.com/@poseshoes/live" #正常
+            room_url = "https://www.tiktok.com/@vrcomfyny/live" #没有直播
             port_info = tiktokTool.getLiveStreamInfo_requests(room_url, ipList) or {}
             print(port_info)
         except Exception:

@@ -172,7 +172,7 @@ Step B: secUid → video_id 列表（需 X-Bogus / X-Gnarly 签名）
 | 路径 | 结论 |
 |------|------|
 | `/@<handle>/live` 的 SIGI_STATE | 无任何 region/country 字段 |
-| `/@<handle>` profile 的 `webapp.user-detail.user` | 无 region；`user.language` 是 UI 语言不可靠 |
+| `/@<handle>` profile 的 `webapp.user-detail.user` | `user.region` 存在但语义为**视频发布国家**（非开播国），已作为 `publish_region` 字段输出 |
 | `/@<handle>` profile 的 `__UNIVERSAL_DATA__` 其他 scope | 仅访客 region |
 | `/api/post/item_list/` 的 `author` | Web 接口已精简，无 region |
 | `/api/related/item_list/` 的 `author` 和 `itemStruct` | 同样精简 |
@@ -199,12 +199,19 @@ Step B: secUid → video_id 列表（需 X-Bogus / X-Gnarly 签名）
 
 ---
 
-## 集成建议
+## 集成状态
 
-`services/live-monitor/utils/TiktokTool.py` 已具备 SIGI_STATE 解析能力，本规范新增能力建议作为独立工具方法，复用项目现有 xb-xg 签名实现。
+`services/live-monitor/utils/TiktokTool.py` 已集成主路径识别能力：
+
+- `get_anchor_region_by_room(room_id)` 方法：通过 `webcast/gift/list/` 获取 `pages[0].region`
+- 签名文件 `X-Bogus-new.js` / `XGnarly5.1.3.js` 已部署到 `utils/` 目录
+- `port_info` 返回两个国家字段：
+  - `publish_region`：视频发布国家（来自个人页 `userInfo.user.region`）
+  - `live_region`：主播开播国家（来自 `webcast/gift/list` 接口）
+- **覆盖范围**：个人页 `userInfo.user.roomId` 在主播开过播后即保留历史 `roomId`（即使当前未在播），故只要主播开过哪怕一次播，都能拿到 `live_region`，原规范"离线兜底 1：使用持久化的历史 room_id"的能力天然满足，无需依赖数据库。仅当账号从未开播过时 `roomId` 为空，`live_region` 留空。
 
 调用时机：
-- 主播首次入库时识别一次，持久化国家码到数据库
+- 每次采集直播流时自动获取（无论开播与否）
 - 与历史 `room_id` 一同维护，互为兜底数据
 - 周/月级回归校验，发现切区时告警人工确认
 

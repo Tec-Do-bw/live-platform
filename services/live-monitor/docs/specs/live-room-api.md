@@ -134,14 +134,16 @@
 
 **TikTok**（`code=200` 或 `code=2001`）：
 
-| 字段 | 说明 |
-|------|------|
-| `secUid` | 加密用户 ID |
-| `uniqueId` | 用户名 |
-| `signature` | 签名 |
-| `id` | 用户数字 ID |
-| `nickname` | 昵称 |
-| `url` | 直播间完整 URL |
+| 字段 | 说明                                                       |
+|------|----------------------------------------------------------|
+| `secUid` | 加密用户 ID                                                  |
+| `uniqueId` | 用户名                                                      |
+| `signature` | 签名                                                       |
+| `id` | 用户数字 ID                                                  |
+| `nickname` | 昵称                                                       |
+| `publish_region` | 视频发布国家（个人页 `userInfo.user.region`，ISO-3166 alpha-2）      |
+| `live_region` | 主播开播国家（`webcast/gift/list` 接口 `pages[0].region`，主播开过播即有 `roomId`，对应即可拿到 `live_region`；从未开播过的账号为空） |
+| `url` | 直播间完整 URL                                                |
 
 **Lazada**（`code=200` 或 `code=2002`）：
 
@@ -191,6 +193,8 @@
       "signature": "...",
       "id": "7475615528578941968",
       "nickname": "petersonslab.my.skincare",
+      "publish_region": "MY",
+      "live_region": "MY",
       "url": "https://www.tiktok.com/@petersonslabbeauty/live",
       "filePath": "petersonslabbeauty"
     }
@@ -212,12 +216,16 @@
       "signature": "...",
       "id": "7475615528578941968",
       "nickname": "petersonslab.my.skincare",
+      "publish_region": "MY",
+      "live_region": "MY",
       "url": "https://www.tiktok.com/@petersonslabbeauty/live",
       "filePath": "petersonslabbeauty"
     }
   }
 }
 ```
+
+> **`live_region` 取值说明**：来源是 `port_info.roomId` 经 `webcast/gift/list/` 查询。主播只要开过播，个人页 `userInfo.user.roomId` 就会保留历史 `roomId`（即使当前未在播），故无论开播与否都能拿到 `live_region`。从未开播过的账号 `roomId` 为空，`live_region` 为 `""`。
 
 **直播间不存在（code=4041）**：
 ```json
