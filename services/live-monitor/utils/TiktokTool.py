@@ -4,6 +4,7 @@ import re
 import json
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 from string import ascii_lowercase, ascii_uppercase, digits
 
@@ -12,6 +13,7 @@ import execjs
 from utils.db_pool import db_pool
 from utils.logger import Logings
 from utils.downloader import Downloader, Task
+from utils.downloader.config import DEFAULT_PROXY
 
 logger = Logings().get_logger()
 
@@ -126,6 +128,18 @@ SIGI_RE = re.compile(r'<script id="SIGI_STATE"[^>]*>(.*?)</script>', re.S)
 # 个人页 webapp.user-detail 抽取（与 test.py 一致）
 USER_DETAIL_RE = re.compile(r'webapp\.user-detail":(.*?),"webapp')
 
+# 直播页短响应阈值：低于此长度判定为风控/简化页，触发换代理重试
+_LIVE_HTML_MIN_LEN = 2000
+
+# 短响应重试代理国家池（默认 -US 落地命中风控时并发对全部国家重跑 live Task）
+_LIVE_RETRY_COUNTRIES = ("MX", "ID", "BR")
+
+# 短响应重试整轮次数：每轮并发尝试全部国家，任一命中即早退；全部未命中再走下一轮
+_LIVE_RETRY_ROUNDS = 2
+
+# 代理 URL 国家后缀正则：匹配密码段末尾的 `-XX@`（两位大写国家代码 + @）
+_PROXY_COUNTRY_RE = re.compile(r"-[A-Z]{2}@")
+
 
 class TiktokTool:
     def __init__(self, ipList=[], no_proxy=None):
@@ -210,7 +224,7 @@ class TiktokTool:
                     logger.error(f"解析单条cookie失败: {parse_error}")
                     continue
 
-            logger.info(f"成功获取cookies列表 | 数量={len(cookies_string_list)}")
+            logger.debug(f"成功获取cookies列表 | 数量={len(cookies_string_list)}")
             return cookies_string_list
 
         except Exception as e:
@@ -236,6 +250,85 @@ class TiktokTool:
     def _build_live_headers(self):
         """直播页请求头：UA 必须为桌面 Chrome，移动 UA 不含 SIGI_STATE"""
         return {**_BASE_HEADERS, "user-agent": UA_DESKTOP_CHROME}
+
+    # ----- 短响应代理切换重试 -----
+
+    def _build_country_proxy(self, country: str) -> str:
+        """以 DEFAULT_PROXY 为模板，替换密码段的国家后缀。
+
+        例：'http://user:pwd-US@host:port' + 'MX' → 'http://user:pwd-MX@host:port'
+        若模板不含 `-XX@` 形式，原样返回 DEFAULT_PROXY 兜底。
+        """
+        return _PROXY_COUNTRY_RE.sub(f"-{country}@", DEFAULT_PROXY, count=1)
+
+    def _fetch_live_with_country(self, live_url: str, country: str):
+        """用指定国家代理跑一次 live Task。
+
+        Returns:
+            DownloadResult；底层享有 L1/L2 重试。
+        """
+        proxy = self._build_country_proxy(country)
+        retry_dl = Downloader(
+            proxy=proxy,
+            workers=1,
+            timeout=10.0,
+            max_retries=3,
+        )
+        task = Task(
+            url=live_url,
+            task_id=f"live-retry-{country}",
+            headers=self._build_live_headers(),
+        )
+        return retry_dl.fetch_one(task)
+
+    def _retry_live_with_country_proxy(self, live_url: str):
+        """短响应风控兜底：并发对 _LIVE_RETRY_COUNTRIES 全部国家重跑 live Task。
+
+        每轮并发提交全部国家任务，任一命中（>= _LIVE_HTML_MIN_LEN）即取消其余、立刻返回；
+        整轮全部未命中则进入下一轮，最多 _LIVE_RETRY_ROUNDS 轮。
+
+        Returns:
+            命中国家的 DownloadResult；全部轮次均未命中返回 None。
+        """
+        countries = _LIVE_RETRY_COUNTRIES
+        for round_idx in range(1, _LIVE_RETRY_ROUNDS + 1):
+            logger.info(
+                f"live 响应过短，第 {round_idx}/{_LIVE_RETRY_ROUNDS} 轮并发重试"
+                f"，国家={countries}: {live_url}"
+            )
+            with ThreadPoolExecutor(max_workers=len(countries)) as pool:
+                future_to_country = {
+                    pool.submit(self._fetch_live_with_country, live_url, c): c
+                    for c in countries
+                }
+                hit = None
+                for future in as_completed(future_to_country):
+                    country = future_to_country[future]
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        logger.warning(f"live 重试异常，国家={country}：{e}")
+                        continue
+                    text_len = len(result.text or "")
+                    if result.success and text_len >= _LIVE_HTML_MIN_LEN:
+                        logger.info(
+                            f"live 重试命中，国家={country}，响应长度={text_len}"
+                            f"（轮次 {round_idx}）"
+                        )
+                        hit = result
+                        break
+                    logger.warning(
+                        f"live 重试未命中，国家={country}，响应长度={text_len}"
+                        f"（轮次 {round_idx}）"
+                    )
+                # cancel 未启动的 future（已运行的会自然结束，结果丢弃）
+                for fut in future_to_country:
+                    if not fut.done():
+                        fut.cancel()
+                if hit is not None:
+                    return hit
+        logger.warning(f"live 重试 {_LIVE_RETRY_ROUNDS} 轮全部未命中: {live_url}")
+        return None
 
     # ----- 解析辅助 -----
 
@@ -456,6 +549,12 @@ class TiktokTool:
                 logger.warning("请求直播页失败: %s | %s", live_url, live_result.error)
                 return self._build_port_info(user, None, url, file_path)
 
+            # 短响应风控兜底：依次换代理重试，命中即用新结果继续解析
+            if live_result.text and len(live_result.text) < _LIVE_HTML_MIN_LEN:
+                good = self._retry_live_with_country_proxy(live_url)
+                if good is not None:
+                    live_result = good
+
             sigi_match = SIGI_RE.search(live_result.text)
             if not sigi_match:
                 return self._build_port_info(user, None, url, file_path)
@@ -504,12 +603,12 @@ if __name__ == '__main__':
     tiktokTool = TiktokTool(ipList)
 
     times = []
-    for i in range(2):
+    for i in range(5):
         start_time = time.time()
         try:
             # room_url = "https://www.tiktok.com/@greameofficialstore/live" #18岁禁止
-            # room_url = "https://www.tiktok.com/@poseshoes/live" #正常
-            room_url = "https://www.tiktok.com/@vrcomfyny/live" #没有直播
+            room_url = "https://www.tiktok.com/@elena668888/live" #正常
+            # room_url = "https://www.tiktok.com/@vrcomfyny/live" #没有直播
             port_info = tiktokTool.getLiveStreamInfo_requests(room_url, ipList) or {}
             print(port_info)
         except Exception:

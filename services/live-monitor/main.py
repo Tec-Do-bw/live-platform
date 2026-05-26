@@ -396,9 +396,10 @@ async def portInfo(request: Request):
     if err_resp:
         return JSONResponse(content=err_resp)
 
-    cookie_list = tiktokTool.get_cookie_list()
-    tiktok_no_proxy = TiktokTool(ipList)
-    raw = tiktok_no_proxy.getLiveStreamInfo_requests(mateUrl, cookie_list, OP)
+    cookie_list = await asyncio.to_thread(tiktokTool.get_cookie_list)
+    raw = await asyncio.to_thread(
+        tiktokTool.getLiveStreamInfo_requests, mateUrl, cookie_list, OP,
+    )
 
     outcome = classify_tiktok_result(raw, mateUrl)
     if outcome.code == 200 or 2000 <= outcome.code < 3000:
@@ -433,7 +434,7 @@ async def get_shopee_live_info(request: Request):
         return JSONResponse(content=err_resp)
 
     try:
-        raw = shopeeTool.get_shopee_live_info(mateUrl, proxy=False)
+        raw = await asyncio.to_thread(shopeeTool.get_shopee_live_info, mateUrl, False)
         logger.info(f"成功获取Shopee直播间信息 | url={mateUrl}")
     except Exception as e:
         logger.error(f"获取Shopee直播间失败 | url={mateUrl} error={e}", exc_info=True)
@@ -468,7 +469,7 @@ async def get_lazadalive_info(request: Request):
     logger.info(f"接收到lazada直播间请求 | url={mateUrl}")
 
     try:
-        raw = lazadaTool.get_lazada_live_info(mateUrl, proxy=False)
+        raw = await asyncio.to_thread(lazadaTool.get_lazada_live_info, mateUrl, False)
         logger.info(f"成功获取lazada直播间信息 | url={mateUrl}")
     except Exception as e:
         logger.error(f"获取lazada直播间失败 | url={mateUrl} error={e}", exc_info=True)
@@ -1118,6 +1119,16 @@ if __name__ == '__main__':
     logger.info(f"🔗 健康检查: http://{NODE_IP}:8080/health")
     logger.info(f"📋 节点信息: {NODE_ID} (优先级: {PRIORITY})")
     logger.info("=" * 60)
+
+    # ✅ 调大 anyio 默认 threadpool（默认 40 token），保证 to_thread 卸载的同步 IO 与
+    #    后台 daemon 线程并存时仍有充足线程余量；limiter 是进程级单例，调一次即可
+    try:
+        from anyio import to_thread as _anyio_to_thread
+
+        _anyio_to_thread.current_default_thread_limiter().total_tokens = 80
+        logger.info("✅ anyio 默认 threadpool 容量调整为 80")
+    except Exception as e:
+        logger.warning(f"调整 anyio threadpool 失败: {e}")
 
     # ✅ 启动Web服务器（包含所有功能：API + WebSocket + 所有定时任务）
     uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")

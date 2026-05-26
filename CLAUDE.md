@@ -77,6 +77,10 @@ pip install -r services/live-crawler/requirements.txt
 cd services/live-crawler/monitor/frontend && npm install
 ```
 
+## 已知坑（避免重犯）
+
+- **日志用 loguru f-string**：`logger.info(f"msg={var}")`，禁止 `logger.info("msg=%s", var)`（% 占位符在 loguru 不生效）。
+
 ## 代码规范
 
 - **所有代码注释、docstring、commit message 使用中文**（技术术语保持英文）
