@@ -475,10 +475,35 @@ class LoginMonitorService:
             logger.debug("检查 Cookie 失败: {}", e)
             return False
 
+    def _inject_js_with_retry(self, tab, js_code: str) -> None:
+        """注入 JS 前先等页面 ready，遇到"页面被刷新"竞态时重试一次
+
+        登录成功瞬间浏览器会立刻跳转，旧 frame 被销毁、新 frame 还没接管，
+        此时 DrissionPage 会抛"页面被刷新"。给导航留出落地时间后再试一次即可。
+        """
+        time.sleep(1.5)
+
+        try:
+            tab.wait.doc_loaded(timeout=5)
+        except Exception:
+            pass
+
+        try:
+            tab.run_js(js_code)
+            return
+        except Exception as e:
+            msg = str(e)
+            if "页面被刷新" not in msg and "page" not in msg.lower():
+                raise
+            logger.info("注入 JS 遇到页面刷新竞态，等待 1.5s 后重试")
+
     def _verify_shopee_login_by_api(self, tab, session: Session) -> tuple[bool, dict | None]:
         """通过 API 验证 Shopee 登录态（JS 注入 + 轮询）。
 
         跨境店（cb_option=1）使用 CN 专属验证接口，本土店使用当前国家域名接口。
+
+        注入 JS 前会先等待页面加载完成，并在遭遇"页面被刷新"竞态时重试一次，
+        避开登录成功瞬间浏览器跳转导致 frame 失效的问题。
 
         Returns:
             tuple: (is_logged_in, response_data or None)
@@ -513,7 +538,9 @@ class LoginMonitorService:
                 window['{result_key}'] = {{ error: String(e) }};
             }});
             """
-            tab.run_js(js_code)
+
+            # 注入前先等页面就绪，并在"页面被刷新"竞态下重试一次
+            self._inject_js_with_retry(tab, js_code)
 
             poll_timeout = 10.0
             poll_interval = 0.5

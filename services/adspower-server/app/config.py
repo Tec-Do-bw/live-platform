@@ -6,13 +6,13 @@ from typing import Dict, List, Optional, Tuple, Union
 
 # 国家代理映射（按国家配置，值可以是单个代理字符串或列表，列表时随机选择）
 _PROXY_MAP: Dict[str, Union[str, List[str]]] = {
-    "MY": "socks5://54.kookeey.info:23546:c822ee15:2169010a",
+    "MY": "socks5://my130.kookeey.info:24828:c822ee15:2169010a", # 家宽住宅
     "ID": "socks5://80.kookeey.info:32583:c822ee15:2169010a",
     "TH": "socks5://75.kookeey.info:27240:c822ee15:2169010a",
     "VN": "socks5://83.kookeey.info:27006:c822ee15:2169010a",
     "BR": "socks5://br293.kookeey.info:25552:c822ee15:2169010a",
     "JP": "socks5://81.kookeey.info:21696:c822ee15:2169010a",
-    "US": "socks5://us417.kookeey.info:20810:c822ee15:2169010a",
+    "US": "socks5://us178.kookeey.info:25539:c822ee15:2169010a", # 家宽住宅
     "MX": ["socks5://mx565.kookeey.info:30067:c822ee15:2169010a",  # 家宽住宅
             "socks5://mx351.kookeey.info:29961:c822ee15:2169010a", # 静态IDCIP
            ],
