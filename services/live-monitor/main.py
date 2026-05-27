@@ -567,8 +567,8 @@ async def get_roominfo(request: Request):
             live_info = room_info.get("live_info")
 
             # 检查是否满足条件：当前时间戳大于status_update_time 5分钟(300秒)，且allocation_status=0,且当前是正在直播的直播间
-            if (current_timestamp > (int(status_update_time) + 300)) and str(allocation_status) == "0" and len(
-                    live_info.get("flv_url", "")) > 0:
+            flv_url = live_info.get("flv_url", "") or ""
+            if (current_timestamp > (int(status_update_time) + 300)) and str(allocation_status) == "0" and flv_url and flv_url != "error":
                 logger.info(f"找到可分配房间 | room_id={room_id} url={room_info.get('room_url')}")
 
                 selected_room = room_info.copy()  # 复制对象以返回
