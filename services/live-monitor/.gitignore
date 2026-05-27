@@ -39,5 +39,9 @@ user/
 # 错误记录
 errorUrl.txt
 
+# 测试数据与报告
+tests/proxy_stability/results/
+*.xlsx
+
 # Claude Code
 .claude/

@@ -20,9 +20,11 @@ DEFAULT_HEADERS: dict[str, str] = {
     "Upgrade-Insecure-Requests": "1",
 }
 
-# 代理配置（专有网络环境使用，开发环境传 None 即可）
+# 重试用代理：默认（静态池）请求失败时切换到此代理重试
+# - ipbiubiu "一次一换" 模式：每次请求自动换出口 IP（实测 100% US 纯度，P95 2009ms）
+# - 调用方未显式传 proxy 时，主请求走静态池，第 2 次重试起切到本代理
 DEFAULT_PROXY: str = (
-    "http://7758105-0c83c22f:26394524-US@gate-hk.kkoip.com:19187"
+    "http://w8a3gsvcnv3y_c_US:EYaCbD1o3qMrneUm@dp1.ipbiubiu.com:10769"
 )
 
 # --- 并发参数 ---

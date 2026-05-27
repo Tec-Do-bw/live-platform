@@ -1,17 +1,28 @@
 """Downloader 主类：基于 never_primp 的稳定批量采集下载器。
 
+代理策略：
+  - 默认（调用方未显式传 proxy）：首次请求用静态池随机 IP，重试时切到 DEFAULT_PROXY（ipbiubiu，一次一换）
+  - 调用方显式传入 proxy：全程使用该代理，重试不切换
+  - 调用方传 None：禁用代理
+
 三层重试机制：
   L1 - never_primp 内置：网络连接/DNS 失败时自动重试（max_retries=2）
-  L2 - 应用层指数退避：HTTP 429/5xx 时退避重试（默认 3 次）
+  L2 - 应用层指数退避：HTTP 429/5xx/异常/短响应时退避重试（默认 3 次），重试时自动换代理
   L3 - 最终失败队列：全部耗尽后记录到 failed_results，回调通知业务
+
+短响应判定：
+  Task.min_content_length 不为 None 时，HTTP 200 但响应短于此值视为失败重试
+  （用于 TikTok 直播页风控/简化页等场景）
 """
 
 from __future__ import annotations
 
-import logging
 import time
+import os
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
+from loguru import logger
 
 import never_primp
 
@@ -28,7 +39,6 @@ from .config import (
 )
 from .models import DownloadResult, Task
 
-logger = logging.getLogger(__name__)
 
 
 class Downloader:
@@ -71,23 +81,43 @@ class Downloader:
         self._max_retries = max_retries
         self._on_success = on_success
         self._on_failure = on_failure
+        self._impersonate = impersonate
+        _JS_DIR = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(_JS_DIR, "ip_list.txt"), "r", encoding="UTF-8") as _f:
+            self.ip_list = [line.strip() for line in _f.readlines()]
 
         # 合并请求头：默认 + 自定义覆盖
-        merged_headers = {**DEFAULT_HEADERS, **(headers or {})}
+        self._merged_headers = {**DEFAULT_HEADERS, **(headers or {})}
 
-        # 创建共享的 never_primp.Client（线程安全、无锁 Arc clone）
-        self._client = never_primp.Client(
-            impersonate=impersonate,
-            impersonate_os="windows",
-            proxy=proxy,
-            timeout=timeout,
-            headers=merged_headers,
-            max_retries=NP_MAX_RETRIES,  # L1 底层网络重试
-        )
+        # 代理选择策略（基于 tests/proxy_stability 实测数据）：
+        # - 调用方未显式传 proxy（保留默认 DEFAULT_PROXY）→ 首次走静态池随机，重试切 ipbiubiu
+        # - 调用方显式传入 proxy（含 None）→ 全程使用，重试不切换
+        # 静态池：300 IP 实测成功率 100%、P95 1688ms
+        # ipbiubiu：一次一换、100% US 纯度，作为重试代理
+        if proxy is DEFAULT_PROXY:
+            self._primary_proxy = "http://" + random.choice(self.ip_list)
+            self._retry_proxy = DEFAULT_PROXY
+        else:
+            self._primary_proxy = proxy
+            self._retry_proxy = proxy
+
+        # 创建首次请求用的 Client
+        self._client = self._build_client(self._primary_proxy)
 
         # 结果存储
         self._results: list[DownloadResult] = []
         self._total_elapsed: float = 0
+
+    def _build_client(self, proxy: str | None) -> never_primp.Client:
+        """根据代理构造 never_primp Client（线程安全、无锁 Arc clone）"""
+        return never_primp.Client(
+            impersonate=self._impersonate,
+            impersonate_os="windows",
+            proxy=proxy,
+            timeout=self._timeout,
+            headers=self._merged_headers,
+            max_retries=NP_MAX_RETRIES,  # L1 底层网络重试
+        )
 
     def run(self, tasks: list[Task | str]) -> list[DownloadResult]:
         """批量执行采集，返回全部结果（成功 + 失败）。
@@ -108,7 +138,6 @@ class Downloader:
             normalized.append(t)
 
         total = len(normalized)
-        logger.info("开始采集，共 %d 个任务，并发 %d", total, self._workers)
         start_time = time.monotonic()
 
         results: list[DownloadResult] = [None] * total  # type: ignore[list-item]
@@ -141,14 +170,8 @@ class Downloader:
                         except Exception:
                             logger.exception("on_failure 回调异常")
 
-                # 进度日志（每 10% 或最后一条）
-                if done_count % max(1, total // 10) == 0 or done_count == total:
-                    logger.debug("进度: %d/%d (%.0f%%)", done_count, total,
-                                done_count / total * 100)
-
         self._total_elapsed = (time.monotonic() - start_time) * 1000
         self._results = results
-        logger.info("采集完成，耗时 %.1fs", self._total_elapsed / 1000)
         return results
 
     def fetch_one(self, task: Task | str) -> DownloadResult:
@@ -157,12 +180,21 @@ class Downloader:
         return results[0]
 
     def _execute_task(self, task: Task) -> DownloadResult:
-        """执行单个任务，含 L2 应用层指数退避重试。"""
+        """执行单个任务，含 L2 应用层指数退避重试。
+
+        重试时自动切换到 _retry_proxy（默认 ipbiubiu，一次一换 IP）。
+        若 task.min_content_length 不为 None，HTTP 200 但响应过短也视为失败重试。
+        """
         last_error: str | None = None
         last_status: int | None = None
         task_start = time.monotonic()
 
         for attempt in range(1, self._max_retries + 2):  # +1 是首次尝试
+            # 第二次尝试起切到重试代理（ipbiubiu 自带一次一换，后续重试不必再切）
+            if attempt == 2 and self._retry_proxy != self._primary_proxy:
+                self._client = self._build_client(self._retry_proxy)
+                logger.debug("[%s] 切换到重试代理"% task.task_id)
+
             try:
                 # 构造请求参数
                 kwargs: dict[str, Any] = {}
@@ -181,6 +213,32 @@ class Downloader:
                 method_fn = getattr(self._client, task.method.lower())
                 resp = method_fn(task.url, **kwargs)
 
+                # 短响应判定（HTTP 200 但响应过短，视为风控/简化页 → 重试换代理）
+                if (task.min_content_length is not None
+                        and resp.status_code == 200
+                        and len(resp.text or "") < task.min_content_length):
+                    text_len = len(resp.text or "")
+                    last_status = resp.status_code
+                    last_error = f"短响应 {text_len} < {task.min_content_length}"
+                    if attempt <= self._max_retries:
+                        logger.debug(
+                            "[%s] 短响应 %d 字节 < %d，重试 (%d/%d)"%
+                            (task.task_id, text_len, task.min_content_length,
+                            attempt, self._max_retries)
+                        )
+                        # 短响应不退避：风控页响应已经很快，立即换代理重试更高效
+                        continue
+                    elapsed = (time.monotonic() - task_start) * 1000
+                    return DownloadResult(
+                        task=task,
+                        success=False,
+                        status_code=resp.status_code,
+                        text=resp.text,
+                        error=f"重试耗尽: {last_error}",
+                        attempts=attempt,
+                        elapsed_ms=elapsed,
+                    )
+
                 # 检查是否需要 L2 重试
                 if resp.status_code in RETRY_STATUS_CODES:
                     last_status = resp.status_code
@@ -191,9 +249,9 @@ class Downloader:
                             RETRY_BACKOFF_MAX,
                         )
                         logger.debug(
-                            "[%s] HTTP %d，%.1fs 后重试 (%d/%d)",
-                            task.task_id, resp.status_code, backoff,
-                            attempt, self._max_retries,
+                            "[%s] HTTP %d，%.1fs 后重试 (%d/%d)" %
+                            (task.task_id, resp.status_code, backoff,
+                            attempt, self._max_retries)
                         )
                         time.sleep(backoff)
                         continue
@@ -232,9 +290,9 @@ class Downloader:
                         RETRY_BACKOFF_MAX,
                     )
                     logger.debug(
-                        "[%s] 异常 %s，%.1fs 后重试 (%d/%d)",
-                        task.task_id, last_error, backoff,
-                        attempt, self._max_retries,
+                        "[%s] 异常 %s，%.1fs 后重试 (%d/%d)" %
+                        (task.task_id, last_error, backoff,
+                        attempt, self._max_retries)
                     )
                     time.sleep(backoff)
                     continue

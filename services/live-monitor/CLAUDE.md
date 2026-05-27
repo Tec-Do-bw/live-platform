@@ -33,6 +33,8 @@
 ## 直播流采集架构
 
 - TikTok 实时路由（`/route/tiktok`）走 HTTP Downloader 路径，**不再依赖浏览器标签页池**：`utils/TiktokTool.py` 通过 `utils/downloader/`（基于 `never_primp`，含 L1 网络重试 + L2 HTTP 状态码退避 + L3 失败队列）完成抓取
+- 代理策略（基于 `tests/proxy_stability/` 实测数据）：默认走 300 IP 静态池随机；请求失败（HTTP 5xx / 异常 / 直播页短响应 < 2000 字节）时由 Downloader 自动切换到 ipbiubiu 动态代理（一次一换 IP）重试。**禁止**在 `TiktokTool` 内部为单一代理类型写国家切换/兜底逻辑，新需求统一在 Downloader 层抽象
+- 直播页短响应判定：通过 `Task.min_content_length=2000` 声明，由 Downloader L2 重试时自动换代理，业务层无需感知
 - Lazada 走 `utils/LazadaTool.py`（Token 管理 + 请求签名）；Shopee 走 `utils/ShopeeTool.py`（多 UA 轮换）
 - 路由请求构造 TikTok 实例时使用 `TiktokTool(ipList, no_proxy=True)` 显式声明无代理路径，避免误用全局代理
 

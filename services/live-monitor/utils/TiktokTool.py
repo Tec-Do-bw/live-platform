@@ -4,7 +4,6 @@ import re
 import json
 import random
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 from string import ascii_lowercase, ascii_uppercase, digits
 
@@ -13,7 +12,6 @@ import execjs
 from utils.db_pool import db_pool
 from utils.logger import Logings
 from utils.downloader import Downloader, Task
-from utils.downloader.config import DEFAULT_PROXY
 
 logger = Logings().get_logger()
 
@@ -128,17 +126,13 @@ SIGI_RE = re.compile(r'<script id="SIGI_STATE"[^>]*>(.*?)</script>', re.S)
 # 个人页 webapp.user-detail 抽取（与 test.py 一致）
 USER_DETAIL_RE = re.compile(r'webapp\.user-detail":(.*?),"webapp')
 
-# 直播页短响应阈值：低于此长度判定为风控/简化页，触发换代理重试
-_LIVE_HTML_MIN_LEN = 2000
+# 个人页短响应阈值：正常响应 ~350KB，风控简化页 ~1.2KB（slardar_us_waf）
+# 设 50KB 作为分界 —— 远高于风控页大小，远低于正常页大小
+# 命中时由 Downloader 自动切 ipbiubiu 代理重试，业务层无需感知
+_PROFILE_HTML_MIN_LEN = 2000
 
-# 短响应重试代理国家池（默认 -US 落地命中风控时并发对全部国家重跑 live Task）
-_LIVE_RETRY_COUNTRIES = ("MX", "ID", "BR")
-
-# 短响应重试整轮次数：每轮并发尝试全部国家，任一命中即早退；全部未命中再走下一轮
-_LIVE_RETRY_ROUNDS = 2
-
-# 代理 URL 国家后缀正则：匹配密码段末尾的 `-XX@`（两位大写国家代码 + @）
-_PROXY_COUNTRY_RE = re.compile(r"-[A-Z]{2}@")
+# gift/list 接口短响应阈值：正常响应 ~2.2MB，签名失效或风控可能短于 100 字节
+_GIFT_LIST_MIN_LEN = 2000
 
 
 class TiktokTool:
@@ -250,85 +244,6 @@ class TiktokTool:
     def _build_live_headers(self):
         """直播页请求头：UA 必须为桌面 Chrome，移动 UA 不含 SIGI_STATE"""
         return {**_BASE_HEADERS, "user-agent": UA_DESKTOP_CHROME}
-
-    # ----- 短响应代理切换重试 -----
-
-    def _build_country_proxy(self, country: str) -> str:
-        """以 DEFAULT_PROXY 为模板，替换密码段的国家后缀。
-
-        例：'http://user:pwd-US@host:port' + 'MX' → 'http://user:pwd-MX@host:port'
-        若模板不含 `-XX@` 形式，原样返回 DEFAULT_PROXY 兜底。
-        """
-        return _PROXY_COUNTRY_RE.sub(f"-{country}@", DEFAULT_PROXY, count=1)
-
-    def _fetch_live_with_country(self, live_url: str, country: str):
-        """用指定国家代理跑一次 live Task。
-
-        Returns:
-            DownloadResult；底层享有 L1/L2 重试。
-        """
-        proxy = self._build_country_proxy(country)
-        retry_dl = Downloader(
-            proxy=proxy,
-            workers=1,
-            timeout=10.0,
-            max_retries=3,
-        )
-        task = Task(
-            url=live_url,
-            task_id=f"live-retry-{country}",
-            headers=self._build_live_headers(),
-        )
-        return retry_dl.fetch_one(task)
-
-    def _retry_live_with_country_proxy(self, live_url: str):
-        """短响应风控兜底：并发对 _LIVE_RETRY_COUNTRIES 全部国家重跑 live Task。
-
-        每轮并发提交全部国家任务，任一命中（>= _LIVE_HTML_MIN_LEN）即取消其余、立刻返回；
-        整轮全部未命中则进入下一轮，最多 _LIVE_RETRY_ROUNDS 轮。
-
-        Returns:
-            命中国家的 DownloadResult；全部轮次均未命中返回 None。
-        """
-        countries = _LIVE_RETRY_COUNTRIES
-        for round_idx in range(1, _LIVE_RETRY_ROUNDS + 1):
-            logger.info(
-                f"live 响应过短，第 {round_idx}/{_LIVE_RETRY_ROUNDS} 轮并发重试"
-                f"，国家={countries}: {live_url}"
-            )
-            with ThreadPoolExecutor(max_workers=len(countries)) as pool:
-                future_to_country = {
-                    pool.submit(self._fetch_live_with_country, live_url, c): c
-                    for c in countries
-                }
-                hit = None
-                for future in as_completed(future_to_country):
-                    country = future_to_country[future]
-                    try:
-                        result = future.result()
-                    except Exception as e:
-                        logger.warning(f"live 重试异常，国家={country}：{e}")
-                        continue
-                    text_len = len(result.text or "")
-                    if result.success and text_len >= _LIVE_HTML_MIN_LEN:
-                        logger.info(
-                            f"live 重试命中，国家={country}，响应长度={text_len}"
-                            f"（轮次 {round_idx}）"
-                        )
-                        hit = result
-                        break
-                    logger.warning(
-                        f"live 重试未命中，国家={country}，响应长度={text_len}"
-                        f"（轮次 {round_idx}）"
-                    )
-                # cancel 未启动的 future（已运行的会自然结束，结果丢弃）
-                for fut in future_to_country:
-                    if not fut.done():
-                        fut.cancel()
-                if hit is not None:
-                    return hit
-        logger.warning(f"live 重试 {_LIVE_RETRY_ROUNDS} 轮全部未命中: {live_url}")
-        return None
 
     # ----- 解析辅助 -----
 
@@ -487,10 +402,12 @@ class TiktokTool:
             xg = _sign_gnarly(url, ua)
             final_url = url + "&X-Bogus=" + xb + "&X-Gnarly=" + xg
 
-            task = Task(url=final_url, task_id="gift_list", headers=headers)
+            task = Task(url=final_url, task_id="gift_list", headers=headers,
+                        min_content_length=_GIFT_LIST_MIN_LEN)
             result = self._downloader.fetch_one(task)
 
-            if result.success and result.text and len(result.text) > 100:
+            # min_content_length 已确保响应非空且达到最小长度，无需再判 len > 100
+            if result.success and result.text:
                 j = json.loads(result.text)
                 pages = (j.get("data") or {}).get("pages") or []
                 if pages:
@@ -521,15 +438,17 @@ class TiktokTool:
             profile_url = f"https://www.tiktok.com/@{handle}"
             live_url = f"https://www.tiktok.com/@{handle}/live"
             tasks = [
-                Task(url=profile_url, task_id="profile", headers=self._build_profile_headers()),
-                Task(url=live_url, task_id="live", headers=self._build_live_headers()),
+                Task(url=profile_url, task_id="profile",
+                     headers=self._build_profile_headers(),
+                     min_content_length=_PROFILE_HTML_MIN_LEN),
+                Task(url=live_url, task_id="live", headers=self._build_live_headers(), min_content_length=_PROFILE_HTML_MIN_LEN),
             ]
             results = self._downloader.run(tasks)
             profile_result, live_result = results[0], results[1]
 
             # 解析个人页
             if not profile_result.success:
-                logger.warning("请求个人页失败: %s | %s", profile_url, profile_result.error)
+                logger.warning(f"请求个人页失败: {profile_url} | {profile_result.error}")
                 return self._make_error(
                     url, f"请求个人页失败: {profile_result.error}",
                     profile_result.status_code,
@@ -544,16 +463,10 @@ class TiktokTool:
                     "url": url,
                 }
 
-            # 解析直播页
+            # 解析直播页：上游失败（HTTP 错误等）→ 当作未开播继续走，让翻译层映射 2001
             if not live_result.success:
-                logger.warning("请求直播页失败: %s | %s", live_url, live_result.error)
+                logger.warning(f"请求直播页失败: {live_url} | {live_result.error}")
                 return self._build_port_info(user, None, url, file_path)
-
-            # 短响应风控兜底：依次换代理重试，命中即用新结果继续解析
-            if live_result.text and len(live_result.text) < _LIVE_HTML_MIN_LEN:
-                good = self._retry_live_with_country_proxy(live_url)
-                if good is not None:
-                    live_result = good
 
             sigi_match = SIGI_RE.search(live_result.text)
             if not sigi_match:
@@ -562,7 +475,7 @@ class TiktokTool:
             try:
                 sigi = json.loads(sigi_match.group(1))
             except json.JSONDecodeError as e:
-                logger.warning("SIGI_STATE JSON 解析失败: %s", e)
+                logger.warning(f"SIGI_STATE JSON 解析失败: {e}")
                 return self._make_error(url, f"页面解析失败: {e}")
 
             live_room_user_info = (
@@ -582,7 +495,7 @@ class TiktokTool:
             return port_info
 
         except Exception as e:
-            logger.error("get_tiktok_stream_data_requests 异常: %s", e, exc_info=True)
+            logger.error(f"get_tiktok_stream_data_requests 异常: {e}", exc_info=True)
             return self._make_error(url, f"采集内部异常: {e}")
 
     # 传入直播间地址，解析获取真实直播流地址信息
@@ -590,7 +503,7 @@ class TiktokTool:
         try:
             return self.get_tiktok_stream_data_requests(url=record_url, cookie_list=cookie_list)
         except Exception as e:
-            logger.error("getLiveStreamInfo_requests 异常: %s", e, exc_info=True)
+            logger.error(f"getLiveStreamInfo_requests 异常: {e}", exc_info=True)
             return {'flv_url': 'error', 'roomId': '', 'message': 'tk采集异常', 'filePath': ''}
 
 if __name__ == '__main__':
@@ -607,7 +520,7 @@ if __name__ == '__main__':
         start_time = time.time()
         try:
             # room_url = "https://www.tiktok.com/@greameofficialstore/live" #18岁禁止
-            room_url = "https://www.tiktok.com/@elena668888/live" #正常
+            room_url = "https://www.tiktok.com/@ipopi_official_account/live" #正常
             # room_url = "https://www.tiktok.com/@vrcomfyny/live" #没有直播
             port_info = tiktokTool.getLiveStreamInfo_requests(room_url, ipList) or {}
             print(port_info)

@@ -20,6 +20,8 @@ class Task:
         data: 表单 / 原始请求体
         timeout: 请求级别超时（秒），覆盖 Downloader 默认值
         meta: 业务附加数据，原样透传到 DownloadResult
+        min_content_length: 响应文本最少字节数；HTTP 200 但响应短于此值视为失败重试。
+            用于风控/简化页判定（如 TikTok 直播页常返回 < 2000 字节的简化 HTML）。
     """
 
     url: str
@@ -31,6 +33,7 @@ class Task:
     data: Any = None
     timeout: float | None = None
     meta: dict[str, Any] | None = None
+    min_content_length: int | None = None
 
 
 @dataclass
