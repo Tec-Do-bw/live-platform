@@ -41,16 +41,19 @@ Phase 4A 上线后,采集报告完全由日志驱动,SQLite 不再必要。本 p
 | `services/live-crawler/monitor/recrawl/proxy.py` | 代理选择 |
 | `services/live-crawler/monitor/api/recrawl_routes.py` | FastAPI 补采路由 |
 
-### C. live-crawler 监控周边(评估后决定)
+### C. live-crawler 监控周边(评估完成)
 
-执行前先确认这些是否还需要(由日报替代功能):
-
-| 路径 | 评估方向 |
-|---|---|
-| `services/live-crawler/monitor/server.py` | FastAPI 监控 API 服务器,大概率删除 |
-| `services/live-crawler/monitor/tracker.py` | 改为日志输出或删除 |
-| `services/live-crawler/monitor/api/` | 其他路由文件,逐个评估 |
-| `services/live-crawler/services/cookie_manager.py` | 移除 SQLite 持久化部分,改文件存储或纯内存 |
+| 路径 | 决定 | 原因 |
+|---|---|---|
+| `services/live-crawler/monitor/server.py` | **删除** | 前端下线后无存在价值；recrawl_routes import 已断，需修复后整体删除 |
+| `services/live-crawler/monitor/tracker.py` | **删除 CollectionMonitor 类**，`extract_target_date` 迁移到 `utils/` | 主流程已不调用 CollectionMonitor；`extract_target_date` 仍被 `crawlers/browser/tiktok.py:277` 引用 |
+| `services/live-crawler/monitor/api/batches.py` | **删除** | 纯监控面板 API，前端下线后无消费方 |
+| `services/live-crawler/monitor/api/accounts.py` | **删除** | 同上 |
+| `services/live-crawler/monitor/api/registry_routes.py` | **删除** | 同上 |
+| `services/live-crawler/monitor/api/overview.py` | **删除** | 同上 |
+| `services/live-crawler/monitor/api/login_status_routes.py` | **删除** | 前端下线后无消费方；LoginStatusManager 内部逻辑保留 |
+| `services/live-crawler/monitor/api/cookie_routes.py` | **保留，不动** | 是 adspower-server → live-crawler 的 Cookie 写入通道（`PUT /api/cookies/{account_id}`），Lazada 生产链路依赖 |
+| `services/live-crawler/services/cookie_manager.py` | **保留，不动** | Lazada HTTP 采集器 10+ 处引用，是 Lazada cookies 唯一来源；等 TikTok HTTP 重构完成后随 `account_credentials` 表统一迁移（见 `2026-05-28-tiktok-http-refactor.md` §15） |
 
 ### D. live-monitor 监控前端
 
@@ -93,14 +96,19 @@ Phase 4A 上线后,采集报告完全由日志驱动,SQLite 不再必要。本 p
 - [ ] 跑 `pytest services/live-crawler/tests/`,删除/修复涉及补采的测试
 - [ ] 提交: `git commit -m "refactor(live-crawler): 删除补采系统"`
 
-### 3. 删除 live-crawler SQLite 存储
+### 3. 删除 live-crawler SQLite 存储与监控 API
 
-- [ ] 修改 `services/live-crawler/services/cookie_manager.py`:移除 SQLite 持久化逻辑,改为文件或内存
-- [ ] 修改 `services/live-crawler/monitor/tracker.py`:改为 logger.info 输出或整体删除
-- [ ] 修改 `services/live-crawler/monitor/api/*.py`:逐个评估,无价值的整文件删除
-- [ ] 评估 `services/live-crawler/monitor/server.py`:若失去所有 API 价值则整体 `git rm`
+- [ ] 将 `extract_target_date` 从 `monitor/tracker.py` 迁移到 `utils/time_utils.py`（或同类 utils 文件）
+- [ ] 更新 `crawlers/browser/tiktok.py:277` 的 import 路径
+- [ ] `git rm services/live-crawler/monitor/tracker.py`（CollectionMonitor 类整体删除）
+- [ ] `git rm services/live-crawler/monitor/api/batches.py`
+- [ ] `git rm services/live-crawler/monitor/api/accounts.py`
+- [ ] `git rm services/live-crawler/monitor/api/registry_routes.py`
+- [ ] `git rm services/live-crawler/monitor/api/overview.py`
+- [ ] `git rm services/live-crawler/monitor/api/login_status_routes.py`
+- [ ] `git rm services/live-crawler/monitor/server.py`（已无路由可挂，整体删除）
 - [ ] `git rm services/live-crawler/monitor/db.py`
-- [ ] `git rm -r services/live-crawler/monitor/data/`(若已入 git;否则确认 .gitignore 已排除)
+- [ ] `git rm -r services/live-crawler/monitor/data/`（若已入 git；否则确认 .gitignore 已排除）
 - [ ] 全局搜索 `import sqlite3` / `monitor.db` 残留引用
 - [ ] 跑 `pytest services/live-crawler/`,确保无回归
 - [ ] 提交: `git commit -m "refactor(live-crawler): 删除 SQLite 存储与监控 API"`
