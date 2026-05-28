@@ -243,51 +243,20 @@
 
 ---
 
-## 七、Phase 4:监控简化(P3,3 天)
+## 七、Phase 4:监控简化(P3,5-6 天)
 
-**时间**:2026-05-22 ~ 2026-05-24
-**目标**:用 30 行 Python 替代 3,600 行 Vue 监控面板
+**时间**:2026-05-29 ~ 2026-06-12
+**目标**:日志驱动的日报 Agent 替代 SQLite + Vue 监控面板
 
-### 任务清单
+> 原方案(SQLite 聚合 + Vue 前端 + 实时告警)已废弃。新方案拆为 4A / 4B 两步执行,详见各自 plan:
+>
+> - [Phase 4A: 日报 Agent](./2026-05-28-phase4a-daily-report-agent.md) — 新增日志驱动的日报功能,不破坏现有系统(2 天)
+> - [Phase 4B: 删除 SQLite/补采/前端](./2026-05-28-phase4b-remove-sqlite-recrawl-frontend.md) — 4A 稳定 1-2 周后执行(3-4 天)
 
-- [ ] **4.1 删除 Vue 前端**
-  - [ ] 备份:`cp -r services/live-crawler/monitor/frontend docs/archive/`
-  - [ ] 删除:`rm -rf services/live-crawler/monitor/frontend`
-  - [ ] 提交:`git commit -m "删除 Vue 监控面板"`
+### 验收要点(由 4A/4B 各自 plan 详列)
 
-- [ ] **4.2 创建飞书日报脚本** `scripts/daily_completeness_report.py`
-  ```python
-  import sqlite3
-  from datetime import date
-  from feishu_webhook import send_message
-
-  def generate_report():
-      db = sqlite3.connect("services/live-platform/data/monitor.db")
-      today = date.today()
-      missing = db.execute("""
-          SELECT account_id, platform, error_message
-          FROM account_sessions
-          WHERE date = ? AND status != 'success'
-      """, (today,)).fetchall()
-      message = f"✅ {today} 数据采集完整,无缺失" if not missing else \
-                f"⚠️ {today} 数据缺失 {len(missing)} 条\n\n" + \
-                "\n".join(f"- {a} ({p}): {e}" for a, p, e in missing)
-      send_message(message)
-  ```
-
-- [ ] **4.3 实现飞书 Webhook** `scripts/feishu_webhook.py`,Webhook URL 走环境变量
-
-- [ ] **4.4 测试脚本**
-  - [ ] `python scripts/daily_completeness_report.py`
-  - [ ] 验证飞书消息接收
-
-- [ ] **4.5 添加到 cron**
-  ```bash
-  # 每天 18:00 执行
-  0 18 * * * cd /path/to/live-platform && python scripts/daily_completeness_report.py
-  ```
-
-- [ ] **4.6 实时告警**:`completeness_checker.py` 每小时检查,异常超阈值立即飞书告警
+- [ ] 4A 完成: 飞书每天 10:00 收到日报卡片,含完整度/异常/问题账号/趋势对比
+- [ ] 4B 完成: SQLite 存储、补采系统、监控前端全部移除,采集主流程无回归
 
 ---
 

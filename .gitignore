@@ -57,6 +57,10 @@ tiktok*.json
 *.db
 *.db-*
 
+# === 日报状态文件(运行时数据) ===
+services/live-crawler/account_status.json
+services/live-crawler/account_status.json.broken
+
 
 # === 压缩包 ===
 *.zip

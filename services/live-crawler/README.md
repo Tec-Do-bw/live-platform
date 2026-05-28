@@ -182,7 +182,14 @@ live_dp/
 ├── scripts/                   # 辅助脚本
 │   ├── init_tracker.py       # 初始化采集追踪文件
 │   ├── list_shopee_accounts.py # 列出 Shopee 账号
-│   └── mock_monitor_data.py  # 注入监控模拟数据
+│   ├── mock_monitor_data.py  # 注入监控模拟数据
+│   ├── daily_report.py       # 每日采集报告主入口(日志驱动 + OpenAI + 飞书)
+│   ├── log_parser.py         # 日志预过滤/结构化解析
+│   ├── status_tracker.py     # account_status.json 读写,跨天累计登出天数
+│   ├── openai_client.py      # OpenAI 调用封装(失败降级纯文本)
+│   ├── feishu_webhook.py     # 飞书富文本卡片推送
+│   └── prompts/
+│       └── daily_report.md   # OpenAI Prompt 模板
 ├── utils/                     # 工具模块
 │   ├── adspower_client.py    # AdsPower API 统一客户端（含限流重试，见规则七）
 │   ├── kafka_client.py       # Kafka 客户端
@@ -236,6 +243,43 @@ python -m pytest tests/monitor/ -v
 3. Kafka 服务必须可访问
 4. `resource/collection_tracker.json` 和 `monitor/data/monitor.db` 为运行时数据，不提交 git
 5. 日志位于 `logs/` 目录，按日期自动轮转
+
+## 日报 Agent 部署
+
+每天早上 10:00 自动分析 T-1 日志,飞书推送采集情况报告(完整度/异常 Top/问题账号/趋势对比)。
+
+### 1. 配置环境变量
+
+```bash
+# 飞书 Webhook(必填)
+export FEISHU_DAILY_REPORT_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+# 飞书自定义机器人加签密钥(选填,启用了"自定义关键词加签"才需要)
+export FEISHU_DAILY_REPORT_SECRET="your_secret"
+
+# OpenAI API(选填,未配置时降级为纯文本日报)
+export OPENAI_API_KEY="sk-..."
+export OPENAI_MODEL="gpt-4o-mini"     # 默认 gpt-4o-mini
+```
+
+### 2. 手动验证
+
+```bash
+# 分析昨天的日志,只打印不推送
+python -m scripts.daily_report --dry-run
+
+# 指定日期补发
+python -m scripts.daily_report --date 2026-05-06
+```
+
+### 3. 添加 cron(参考 cron.txt)
+
+```cron
+0 10 * * * cd /opt/live-crawler && /usr/bin/python3 -m scripts.daily_report >> logs/daily_report_cron.log 2>&1
+```
+
+### 4. 状态文件
+
+`account_status.json`(运行时数据,gitignored)记录每个账号最后一次成功采集日期,用于跨天计算"连续登出天数"。损坏时会自动备份为 `account_status.json.broken` 并重建。
 
 ## 许可证
 

@@ -1,0 +1,6 @@
+# 直播采集日报 cron 配置(参考)
+#
+# 每天早上 10:00 跑一次,分析昨天(T-1)全天日志,推飞书。
+# 部署时需自行 crontab -e 添加,本文件不会自动生效。
+
+0 10 * * * cd /opt/live-crawler && /usr/bin/python3 -m scripts.daily_report >> logs/daily_report_cron.log 2>&1
