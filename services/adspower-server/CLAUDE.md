@@ -16,7 +16,7 @@
 | `error` | 登录失败 | 超时、店铺不匹配、监听异常等 |
 | `closed` | 主动关闭 | API 关闭、WebSocket 断开、应用关闭等（未完成登录流程） |
 
-详细 `reason` 字段说明、Lazada 双端口登录流程、WebSocket 投屏功能见 `../../.claude/references/login-callback-spec.md`。
+详细 `reason` 字段说明、Lazada 双端口登录流程、WebSocket 投屏功能见 `../../.claude/rules/login-callback-spec.md`。
 
 ## 浏览器环境管理约束
 

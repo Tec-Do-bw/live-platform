@@ -8,14 +8,14 @@
 | 任务场景 | 应先读取的文档 | 触发方式 |
 |----------|---------------|----------|
 | 编辑某服务代码 | `services/<服务名>/CLAUDE.md` | 自动（懒加载） |
-| 修改采集业务逻辑 | `.claude/references/` 下对应规则文件 | 手动读取 |
+| 修改采集业务逻辑 | `.claude/rules/` 下对应规则文件 | 自动(paths 触发) |
 | 修改文档 | 根 CLAUDE.md「文档管理规则」段 | 自动（rule 触发） |
 | 修改 rules 文件 | `.claude/rules/` 下目标文件 + 本指引 | 手动读取 |
 | 跨服务联调 | 两端服务的 CLAUDE.md + 根 CLAUDE.md「子项目」表 | 手动读取 |
-| 调试某 bug | 对应服务 CLAUDE.md + `docs/designs/` 相关设计文档 | 手动读取 |
+| 调试某 bug | 对应服务 CLAUDE.md + `docs/specs/` 相关设计文档 | 手动读取 |
 | 新增服务/模块 | 根 CLAUDE.md 全文 + 最相似服务的 CLAUDE.md | 手动读取 |
 | 部署/运维操作 | `services/<服务名>/docs/specs/deployment-guide.md` | 手动读取 |
-| 查看历史决策 | `docs/designs/` 或 `docs/archive/` 下对应文档 | 手动读取 |
+| 查看历史决策 | `docs/specs/` 或 `docs/archive/` 下对应文档 | 手动读取 |
 
 ## 懒加载说明
 

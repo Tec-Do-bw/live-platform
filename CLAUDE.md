@@ -1,118 +1,74 @@
 # Live Platform - 直播监控与数据采集平台
 
-> Monorepo 项目，整合直播间监控、视频流录制、浏览器管理、商家数据采集四大模块。
+> Monorepo,4 个子服务。详细启动命令、环境配置见 [`README.md`](README.md)。
 
 ## 子项目
 
-| 子项目 | 路径 | 说明 | 来源仓库 |
-|--------|------|------|----------|
-| 直播间监控 | `services/live-monitor/` | 主备高可用架构，房间检测、状态管理、GMV 采集 | liveSpider_Serverv3 |
-| 直播流录制 | `services/live-stream/` | FFmpeg 推流、视频切割、OSS 上传 | live-straem |
-| 浏览器管理 | `services/adspower-server/` | AdsPower 浏览器管理、CDP 投屏转发、登录监控 | livelab/adspower-server |
-| 数据采集 | `services/live-crawler/` | TikTok/Shopee/Lazada 双轨采集（浏览器+HTTP） | livelab/live_dp |
+| 子项目 | 路径 | 职责 |
+|--------|------|------|
+| 直播间监控 | [`services/live-monitor/`](services/live-monitor/CLAUDE.md) | 主备高可用,房间检测、状态管理、GMV 采集 |
+| 直播流录制 | [`services/live-stream/`](services/live-stream/CLAUDE.md) | FFmpeg 推流、视频切割、OSS 上传 |
+| 浏览器管理 | [`services/adspower-server/`](services/adspower-server/CLAUDE.md) | AdsPower 浏览器、CDP 投屏、登录监控 |
+| 数据采集 | [`services/live-crawler/`](services/live-crawler/CLAUDE.md) | TikTok/Shopee/Lazada 双轨采集(浏览器+HTTP) |
+| Phase 1 整合服务 | [`services/live-platform/`](services/live-platform/CLAUDE.md) | live-monitor + live-stream + MediaMTX(进行中) |
 
-业务规则详见 `.claude/references/` 目录：
-- 采集模式与登出恢复：`collection-mode-rules.md`
-- 登录回调规格：`login-callback-spec.md`
-- Shopee 特殊规则：`shopee-special-rules.md`
-- HTTP 重采集规格：`recrawl-http-spec.md`
-- 登出恢复流程：`logout-recovery-flow.md`
+## 文档地图
+
+| 你需要 | 去哪里看 |
+|--------|----------|
+| 当前在做什么、下一步、最近完成 | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| 长期参考(架构/PRD/ADR/数据模型) | [`docs/specs/`](docs/specs/) |
+| 进行中的实施计划(含 task checklist) | [`docs/plans/`](docs/plans/) |
+| 业务规则(采集模式、登录回调、Shopee 特殊规则等) | [`.claude/rules/`](.claude/rules/)(由 `paths` frontmatter 自动触发,编辑对应代码时自动加载) |
+| 子项目结构与启动 | 对应子项目 `README.md` |
+| 子项目约束与设计决策 | 对应子项目 `CLAUDE.md` |
 
 ## 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| 语言 | Python 3.12 |
-| Web 框架 | FastAPI |
-| 爬虫引擎 | DrissionPage（浏览器）、HTTP（Lazada） |
-| 浏览器管理 | AdsPower API + 指纹浏览器 |
-| 视频处理 | FFmpeg |
-| 消息队列 | Kafka |
-| 对象存储 | 阿里云 OSS |
-| 前端 | Vue3 + Element Plus |
-| 监控存储 | SQLite |
-| 部署 | 单机部署，FastAPI 托管前端静态文件 |
+Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower API · FFmpeg / MediaMTX · Kafka · 阿里云 OSS · Vue3 + Element Plus · SQLite
 
-## 命令
+## 已知坑
 
-> **环境**：macOS Darwin + zsh。pytest 必须从各服务目录运行。
-
-### 快速启动
-
-各服务独立启动：
-
-| 服务 | 启动命令 |
-|------|----------|
-| 直播间监控 | `cd services/live-monitor && python main.py` |
-| 直播流录制 | `cd services/live-stream && bash start.sh` |
-| 浏览器管理 | `cd services/adspower-server && python -m app.main` |
-| 数据采集 | `cd services/live-crawler && python main.py --mode scheduler` |
-
-### 常用命令
-
-| 命令 | 用途 |
-|------|------|
-| `cd services/live-crawler && python main.py --mode once --crawl-type realtime` | Lazada 实时采集 |
-| `cd services/live-crawler && python main.py --mode full` | 全量采集（串行） |
-| `cd services/live-crawler && python -m monitor.server` | 启动采集监控面板（端口 8777） |
-| `cd services/live-crawler && python -m cookie_keeper` | 启动 Cookie 养号服务 |
-| `cd services/live-monitor && curl http://localhost:8080/health` | 检查监控服务健康状态 |
-
-## 环境配置
-
-### Python 环境
-```bash
-pip install -r services/live-monitor/requirements.txt
-pip install -r services/live-stream/requirements.txt
-pip install -r services/adspower-server/requirements.txt
-pip install -r services/live-crawler/requirements.txt
-```
-
-### 环境区分
-
-通过 `APP_ENV=dev/pro` 区分开发和生产环境；具体配置以代码和环境变量默认值为准。
-
-### 前端环境
-```bash
-cd services/live-crawler/monitor/frontend && npm install
-```
-
-## 已知坑（避免重犯）
-
-- **日志用 loguru f-string**：`logger.info(f"msg={var}")`，禁止 `logger.info("msg=%s", var)`（% 占位符在 loguru 不生效）。
+- **loguru 用 f-string**:`logger.info(f"msg={var}")`,禁用 `logger.info("msg=%s", var)`(% 占位符在 loguru 不生效)
 
 ## 代码规范
 
-- **所有代码注释、docstring、commit message 使用中文**（技术术语保持英文）
-- Python 使用 Python 3.12，类型提示使用 `str | None` 风格（非 `Optional[str]`）
-- 测试用 pytest，运行单个测试而非全套
-- 前端使用 Vue3 Composition API + `<script setup>` 语法
+- 注释、docstring、commit message 使用中文(技术术语保持英文)
+- Python 类型提示用 `str | None` 风格(非 `Optional[str]`)
+- 测试用 pytest,运行单个测试而非全套
+- 前端用 Vue3 Composition API + `<script setup>`
 
 ## IMPORTANT: 工作流规则
 
-详见 `.claude/rules/` 目录：
+`.claude/rules/` 下规则按 `paths` 自动触发,无需手动加载:
 
 | 规则文件 | 触发条件 | 核心要求 |
 |----------|----------|----------|
-| `read-before-write.md` | 编辑 `services/*/` 下文件时 | 先读对应子项目 CLAUDE.md |
-| `update-docs-on-structure-change.md` | 新增/删除文件时 | 更新对应子项目 README.md 目录树（不动 CLAUDE.md） |
-| `chinese-comments.md` | 写代码时 | 注释、docstring、commit message 用中文 |
-| `single-source-of-truth.md` | 创建/编辑文档时 | 禁止复制副本，用路径引用 |
+| `read-before-write.md` | 编辑 `services/*/` 文件 | 先读对应子项目 CLAUDE.md |
+| `update-docs-on-structure-change.md` | 新增/删除文件、plan 完成 | 更新子项目 README 目录树 + ROADMAP 维护 |
+| `chinese-comments.md` | 写代码时 | 注释、docstring、commit 用中文 |
+| `single-source-of-truth.md` | 编辑文档时 | 禁止复制副本,用路径引用 |
+| `live-room-api-contract.md` | 修改 `services/live-monitor/utils/*Tool.py` | 维护爬虫工具返回值契约 |
+| `collection-mode-rules.md` | 编辑 live-crawler 采集调度入口 | 全量/增量/登出恢复模式判断优先级 |
+| `logout-recovery-flow.md` | 编辑 live-crawler base/scheduler/login 相关代码 | 即时恢复(2 轮)与 Fallback(3 轮)路径 |
+| `login-callback-spec.md` | 编辑 adspower-server 或 live-crawler 登录回调代码 | login_status 三态、reason 字段、回调优先级与去重 |
+| `shopee-special-rules.md` | 编辑 live-crawler shopee 相关代码 | page_urls 模板、时区 T-1、域名映射、JS 注入采集 |
+| `tiktok-collection-time.md` | 编辑 live-crawler tiktok/browserapi | 增量 T-3、全量 T-28、禁用 SETTLEMENT_HOUR |
 
-其他规则：
-- **先 Plan 再编码**：复杂任务先用 Plan Mode 输出步骤，确认后再实现
-- **重要技术决策**：记录到对应子项目 CLAUDE.md 中
-- **任务追踪**：功能/Bug/待办用 `gh issue create` 创建 Issue，完成后提交时用 `fixes #编号` 自动关闭
-- **上下文加载策略**：详见 `.claude/docs/context-loading-guide.md`
+其他工作流约定:
+
+- **先 Plan 再编码**:非琐碎任务先用 Plan Mode 输出步骤,确认后再实现
+- **重要技术决策**:记录到对应子项目 CLAUDE.md
+- **任务追踪**:大颗粒度走 [`docs/ROADMAP.md`](docs/ROADMAP.md);bug/feature 走 `gh issue create`,完成时 commit 用 `fixes #N` 自动关闭
 
 ## 文档管理规则
 
-- **单一权威源**：每份技术文档只在一个位置维护，其他位置通过路径引用，禁止复制副本
-- **层级继承**：子项目 CLAUDE.md 不重复根 CLAUDE.md 的通用规则，仅记录子项目特有约束
-- **统一目录结构**：根目录与各服务的 `docs/` 一律按下列四类组织（不再使用 `doc/`、`documentation/`、`memory-bank/` 等命名）：
-  - `specs/` — 接口规范与对接文档（"是什么"）；接口响应/数据样本统一放 `specs/example_data/`
-  - `designs/` — 设计方案与技术决策（"怎么做"）
-  - `plans/` — 实施计划（含 `- [ ]` 勾选项）
-  - `archive/` — 已完成或被取代的历史文档
-- **Superpowers 例外**：根 `docs/superpowers/` 沿用 Superpowers Skill 体系生成的 plans/specs，不强制并入上述四类
-- **命名约定**：新文件优先 kebab-case 英文（如 `deployment-guide.md`）；带日期文档使用 `YYYY-MM-DD-<topic>.md` 前缀
+- **单一权威源**:每份文档只在一处维护,其他位置用路径引用,禁止复制副本
+- **层级继承**:子项目 CLAUDE.md 不重复根规则,只记子项目特有约束
+- **目录语义 = 状态语义**:
+  - `specs/` — 长期有效的参考(PRD / 架构 / ADR / 数据模型 / 接口规范);响应样本放 `specs/example_data/`
+  - `plans/` — 进行中的实施计划(含 `- [ ]` checklist),完成后移到 `archive/`
+  - `archive/` — 已完成或被取代的历史
+  - `superpowers/` — Superpowers Skill 体系自治区,例外
+- **命名**:kebab-case 英文(`deployment-guide.md`);带日期用 `YYYY-MM-DD-<topic>.md`
+- **plan 完成时**:勾选 ROADMAP + 移文件到 archive(详见 `update-docs-on-structure-change.md`)

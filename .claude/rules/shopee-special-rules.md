@@ -1,3 +1,13 @@
+---
+paths:
+  - "services/live-crawler/crawlers/browser/shopee.py"
+  - "services/live-crawler/core/config_base.py"
+  - "services/live-crawler/monitor/recrawl/gap_detector.py"
+  - "services/live-crawler/webdriver/browserapi.py"
+  - "services/live-crawler/tests/crawlers/browser/test_shopee_js_injection.py"
+  - "services/live-crawler/tests/crawlers/browser/test_browserapi_shopee_headers.py"
+---
+
 # Shopee 特殊规则
 
 ## 规则一：page_urls 只用 com.my 作模板

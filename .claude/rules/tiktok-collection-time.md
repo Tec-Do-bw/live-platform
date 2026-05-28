@@ -1,3 +1,11 @@
+---
+paths:
+  - "services/live-crawler/crawlers/browser/tiktok.py"
+  - "services/live-crawler/crawlers/browser/mx_tiktok.py"
+  - "services/live-crawler/webdriver/browserapi.py"
+  - "services/live-crawler/tests/test_daily_payloads.py"
+---
+
 # TikTok 采集时间规则
 
 ## live/stats 接口（browserapi._generate_daily_payloads）

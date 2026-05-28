@@ -1,6 +1,8 @@
 # CLAUDE.md
 
 > 通用编码规范、工作流规则见根 `CLAUDE.md`。项目结构、启动命令、运行模式、监控面板、动态账号管理、测试见 `README.md`。本文仅记录约束与设计决策。
+>
+> 业务规则已迁移到 `.claude/rules/`,由 `paths` frontmatter 自动触发,编辑对应代码时会被自动加载到上下文,无需手动 @import;以下"详见"链接仅供人类阅读时跳转。
 
 ## 项目定位
 
@@ -16,7 +18,7 @@
 
 ### 规则二：Shopee 特殊规则
 
-详见 `../../.claude/references/shopee-special-rules.md`。
+详见 `../../.claude/rules/shopee-special-rules.md`。
 
 ### 规则三：`result['success'] = self.login_status` 不得改回 True
 
@@ -28,13 +30,9 @@
 
 ### 规则五：登出恢复流程
 
-详见 `../../.claude/references/collection-mode-rules.md`、`../../.claude/references/logout-recovery-flow.md`。
+详见 `../../.claude/rules/collection-mode-rules.md`、`../../.claude/rules/logout-recovery-flow.md`。
 
-### 规则六：补采 HTTP 请求规格
-
-详见 `../../.claude/references/recrawl-http-spec.md`。
-
-### 规则七：AdsPower API 调用必须通过统一客户端
+### 规则六：AdsPower API 调用必须通过统一客户端
 
 所有 AdsPower API 调用**必须**通过 `utils/adspower_client.py` 的 `AdsPowerClient` 发起，**禁止**裸用 `requests.get/post` 直接请求 AdsPower。
 
@@ -42,9 +40,9 @@
 - 内置限流重试（识别 `code=-1` + msg 含 "too many"/"rate"，指数退避 5 次）与连接异常重试
 - 调用方只需处理 `AdsPowerRateLimitError`（重试耗尽）与 `AdsPowerApiError`（业务错误）
 
-### 规则八：TikTok 采集时间窗口
+### 规则七：TikTok 采集时间窗口
 
-详见 `../../.claude/references/tiktok-collection-time.md`。
+详见 `../../.claude/rules/tiktok-collection-time.md`。
 
 ## 设计决策
 

@@ -1,3 +1,13 @@
+---
+paths:
+  - "services/live-crawler/crawlers/browser/base.py"
+  - "services/live-crawler/scheduler/task_scheduler.py"
+  - "services/live-crawler/monitor/login_status_manager.py"
+  - "services/live-crawler/services/login_callback.py"
+  - "services/live-crawler/main.py"
+  - "services/live-crawler/core/collection_mode.py"
+---
+
 # 登出恢复流程详解
 
 ## 背景

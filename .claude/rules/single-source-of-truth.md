@@ -19,10 +19,10 @@ paths:
 
 ```markdown
 # ✅ 在 CLAUDE.md 中引用
-业务规则详见 `.claude/references/login-callback-spec.md`
+业务规则详见 `.claude/rules/login-callback-spec.md`
 
 # ✅ 在代码注释中引用
-# 登录回调规格详见 .claude/references/login-callback-spec.md
+# 登录回调规格详见 .claude/rules/login-callback-spec.md
 
 # ❌ 错误：复制内容到多个文件
 # CLAUDE.md 和 README.md 都复制了完整的登录回调规格

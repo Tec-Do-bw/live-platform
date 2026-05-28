@@ -71,7 +71,7 @@ Livelab 主营业务围绕直播展开，每日产生大量的 GMV 数据。0331
 - 登出恢复 → 执行全量采集
 - 正常状态 → 执行增量采集
 
-详见 `.claude/references/logout-recovery-flow.md`
+详见 `.claude/rules/logout-recovery-flow.md`
 
 #### 场景 3：实时 GMV 数据采集
 
@@ -122,7 +122,7 @@ Livelab 主营业务围绕直播展开，每日产生大量的 GMV 数据。0331
 
 ## 3. 系统架构
 
-> 技术架构详见 `docs/designs/live-platform-architecture.md`
+> 技术架构详见 `docs/specs/live-platform-architecture.md`
 
 ### 3.1 DDD 限界上下文概览
 
@@ -325,7 +325,7 @@ Livelab 主营业务围绕直播展开，每日产生大量的 GMV 数据。0331
 
 #### 4.4.4 登出恢复与补采机制
 
-**核心规则详见：** `.claude/references/logout-recovery-flow.md`、`recrawl-http-spec.md`、`shopee-special-rules.md`
+**核心规则详见：** `.claude/rules/logout-recovery-flow.md`、`.claude/rules/shopee-special-rules.md`
 
 ##### 登出恢复流程
 
@@ -359,7 +359,7 @@ else:
 
 | 平台 | HTTP 补采 | 浏览器补采 | 补采规格 |
 |------|----------|-----------|---------|
-| TikTok | ✅ | ✅ | `.claude/references/recrawl-http-spec.md` |
+| TikTok | ✅ | ✅ | 已废弃,补采能力下线 |
 | Shopee | ❌ | ✅ | 仅支持浏览器全量重采 |
 | Lazada | ✅ | N/A | HTTP API 直接重试 |
 

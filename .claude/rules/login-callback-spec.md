@@ -1,3 +1,19 @@
+---
+paths:
+  - "services/adspower-server/app/services/login_monitor.py"
+  - "services/adspower-server/app/services/notification.py"
+  - "services/adspower-server/app/services/session.py"
+  - "services/adspower-server/app/api/browser.py"
+  - "services/adspower-server/app/api/websocket.py"
+  - "services/adspower-server/app/main.py"
+  - "services/adspower-server/app/config.py"
+  - "services/live-crawler/services/login_callback.py"
+  - "services/live-crawler/scripts/login_callback.py"
+  - "services/live-crawler/crawlers/browser/base.py"
+  - "services/live-crawler/cookie_keeper/keeper.py"
+  - "services/live-crawler/tests/services/test_login_callback.py"
+---
+
 # 登录回调规格
 
 > 浏览器登录监控服务的回调接口规范。由 `adspower-server` 服务在登录流程结束后主动 POST 给后端。

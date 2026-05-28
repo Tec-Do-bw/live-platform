@@ -36,7 +36,7 @@
 
 ### 1.1 原设计方案
 
-Phase 1 设计文档（`docs/designs/2026-05-07-live-platform-phase1-mediamtx.md` §6.1）选择 **Native Linux + systemd** 部署 MediaMTX，理由：
+Phase 1 设计文档（`docs/plans/2026-05-07-live-platform-phase1.md` §3 MediaMTX 集成关键决策）原选择 **Native Linux + systemd** 部署 MediaMTX，理由：
 
 1. 零虚拟化开销（80 路并发流拷贝对 CPU 敏感）
 2. 无 Docker bridge 网络延迟
@@ -559,13 +559,11 @@ recordSegmentDuration: 10s  # 与健康检查超时 30s 对齐
 
 ### 9.1 设计文档修订
 
-**`docs/designs/2026-05-07-live-platform-phase1-mediamtx.md` 第 6 章**标题仍是"systemd 服务 + 裸机二进制"，需改为引用本 ADR，避免两份设计文档结论冲突（违反项目"单一权威源"原则）。
-
-**建议方案：** 6.1/6.3 保留为历史记录并加注"已被 ADR 2026-05-10 覆盖"，或整章替换为指向 ADR 的引用。
+**`docs/plans/2026-05-07-live-platform-phase1.md`(原 design 第 6 章)** "systemd 服务 + 裸机二进制"决策已被本 ADR 覆盖。合并后的 plan 文件 §3.3 已直接引用本 ADR,不再保留过期方案细节(违反"单一权威源"原则)。
 
 ### 9.2 实施计划修订
 
-**`docs/plans/2026-05-07-live-platform-phase1-implementation.md` Phase 0.1**（安装 MediaMTX）仍是 `wget` + `systemctl` 流程，与 ADR 决策不一致，应替换为 `docker compose up -d` 流程并新增 Dockerfile / compose 编写任务。
+**`docs/plans/2026-05-07-live-platform-phase1.md` Phase 0.1**(部署 MediaMTX)已替换为 `docker compose up -d` 流程并新增 Dockerfile / compose 编写任务。
 
 ### 9.3 压力测试修订
 

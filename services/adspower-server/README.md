@@ -134,6 +134,6 @@ adspower-server/
 
 - AdsPower 未运行时返回错误码 `-4`
 - WebSocket 断开会触发资源清理
-- 登录回调详细规格见 `../../.claude/references/login-callback-spec.md`
+- 登录回调详细规格见 `../../.claude/rules/login-callback-spec.md`
 - 项目约束与设计决策见 `CLAUDE.md`
 - 服务默认使用 `app/config.py` 中的 `SERVER_PORT=8080`

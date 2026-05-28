@@ -42,7 +42,7 @@ services/live-platform/
 
 ### 推荐：Docker Compose（生产与联调）
 
-依据 ADR `docs/designs/2026-05-10-mediamtx-deployment-adr.md`，Phase 1 统一使用 Docker Compose + `network_mode: host` + bind mount：
+依据 ADR `docs/specs/2026-05-10-mediamtx-deployment-adr.md`，Phase 1 统一使用 Docker Compose + `network_mode: host` + bind mount：
 
 ```bash
 # 宿主机首次准备目录

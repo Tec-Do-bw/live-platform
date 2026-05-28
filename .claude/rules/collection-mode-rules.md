@@ -1,3 +1,13 @@
+---
+paths:
+  - "services/live-crawler/core/collection_mode.py"
+  - "services/live-crawler/crawlers/browser/base.py"
+  - "services/live-crawler/scheduler/task_scheduler.py"
+  - "services/live-crawler/monitor/login_status_manager.py"
+  - "services/live-crawler/main.py"
+  - "services/live-crawler/tests/monitor/test_collection_mode.py"
+---
+
 # 采集模式与登出恢复机制
 
 ## 采集模式判断优先级
