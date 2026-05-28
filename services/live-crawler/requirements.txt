@@ -9,6 +9,7 @@ kafka-python>=2.2.15
 
 # 核心依赖
 DrissionPage         # 浏览器自动化框架
+curl_cffi>=0.15.0             # HTTP 指纹 Session
 APScheduler>=3.10.0          # 定时任务调度
 loguru>=0.7.0                # 日志管理
 

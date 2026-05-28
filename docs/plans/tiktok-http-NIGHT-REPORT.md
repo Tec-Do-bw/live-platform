@@ -1,8 +1,8 @@
 # TikTok HTTP 化夜间执行报告
 
 ## 完成 Step
-- [ ] Step 1: 执行中
-- [ ] Step 2: 待执行
+- [x] Step 1: 新增 `scripts/migrate_account_credentials.py`，支持 `--dry-run`/`--execute`，dry-run 候选迁移账号数 0，commit `be08cdf`
+- [ ] Step 2: 执行中
 - [ ] Step 3: 待执行
 - [ ] Step 4: 待执行
 
