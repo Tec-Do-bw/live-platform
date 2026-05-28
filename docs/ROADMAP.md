@@ -15,6 +15,7 @@
 
 ## 最近完成 (Recently Done · 仅显示最近 10 项)
 
+- [x] 2026-05-28 Phase 4B 删除 SQLite 监控面板、补采系统与旧前端
 - [x] 2026-05-28 `/get_roominfo` 排除 `flv_url=error` 的采集失败房间
 - [x] 2026-05-27 代理策略极简化 + Downloader 短响应自动重试
 - [x] 2026-05-22 TiktokTool 短响应风控兜底 + 同步 IO 异步卸载 + region 对比脚本
@@ -24,7 +25,6 @@
 - [x] 2026-05-22 三个拉流接口路由响应标准化 + 翻译层单测
 - [x] 2026-05-22 接口响应标准化设计、规范、实施计划文档
 - [x] 2026-05-22 live-platform 服务骨架与 Phase 1 代码实现 + MediaMTX 部署 ADR
-- [x] 2026-05-05 CLAUDE.md / README 受众分层重构(constraints vs operational)
 
 ## 长期参考 (Reference)
 

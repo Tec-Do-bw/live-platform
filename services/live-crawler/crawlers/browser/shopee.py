@@ -374,8 +374,9 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
                 self.media_shop_id = sub_account_info.get('current_shop_id')
                 self.username = userinfo_response['data']['userName']
             else:
-                self.media_user_id = response_json.get('id')
-                self.media_shop_id = response_json.get('shopid')
+                user_info = response_json.get('user', {}) or {}
+                self.media_user_id = response_json.get('id') or user_info.get('user_id')
+                self.media_shop_id = response_json.get('shopid') or user_info.get('shop_id')
                 self.username = response_json.get('username')
 
             if self.media_user_id and self.media_shop_id:

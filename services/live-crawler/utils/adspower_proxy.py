@@ -1,19 +1,18 @@
-"""AdsPower 代理 IP 获取 — 通过 V2 API 查询环境的代理配置"""
+"""AdsPower 代理 IP 获取工具。"""
 
 import time
-from utils.adspower_client import get_adspower_client, AdsPowerClient, AdsPowerRateLimitError, AdsPowerApiError
+
+from utils.adspower_client import (
+    AdsPowerApiError,
+    AdsPowerClient,
+    AdsPowerRateLimitError,
+    get_adspower_client,
+)
 from utils.logger import logger
 
 
 def sync_retry(retries=3, delay=0.1, backoff_factor=1.5, no_retry_exceptions=()):
-    """同步重试装饰器
-
-    Args:
-        retries: 重试次数
-        delay: 初始延迟时间
-        backoff_factor: 延迟递增因子
-        no_retry_exceptions: 不需要重试的异常类型元组，命中时直接抛出
-    """
+    """同步重试装饰器。"""
 
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -23,7 +22,6 @@ def sync_retry(retries=3, delay=0.1, backoff_factor=1.5, no_retry_exceptions=())
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    # 检查是否为不需要重试的异常
                     if no_retry_exceptions and isinstance(e, no_retry_exceptions):
                         raise
                     if attempt < retries:
@@ -38,7 +36,7 @@ def sync_retry(retries=3, delay=0.1, backoff_factor=1.5, no_retry_exceptions=())
 
 
 def build_proxy_url(proxy_config: dict) -> str | None:
-    """将 AdsPower user_proxy_config 转为 requests 代理 URL"""
+    """将 AdsPower user_proxy_config 转为 requests 代理 URL。"""
     if proxy_config.get('proxy_soft') == 'no_proxy':
         return None
 
@@ -58,7 +56,7 @@ def build_proxy_url(proxy_config: dict) -> str | None:
 
 
 def get_proxy_for_account(account_id: str, api_url: str | None = None) -> dict | None:
-    """通过 AdsPower V2 API 获取账号对应的代理配置
+    """通过 AdsPower V2 API 获取账号对应的代理配置。
 
     Returns:
         {'http': 'socks5://...', 'https': 'socks5://...'} 或 None
@@ -92,6 +90,7 @@ def get_proxy_for_account(account_id: str, api_url: str | None = None) -> dict |
         logger.warning(f'AdsPower 查询代理异常: {e}')
         return None
 
+
 if __name__ == '__main__':
-    for i in range(3):
+    for _ in range(3):
         print(get_proxy_for_account('k1c04gom'))

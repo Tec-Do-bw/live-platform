@@ -90,8 +90,8 @@ class TestStartCrawlCallsRefresh:
 
     @patch('crawlers.http.lazada.LazadaHttpCrawler._refresh_cookies')
     @patch('crawlers.http.base.BaseHttpCrawler.start_crawl')
-    def test_crawl_continues_on_refresh_failure(self, mock_super_crawl, mock_refresh):
-        """刷新失败时不中断采集"""
+    def test_crawl_stops_on_refresh_failure(self, mock_super_crawl, mock_refresh):
+        """Cookie 不存在且刷新失败时终止采集"""
         from crawlers.http.lazada import LazadaHttpCrawler
 
         mock_refresh.return_value = False
@@ -102,4 +102,5 @@ class TestStartCrawlCallsRefresh:
         result = crawler.start_crawl()
 
         mock_refresh.assert_called_once()
-        mock_super_crawl.assert_called_once()
+        mock_super_crawl.assert_not_called()
+        assert result == {'success': False, 'error': 'refresh_failed'}

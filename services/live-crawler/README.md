@@ -1,6 +1,6 @@
 # 直播数据采集系统
 
-基于 DrissionPage 和 HTTP 双轨采集架构的直播数据采集系统，支持 TikTok、Shopee、Lazada 多平台、多账号并发采集，内置采集完整性监控面板。
+基于 DrissionPage 和 HTTP 双轨采集架构的直播数据采集系统，支持 TikTok、Shopee、Lazada 多平台、多账号并发采集。
 
 ## 功能特性
 
@@ -9,7 +9,7 @@
 - **Cookie 养号服务**: HTTP 采集体系登录态管理，定时刷新 Cookie
 - **多账号采集**: 配置账号列表或从 AdsPower 分组动态获取
 - **新账号自动全量**: 自动检测新增账号，首次采集执行全量模式
-- **采集监控**: 内置 Web 面板，实时查看采集完整性和直播间数据
+- **日报 Agent**: 基于日志生成每日采集报告并推送飞书
 
 ## 快速开始
 
@@ -90,7 +90,7 @@ python main.py --mode once --platform lazada
 # 启动 Cookie 养号服务（独立进程）
 python -m cookie_keeper
 
-# 启动监控面板（端口 8777）
+# 启动 Cookie 写入 API（供 adspower-server 回写 Cookie）
 python -m monitor.server
 ```
 
@@ -99,41 +99,6 @@ python -m monitor.server
 ```bash
 # 将现有账号标记为"已采集"，避免重复全量
 python scripts/init_tracker.py
-```
-
-## 采集监控系统
-
-内置的采集完整性监控系统，在爬虫采集过程中自动记录 API 调用情况，通过 Web 面板实时查看。
-
-启动监控服务后，浏览器访问 `http://localhost:8777` 即可查看监控面板。
-
-> **关于前端产物**：`monitor/frontend/dist/` 目录已提交到 Git 仓库。部署时只需 `git pull` 即可直接启动监控服务，无需安装 Node.js 或重新构建前端。
->
-> 仅在前端代码有修改时，才需要重新构建并提交产物：
-> ```bash
-> cd monitor/frontend
-> npm install && npm run build
-> git add dist/ && git commit -m "build(monitor): 重新构建前端产物"
-> ```
-
-### 监控架构
-
-```
-爬虫采集流程
-    |
-    +-- crawlers/browser/base.py: send_api_request()
-    |       |
-    |       +-- [钩子] monitor/tracker.py --> 写入 SQLite
-    |
-    +-- main.py / scheduler/task_scheduler.py
-            |
-            +-- 采集开始/结束时 start_batch/finish_batch
-
-FastAPI 监控服务 (monitor/server.py, 端口 8777)
-    |
-    +-- REST API: /api/batches, /api/batches/{id}/accounts, /api/accounts/{id}/rooms
-    |
-    +-- 托管 Vue3 前端 (monitor/frontend/dist/)
 ```
 
 ## 系统架构
@@ -148,7 +113,7 @@ live_dp/
 │   └── collection_tracker.py # 采集追踪（新账号检测）
 ├── crawlers/                  # 采集器根目录
 │   ├── browser/              # 浏览器采集器（TikTok、Shopee）
-│   │   ├── base.py          # BaseLiveCrawler 抽象基类 + 监控钩子
+│   │   ├── base.py          # BaseLiveCrawler 抽象基类
 │   │   ├── live_crawler.py  # LiveCrawler 工厂类（双轨路由）
 │   │   ├── tiktok.py        # TikTok 爬虫
 │   │   └── shopee.py        # Shopee 爬虫
@@ -168,21 +133,20 @@ live_dp/
 │   └── config.py             # 下载器配置
 ├── scheduler/                 # 定时调度
 │   └── task_scheduler.py     # APScheduler 多时间点调度
-├── monitor/                   # 采集监控系统
-│   ├── db.py                 # SQLite 数据库初始化（WAL 模式）
-│   ├── tracker.py            # CollectionMonitor 采集记录器
+├── monitor/                   # Cookie API + 登录状态兼容层
+│   ├── __init__.py           # 历史监控埋点 no-op + 保留业务表连接
+│   ├── server.py             # Cookie 写入 API 服务入口
+│   ├── api/
+│   │   └── cookie_routes.py  # adspower-server Cookie 回写通道
+│   ├── login_status_manager.py # 登录状态事件管理
+│   ├── recovery_events.py    # 登出恢复事件写入
 │   ├── classifier.py         # API URL/请求体分类器
-│   ├── registry.py           # API 类型注册表（可扩展）
-│   ├── server.py             # FastAPI 服务入口
-│   ├── api/                  # REST API 路由
-│   ├── frontend/             # Vue3 + Element Plus 前端
-│   └── data/monitor.db       # SQLite 数据库文件（运行时生成）
+│   └── registry.py           # API 类型注册表（可扩展）
 ├── webdriver/                 # 浏览器驱动
 │   └── browserapi.py         # AdsPower API 封装
 ├── scripts/                   # 辅助脚本
 │   ├── init_tracker.py       # 初始化采集追踪文件
 │   ├── list_shopee_accounts.py # 列出 Shopee 账号
-│   ├── mock_monitor_data.py  # 注入监控模拟数据
 │   ├── daily_report.py       # 每日采集报告主入口(日志驱动 + OpenAI + 飞书)
 │   ├── log_parser.py         # 日志预过滤/结构化解析
 │   ├── status_tracker.py     # account_status.json 读写,跨天累计登出天数
@@ -197,7 +161,7 @@ live_dp/
 └── tests/                     # 测试
     ├── crawlers/             # 采集器测试
     ├── services/             # 共享服务测试
-    └── monitor/              # 监控模块单元测试（24 个测试）
+    └── monitor/              # Cookie、登录状态、注册表相关测试
 ```
 
 ## 测试
@@ -206,7 +170,7 @@ live_dp/
 # 运行所有测试
 python -m pytest tests/ -v
 
-# 运行监控模块测试
+# 运行 monitor 兼容层测试
 python -m pytest tests/monitor/ -v
 ```
 
@@ -241,7 +205,7 @@ python -m pytest tests/monitor/ -v
 1. 并发采集（`--workers N`）仅在 `--mode full` 时生效
 2. AdsPower 浏览器需提前启动
 3. Kafka 服务必须可访问
-4. `resource/collection_tracker.json` 和 `monitor/data/monitor.db` 为运行时数据，不提交 git
+4. `resource/collection_tracker.json` 为运行时数据，不提交 git
 5. 日志位于 `logs/` 目录，按日期自动轮转
 
 ## 日报 Agent 部署

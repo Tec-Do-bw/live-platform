@@ -26,7 +26,7 @@ live-monitor/
 ├── routes/
 │   ├── websocket_routes.py    # WebSocket 端点、健康检查、Kafka 推送、节点日志同步
 │   ├── activation.py          # 激活码管理（生成/验证/撤销，Redis 存储）
-│   └── docs.py                # 文档管理面板、离线任务管理、配置生成器、数据需求池
+│   └── docs.py                # 文档、配置、离线任务、数据需求池相关 API
 ├── utils/
 │   ├── Tools.py               # 通用工具（Kafka Producer、日志写入、API 配置生成）
 │   ├── TiktokTool.py          # TikTok 直播间检测与流地址获取
@@ -40,8 +40,6 @@ live-monitor/
 ├── tasks/
 │   └── scheduler_tasks.py     # 定时任务实现
 ├── OfflineSpider/             # 离线爬虫脚本与配置
-├── ReCrawl/                   # 重爬任务脚本
-├── static/                    # 前端页面（管理面板、文档、登录）
 ├── demo/                      # 示例脚本
 ├── query_helper/              # 查询辅助工具
 └── docs/                      # 技术文档
@@ -67,7 +65,7 @@ live-monitor/
 | `/sync_offline_scripts` | POST | 节点间离线脚本同步 |
 | `/ws/{user_id}` | WS | 插件 WebSocket 连接 |
 | `/adsmeta/api/activation/*` | POST/GET | 激活码管理（verify/generate/revoke/status/available） |
-| `/docs/*` | GET/POST | 文档面板、配置管理、离线任务、数据需求池 |
+| `/docs/*` | GET/POST | 配置管理、离线任务、数据需求池 API |
 
 ## 环境变量
 

@@ -251,12 +251,12 @@
 > 原方案(SQLite 聚合 + Vue 前端 + 实时告警)已废弃。新方案拆为 4A / 4B 两步执行,详见各自 plan:
 >
 > - [Phase 4A: 日报 Agent](./2026-05-28-phase4a-daily-report-agent.md) — 新增日志驱动的日报功能,不破坏现有系统(2 天)
-> - [Phase 4B: 删除 SQLite/补采/前端](./2026-05-28-phase4b-remove-sqlite-recrawl-frontend.md) — 4A 稳定 1-2 周后执行(3-4 天)
+> - [Phase 4B: 删除 SQLite/补采/前端](../archive/2026-05-28-phase4b-remove-sqlite-recrawl-frontend.md) — 已执行(2026-05-28)
 
 ### 验收要点(由 4A/4B 各自 plan 详列)
 
 - [ ] 4A 完成: 飞书每天 10:00 收到日报卡片,含完整度/异常/问题账号/趋势对比
-- [ ] 4B 完成: SQLite 存储、补采系统、监控前端全部移除,采集主流程无回归
+- [x] 4B 完成: SQLite 监控面板、补采系统、监控前端移除,采集主流程无回归
 
 ---
 

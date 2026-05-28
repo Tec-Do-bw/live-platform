@@ -2,7 +2,6 @@
 paths:
   - "services/live-crawler/crawlers/browser/shopee.py"
   - "services/live-crawler/core/config_base.py"
-  - "services/live-crawler/monitor/recrawl/gap_detector.py"
   - "services/live-crawler/webdriver/browserapi.py"
   - "services/live-crawler/tests/crawlers/browser/test_shopee_js_injection.py"
   - "services/live-crawler/tests/crawlers/browser/test_browserapi_shopee_headers.py"
@@ -60,12 +59,6 @@ Shopee API 请求中的 `endDate` 参数必须动态计算为对应国家时区�
 
 接口规范详见 `services/live-crawler/docs/specs/shopee-数仓对接文档.md`。
 
-## 规则五：补采自动跳过
-
-Shopee 使用 JS 注入模式，不支持 HTTP 补采。
-
-`gap_detector._is_shopee_gap()` 判断缺口是否属于 Shopee 账号，自动跳过补采。
-
-## 规则六：登出恢复不触发即时全量
+## 规则五：登出恢复不触发即时全量
 
 详见同目录下 `collection-mode-rules.md` 中的"特殊规则：Shopee 不触发即时恢复"章节。

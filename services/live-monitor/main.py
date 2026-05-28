@@ -5,7 +5,6 @@ from fastapi import FastAPI, Request
 from fastapi import Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from datetime import datetime
 import uvicorn
 import os
@@ -140,16 +139,10 @@ app.add_middleware(
     max_age=86400,  # 会话有效期，单位为秒，这里设置为24小时
 )
 
-# 注册路由
 app.include_router(docs_router)
 app.include_router(activation_router)
 # app.include_router(websocket_router)
 
-
-# 配置静态文件服务
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # 解决跨域问题（浏览器插件也需要）
 app.add_middleware(

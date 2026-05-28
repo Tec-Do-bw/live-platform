@@ -17,7 +17,6 @@ from utils.logger import Logings
 logger = Logings().get_logger()
 from utils.scheduler_manager import create_scheduler_manager
 from tasks import mainSpider_gmv, mainSpider_T1, mainSpider_requests
-from ReCrawl.re_crawl_1 import run as re_crawl_1
 
 
 def init_database_config(istest=1):
@@ -100,17 +99,12 @@ def main():
     def run_mainSpider_requests():
         """基本信息采集"""
         mainSpider_requests(db_config, num=3, ISTEST=ISTEST)
-
-    def run_recrawl():
-        """数据补采"""
-        re_crawl_1(db_config)
     
     # ========== 包装任务函数（添加执行判断逻辑）==========
     
     # wrapped_gmv = scheduler_manager.wrap_task(run_mainSpider_gmv, "GMV实时采集")
     wrapped_t1 = scheduler_manager.wrap_task(run_mainSpider_T1, "T+1插件执行")
     wrapped_requests = scheduler_manager.wrap_task(run_mainSpider_requests, "基本信息采集")
-    wrapped_recrawl = scheduler_manager.wrap_task(run_recrawl, "数据补采")
     # ========== 配置定时任务 ==========
     
     logger.info("📋 配置定时任务...")
@@ -118,10 +112,6 @@ def main():
     # 每天12点执行基本信息采集
     schedule.every().day.at("12:00").do(wrapped_requests)
     logger.info("✅ 已配置: 基本信息采集 (每天12点)")
-
-    # 每天晚上凌晨1点执行数据补采
-    schedule.every().day.at("01:00").do(wrapped_recrawl)
-    logger.info("✅ 已配置: 数据补采 (每天晚上凌晨0点)")
 
     # 每4小时执行T+1插件
     schedule.every(4).hours.do(wrapped_t1)

@@ -8,6 +8,7 @@
 """
 
 import json
+import os
 import time
 from datetime import datetime
 
@@ -22,6 +23,11 @@ from crawlers.http.lazada import (
 from downloader import Downloader, Task
 from services.cookie_manager import get_cookies
 
+
+pytestmark = pytest.mark.skipif(
+    os.getenv('RUN_LAZADA_INTEGRATION') != '1',
+    reason='需要真实 Cookie 与外网连通，默认跳过',
+)
 
 # 测试账号
 TEST_ACCOUNT = 'sbqsomimax@outlook.com'

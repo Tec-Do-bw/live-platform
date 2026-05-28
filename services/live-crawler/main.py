@@ -342,13 +342,6 @@ def _run_once_impl(full_collection: bool, workers: int, crawl_type: str, platfor
     # 采集监控：记录批次结束
     monitor.finish_batch(batch_id)
 
-    # 自动补采：检测缺失并执行补采（全量模式跳过）
-    try:
-        from monitor.recrawl import auto_detect_and_recrawl
-        auto_detect_and_recrawl(batch_id, mode=mode)
-    except Exception as e:
-        logger.error(f'自动补采调用异常: {e}')
-
 
 def main():
     """主函数"""
@@ -402,4 +395,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

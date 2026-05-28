@@ -6,8 +6,10 @@ import types
 
 background_module = types.ModuleType('apscheduler.schedulers.background')
 cron_module = types.ModuleType('apscheduler.triggers.cron')
+interval_module = types.ModuleType('apscheduler.triggers.interval')
 drission_module = types.ModuleType('DrissionPage')
 ddddocr_module = types.ModuleType('ddddocr')
+live_crawler_module = types.ModuleType('crawlers.browser.live_crawler')
 
 
 class _FakeBackgroundScheduler:
@@ -36,6 +38,11 @@ class _FakeCronTrigger:
         self.kwargs = kwargs
 
 
+class _FakeIntervalTrigger:
+    def __init__(self, *args, **kwargs):
+        self.kwargs = kwargs
+
+
 class _FakeChromium:
     def __init__(self, *args, **kwargs):
         pass
@@ -51,21 +58,33 @@ class _FakeDdddOcr:
         pass
 
 
+class _ImportDummyCrawler:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
 background_module.BackgroundScheduler = _FakeBackgroundScheduler
 cron_module.CronTrigger = _FakeCronTrigger
+interval_module.IntervalTrigger = _FakeIntervalTrigger
 drission_module.Chromium = _FakeChromium
 drission_module.ChromiumOptions = _FakeChromiumOptions
 ddddocr_module.DdddOcr = _FakeDdddOcr
+live_crawler_module.LiveCrawler = _ImportDummyCrawler
 sys.modules.setdefault('apscheduler', types.ModuleType('apscheduler'))
 sys.modules.setdefault('apscheduler.schedulers', types.ModuleType('apscheduler.schedulers'))
 sys.modules.setdefault('apscheduler.triggers', types.ModuleType('apscheduler.triggers'))
 sys.modules['apscheduler.schedulers.background'] = background_module
 sys.modules['apscheduler.triggers.cron'] = cron_module
+sys.modules['apscheduler.triggers.interval'] = interval_module
 sys.modules['DrissionPage'] = drission_module
 sys.modules['ddddocr'] = ddddocr_module
+sys.modules['crawlers.browser.live_crawler'] = live_crawler_module
 
 import main
 from scheduler.task_scheduler import TaskScheduler
+
+# 仅 main / task_scheduler 导入期间需要轻量 LiveCrawler 桩，避免污染后续工厂测试。
+sys.modules.pop('crawlers.browser.live_crawler', None)
 
 
 class DummyMonitor:
@@ -134,7 +153,7 @@ class DummyCrawler:
     calls = []
     results_by_user = {}
 
-    def __init__(self, platform, browser_id, full_collection=False, group_name='', batch_id=''):
+    def __init__(self, platform, browser_id, full_collection=False, group_name='', batch_id='', crawl_type='history'):
         self.platform = platform
         self.browser_id = browser_id
         DummyCrawler.calls.append({
@@ -143,6 +162,7 @@ class DummyCrawler:
             'full_collection': full_collection,
             'group_name': group_name,
             'batch_id': batch_id,
+            'crawl_type': crawl_type,
         })
 
     def start_crawl(self):
@@ -158,9 +178,10 @@ class DummyCrawler:
         return result
 
 
-def _patch_run_once(monkeypatch, platform_config, tracker, status_mgr, monitor):
-    import monitor.recrawl as recrawl
+live_crawler_module.LiveCrawler = DummyCrawler
 
+
+def _patch_run_once(monkeypatch, platform_config, tracker, status_mgr, monitor):
     DummyCrawler.calls = []
     DummyCrawler.results_by_user = {}
     monkeypatch.setattr(main.Settings, 'PLATFORM_CONFIG', platform_config, raising=False)
@@ -168,7 +189,6 @@ def _patch_run_once(monkeypatch, platform_config, tracker, status_mgr, monitor):
     monkeypatch.setattr(main, 'CollectionTracker', lambda: tracker)
     monkeypatch.setattr(main, 'LoginStatusManager', lambda conn: status_mgr)
     monkeypatch.setattr(main, 'LiveCrawler', DummyCrawler)
-    monkeypatch.setattr(recrawl, 'auto_detect_and_recrawl', lambda *args, **kwargs: None)
 
 
 def _patch_scheduler(monkeypatch, platform_config, tracker, status_mgr, monitor):

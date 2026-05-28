@@ -4,7 +4,7 @@
 > 前置: [Phase 4A 日报 Agent](./2026-05-28-phase4a-daily-report-agent.md) 必须验收稳定运行 1-2 周
 > 优先级: P3
 > 工期: 3-4 天
-> 状态: 待执行(等待 4A 稳定)
+> 状态: 已完成(2026-05-28)
 
 ---
 
@@ -45,7 +45,7 @@ Phase 4A 上线后,采集报告完全由日志驱动,SQLite 不再必要。本 p
 
 | 路径 | 决定 | 原因 |
 |---|---|---|
-| `services/live-crawler/monitor/server.py` | **删除** | 前端下线后无存在价值；recrawl_routes import 已断，需修复后整体删除 |
+| `services/live-crawler/monitor/server.py` | **保留最小 Cookie API** | 前端与监控 API 下线；`/api/cookies/{account_id}` 仍是 adspower-server → live-crawler Cookie 写入通道 |
 | `services/live-crawler/monitor/tracker.py` | **删除 CollectionMonitor 类**，`extract_target_date` 迁移到 `utils/` | 主流程已不调用 CollectionMonitor；`extract_target_date` 仍被 `crawlers/browser/tiktok.py:277` 引用 |
 | `services/live-crawler/monitor/api/batches.py` | **删除** | 纯监控面板 API，前端下线后无消费方 |
 | `services/live-crawler/monitor/api/accounts.py` | **删除** | 同上 |

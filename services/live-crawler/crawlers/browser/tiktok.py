@@ -274,7 +274,7 @@ class TikTokLiveCrawler(BaseLiveCrawler):
                     if self.batch_id and 'live/stats' in api_data.get('url', ''):
                         try:
                             from monitor import get_monitor
-                            from monitor.tracker import extract_target_date
+                            from utils.time_utils import extract_target_date
                             # api_data 的请求体 key 是 'request'（不是 'request_body'）
                             _request_body = api_data.get('request', {})
                             if isinstance(_request_body, str):
@@ -1146,4 +1146,3 @@ class TikTokLiveCrawler(BaseLiveCrawler):
 
         except Exception as e:
             logger.error(f'切换日期范围失败: {e}')
-

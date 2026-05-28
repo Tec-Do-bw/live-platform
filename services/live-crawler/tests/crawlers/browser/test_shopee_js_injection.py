@@ -154,6 +154,7 @@ def _make_crawler(full_collection: bool = False):
     crawler.socket_user_id = "test-browser"
     crawler.login_status = True
     crawler.login_checked = False
+    crawler.is_cross_border = False
     crawler.media_user_id = None
     crawler.media_shop_id = None
     crawler.pending_messages = []
@@ -312,7 +313,7 @@ def test_handle_live_list_page_sends_paginated_live_list_and_detail_requests():
         },
         "headers": {"x-test-header": "token"},
     }
-    crawler.browser_api.get_listened_data.return_value = [session_data]
+    crawler._fetch_session_list_via_js = MagicMock(return_value=session_data)
     crawler._fetch_live_list_pages_via_js = MagicMock(
         return_value=[
             {
@@ -383,7 +384,10 @@ def test_handle_live_list_page_sends_paginated_live_list_and_detail_requests():
     ]
     # live-1 (status=1) 被 _filter_sessions 过滤，不调用 session_detail
     assert stats == {"apis_count": 6, "data_sent": 6}
-    crawler._fetch_live_list_pages_via_js.assert_called_once_with(session_data["headers"])
-    crawler._fetch_overview_requests_via_js.assert_called_once_with(session_data["headers"])
+    crawler._fetch_live_list_pages_via_js.assert_called_once()
+    crawler._fetch_overview_requests_via_js.assert_called_once()
+    fetch_headers = crawler._fetch_live_list_pages_via_js.call_args.args[0]
+    assert fetch_headers["referer"] == crawler.tab.url
+    assert fetch_headers["x-region"] == "my"
     crawler._fetch_session_detail_via_js.assert_not_called()
     crawler._fetch_replay_detail_via_js.assert_called_once()

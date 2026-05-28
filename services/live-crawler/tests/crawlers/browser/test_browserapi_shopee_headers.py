@@ -70,7 +70,7 @@ def _load_browserapi_module():
     fake_drission.ChromiumOptions = DummyChromiumOptions
     _swap_module("DrissionPage", fake_drission)
 
-    module_path = Path(__file__).resolve().parents[2] / "webdriver" / "browserapi.py"
+    module_path = Path(__file__).resolve().parents[3] / "webdriver" / "browserapi.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
