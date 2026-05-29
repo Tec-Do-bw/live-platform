@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from cookie_keeper.tiktok_refresher import TikTokRefresher
 from core.config import Settings
+from scripts.feishu_webhook import send_card
 from utils.logger import logger
 from webdriver.browserapi import BrowserApi
 
@@ -46,6 +47,7 @@ def refresh_all() -> int:
 
     refresher = TikTokRefresher()
     failed = 0
+    failed_accounts: list[str] = []
     for idx, account in enumerate(accounts, 1):
         account_id = account.get("user_id", "")
         group_name = account.get("group_name", "")
@@ -54,8 +56,18 @@ def refresh_all() -> int:
         logger.info(f"[{idx}/{len(accounts)}] 刷新 TikTok 账号: {account_id} group={group_name}")
         if not refresher.refresh_account(account_id, group_name=group_name):
             failed += 1
+            failed_accounts.append(f"{account_id}({group_name})" if group_name else account_id)
 
     logger.info(f"TikTok 凭据刷新完成，账号数={len(accounts)}，失败数={failed}")
+
+    # 有失败时推送飞书告警，避免刷新静默失败导致 query_string 过期、HTTP 采集中断
+    if failed_accounts:
+        content = (
+            f"**总数**: {len(accounts)}　**失败**: {failed}\n\n"
+            f"**失败账号**:\n" + "\n".join(f"- {acc}" for acc in failed_accounts)
+        )
+        send_card(title="⚠️ TikTok 凭据刷新失败", content_md=content)
+
     return failed
 
 

@@ -25,6 +25,9 @@ LIVE_LIST_STATS_TYPES = [
     10, 15, 11, 12, 13, 14, 80, 88, 95, 90, 72, 96, 70, 86,
     20, 29, 25, 50, 41, 42, 21, 40, 100, 101, 62, 61,
 ]
+# live/stats 单日聚合 stats_types：与页面原生下发一致（详见防摸鱼T1数据接口文档 §2.1）
+# 不可复用 LIVE_LIST_STATS_TYPES——两者字段集与含义不同，混用会导致上报字段错配 + classifier 误分类
+LIVE_STATS_TYPES = [11, 115, 13, 200, 106, 81, 82, 201, 202, 70, 210, 211, 212, 213]
 TREND_CHART_STATS_BASIC = [3]
 TREND_CHART_STATS_FULL = [3, 20, 341, 21, 22, 12, 16, 23, 50, 51, 40]
 CORE_STATS_TYPES = [
@@ -114,6 +117,32 @@ def _response_json(resp: Any) -> dict[str, Any]:
     return data if isinstance(data, dict) else {"data": data}
 
 
+def _check_code(data: dict[str, Any], endpoint: str, account_id: str) -> bool:
+    """校验响应业务码，TikTok 全端点统一契约：code==0 表示成功。
+
+    返回 True 表示业务成功；False 表示业务失败（HTTP 200 + code≠0），
+    调用方应将其当作采集失败处理，避免脏数据上报下游。
+    详见 docs/specs/防摸鱼T1数据接口说明文档.md
+    """
+    code = data.get("code")
+    if code == 0:
+        return True
+    msg = data.get("message", "")
+    logger.warning(f"[{account_id}/{endpoint}] 业务码异常 code={code} message={msg}")
+    return False
+
+
+def _local_yesterday(region: str) -> date:
+    """根据账号区域时区推算当地 today-1（latest_available_date）。
+
+    与浏览器版 browserapi._generate_daily_payloads 时区口径一致，
+    避免 server 时区≠账号时区时日期窗口错位。
+    """
+    offset = TIMEZONE_OFFSET_MAP.get(region.upper(), 0)
+    tz_obj = timezone(timedelta(seconds=offset))
+    return (datetime.now(tz_obj) - timedelta(days=1)).date()
+
+
 def _make_result(
     *,
     ok: bool,
@@ -184,7 +213,7 @@ def fetch_account_info(session: Any, cred: Credentials) -> FetchResult:
     resp = session.get(url, headers=_build_tiktok_headers(cred), timeout=10)
     resp.raise_for_status()
     data = _response_json(resp)
-    ok = data.get("code") == 0 and bool(data.get("data", {}).get("user_id"))
+    ok = _check_code(data, "account_info", cred.account_id) and bool(data.get("data", {}).get("user_id"))
     logger.info(f"[{cred.account_id}/account_info] HTTP {resp.status_code} ok={ok}")
     return _make_result(ok=ok, url=url, request_body=None, response_body=resp.text, data=data)
 
@@ -218,8 +247,9 @@ def fetch_live_list(session: Any, cred: Credentials, full: bool = False) -> Fetc
     resp = session.post(url, headers=_build_tiktok_headers(cred), json=payload, timeout=15)
     resp.raise_for_status()
     data = _response_json(resp)
-    logger.info(f"[{cred.account_id}/live_list] HTTP {resp.status_code} len={len(resp.text)}")
-    return _make_result(ok=True, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
+    ok = _check_code(data, "live_list", cred.account_id)
+    logger.info(f"[{cred.account_id}/live_list] HTTP {resp.status_code} ok={ok} len={len(resp.text)}")
+    return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
 @sync_retry(retries=2, delay=1.0)
@@ -229,23 +259,31 @@ def fetch_live_stats(session: Any, cred: Credentials, target_date: date) -> Fetc
     url = _build_url("/api/v2/insights/creator/live/stats", ext["query_string"])
     start_ts = int(datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc).timestamp())
     end_ts = start_ts + 86400
+    # 结构对齐页面原生 payload：params 数组包裹 + is_live_type，不可用扁平结构（详见接口文档 §2.1）
     payload = {
         "request": {
-            "time_selector": {
-                "period": 2,
-                "granularity": 1,
-                "start_timestamp": str(start_ts),
-                "end_timestamp": str(end_ts),
-                "timezone_offset": "0",
-            },
-            "stats_types": LIVE_LIST_STATS_TYPES,
+            "params": [
+                {
+                    "time_selector": {
+                        "period": 2,
+                        "granularity": 11,
+                        "start_timestamp": str(start_ts),
+                        "end_timestamp": str(end_ts),
+                        "timezone_offset": "0",
+                    },
+                    "stats_types": LIVE_STATS_TYPES,
+                    "is_live_type": True,
+                }
+            ],
+            "version": "2",
         }
     }
     resp = session.post(url, headers=_build_tiktok_headers(cred), json=payload, timeout=10)
     resp.raise_for_status()
     data = _response_json(resp)
-    logger.info(f"[{cred.account_id}/live_stats] date={target_date} HTTP {resp.status_code}")
-    return _make_result(ok=True, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
+    ok = _check_code(data, "live_stats", cred.account_id)
+    logger.info(f"[{cred.account_id}/live_stats] date={target_date} HTTP {resp.status_code} ok={ok}")
+    return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
 @sync_retry(retries=2, delay=1.0)
@@ -268,8 +306,9 @@ def fetch_trend_chart(
     resp = session.post(url, headers=_build_tiktok_headers(cred), json=payload, timeout=10)
     resp.raise_for_status()
     data = _response_json(resp)
-    logger.info(f"[{cred.account_id}/trend_chart] room={room_id} HTTP {resp.status_code}")
-    return _make_result(ok=True, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
+    ok = _check_code(data, "trend_chart", cred.account_id)
+    logger.info(f"[{cred.account_id}/trend_chart] room={room_id} HTTP {resp.status_code} ok={ok}")
+    return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
 @sync_retry(retries=2, delay=1.0)
@@ -309,8 +348,9 @@ def fetch_core_stats(session: Any, cred: Credentials, room_id: str) -> FetchResu
     resp = session.post(url, headers=_build_tiktok_headers(cred), json=payload, timeout=10)
     resp.raise_for_status()
     data = _response_json(resp)
-    logger.info(f"[{cred.account_id}/core_stats] room={room_id} HTTP {resp.status_code}")
-    return _make_result(ok=True, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
+    ok = _check_code(data, "core_stats", cred.account_id)
+    logger.info(f"[{cred.account_id}/core_stats] room={room_id} HTTP {resp.status_code} ok={ok}")
+    return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
 def parse_rooms(live_list_data: dict[str, Any]) -> tuple[list[RoomMeta], str]:
@@ -376,6 +416,22 @@ def _cookie_dict_from_token(token: dict[str, Any] | list[dict[str, Any]]) -> dic
     return cookies
 
 
+def _yield_fetch_result(item: FetchResult) -> tuple[bool, FetchResult | dict[str, Any]]:
+    """把 FetchResult 转成 (ok, payload) 二元组。
+
+    业务码异常（ok=False）时返回错误占位包，避免脏数据上报下游；
+    业务成功时原样透传 FetchResult 给 adapter 走上报。
+    """
+    if item["ok"]:
+        return True, item
+    return False, {
+        "url": item["url"],
+        "request_body": item["request_body"],
+        "response_body": item["response_body"],
+        "data": {"error": "业务码异常 code≠0", "url": item["url"]},
+    }
+
+
 def collect_tiktok(account_id: str, full: bool = False) -> Iterator[tuple[bool, FetchResult | dict[str, Any]]]:
     """TikTok HTTP 采集编排生成器。"""
     cred = load_credentials(account_id, platform="tiktok")
@@ -391,7 +447,7 @@ def collect_tiktok(account_id: str, full: bool = False) -> Iterator[tuple[bool, 
             raise LoginRequired(f"[{account_id}] 登录态失效")
 
         list_result = fetch_live_list(session, cred, full)
-        yield True, list_result
+        yield _yield_fetch_result(list_result)
 
         rooms, creator_id = parse_rooms(list_result["data"])
         _update_creator_id(cred, creator_id)
@@ -401,9 +457,9 @@ def collect_tiktok(account_id: str, full: bool = False) -> Iterator[tuple[bool, 
         for index, room in enumerate(rooms):
             room_id = room["room_id"]
             try:
-                yield True, fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_BASIC)
-                yield True, fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_FULL)
-                yield True, fetch_core_stats(session, cred, room_id)
+                yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_BASIC))
+                yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_FULL))
+                yield _yield_fetch_result(fetch_core_stats(session, cred, room_id))
             except Exception as e:
                 logger.exception(f"[{account_id}] room={room_id} 采集失败")
                 yield False, {
@@ -416,19 +472,22 @@ def collect_tiktok(account_id: str, full: bool = False) -> Iterator[tuple[bool, 
             if index < len(rooms) - 1:
                 time.sleep(random.uniform(0.5, 1.5))
 
-        if full:
-            today = date.today()
-            for days_back in range(1, 29):
-                target = today - timedelta(days=days_back)
-                try:
-                    yield True, fetch_live_stats(session, cred, target)
-                except Exception as e:
-                    logger.exception(f"[{account_id}] live_stats {target} 失败")
-                    yield False, {
-                        "url": "",
-                        "request_body": None,
-                        "response_body": "",
-                        "data": {"error": str(e), "date": target.isoformat()},
-                    }
+        # live/stats 日聚合：增量取 T-1/T-2/T-3，全量取 T-1 ~ T-28
+        # 时区锚点统一用账号当地 today-1，与浏览器版 browserapi._generate_daily_payloads 对齐
+        # 详见 .claude/rules/tiktok-collection-time.md
+        latest = _local_yesterday(cred.region)
+        days_range = range(0, 28) if full else range(0, 3)
+        for days_back in days_range:
+            target = latest - timedelta(days=days_back)
+            try:
+                yield _yield_fetch_result(fetch_live_stats(session, cred, target))
+            except Exception as e:
+                logger.exception(f"[{account_id}] live_stats {target} 失败")
+                yield False, {
+                    "url": "",
+                    "request_body": None,
+                    "response_body": "",
+                    "data": {"error": str(e), "date": target.isoformat()},
+                }
     finally:
         session.close()

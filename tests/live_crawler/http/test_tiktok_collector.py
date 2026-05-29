@@ -16,6 +16,7 @@ if str(LIVE_CRAWLER_ROOT) not in sys.path:
 
 from crawlers.http.tiktok.collector import (  # noqa: E402
     _format_message,
+    collect_tiktok,
     fetch_account_info,
     fetch_core_stats,
     fetch_live_list,
@@ -24,6 +25,7 @@ from crawlers.http.tiktok.collector import (  # noqa: E402
     filter_rooms_by_window,
     parse_rooms,
 )
+import crawlers.http.tiktok.collector as collector_mod  # noqa: E402
 from utils.credentials import Credentials  # noqa: E402
 
 
@@ -48,6 +50,10 @@ class FakeSession:
 
     def __init__(self):
         self.calls: list[dict[str, Any]] = []
+        self.cookies: dict[str, str] = {}
+
+    def close(self) -> None:
+        """collect_tiktok 在 finally 中会调用，桩需提供空实现。"""
 
     def get(self, url: str, *, headers: dict[str, str], timeout: int) -> FakeResponse:
         self.calls.append({"method": "GET", "url": url, "headers": headers, "timeout": timeout})
@@ -156,6 +162,11 @@ def test_fetch_live_stats_returns_fetch_result() -> None:
     result = fetch_live_stats(FakeSession(), _cred(), date(2026, 5, 28))
     _assert_fetch_result(result)
     assert "start_timestamp" in result["request_body"]
+    # 结构须对齐页面原生 payload：params 数组 + is_live_type + 专用 stats_types（接口文档 §2.1）
+    body = json.loads(result["request_body"])
+    params = body["request"]["params"][0]
+    assert params["is_live_type"] is True
+    assert params["stats_types"] == [11, 115, 13, 200, 106, 81, 82, 201, 202, 70, 210, 211, 212, 213]
 
 
 def test_fetch_trend_chart_returns_fetch_result() -> None:
@@ -230,3 +241,56 @@ def test_format_message_matches_browser_field_contract_for_dicts() -> None:
 def test_format_message_preserves_browser_none_extra_behavior() -> None:
     message = _format_message("https://shop.tiktok.com/api", None, "{}", {}, "socket-1")
     assert message["extra"] is None
+
+
+# ============ 回归：业务码校验（B 修复）============
+
+
+class FakeErrorCodeSession(FakeSession):
+    """所有 POST 端点返回 HTTP 200 + code≠0（模拟风控/登出脏响应）。"""
+
+    def post(self, url: str, **kwargs: Any) -> FakeResponse:
+        self.calls.append({"method": "POST", "url": url, **kwargs})
+        return FakeResponse({"code": 10002, "message": "not login"})
+
+
+def test_fetch_returns_not_ok_on_business_error_code() -> None:
+    """HTTP 200 + code≠0 时 fetch 必须返回 ok=False，避免脏数据上报。"""
+    session = FakeErrorCodeSession()
+    cred = _cred()
+    assert fetch_live_list(session, cred, full=False)["ok"] is False
+    assert fetch_live_stats(session, cred, date(2026, 5, 28))["ok"] is False
+    assert fetch_trend_chart(session, cred, "room-1")["ok"] is False
+    assert fetch_core_stats(session, cred, "room-1")["ok"] is False
+
+
+# ============ 回归：增量模式 live/stats 不缺失（P0 修复）============
+
+
+def _patch_collect_deps(monkeypatch: Any, session: FakeSession, cred: Credentials) -> None:
+    monkeypatch.setattr(collector_mod, "load_credentials", lambda *a, **k: cred)
+    monkeypatch.setattr(collector_mod, "get_session", lambda *a, **k: session)
+
+
+def _count_live_stats_calls(session: FakeSession) -> int:
+    return sum(
+        1
+        for call in session.calls
+        if call.get("method") == "POST" and "creator/live/stats" in call["url"]
+    )
+
+
+def test_collect_tiktok_incremental_emits_three_daily_stats(monkeypatch: Any) -> None:
+    """增量模式必须发出 T-1/T-2/T-3 共 3 天 live/stats（修复前为 0 天）。"""
+    session = FakeSession()
+    _patch_collect_deps(monkeypatch, session, _cred())
+    list(collect_tiktok("acct-1", full=False))
+    assert _count_live_stats_calls(session) == 3
+
+
+def test_collect_tiktok_full_emits_28_daily_stats(monkeypatch: Any) -> None:
+    """全量模式发出 T-1 ~ T-28 共 28 天 live/stats。"""
+    session = FakeSession()
+    _patch_collect_deps(monkeypatch, session, _cred())
+    list(collect_tiktok("acct-1", full=True))
+    assert _count_live_stats_calls(session) == 28

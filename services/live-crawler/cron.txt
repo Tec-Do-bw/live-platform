@@ -1,6 +1,9 @@
-# 直播采集日报 cron 配置(参考)
+# 直播采集相关 cron 配置(参考)
 #
-# 每天早上 10:00 跑一次,分析昨天(T-1)全天日志,推飞书。
 # 部署时需自行 crontab -e 添加,本文件不会自动生效。
 
+# 每天早上 10:00 跑一次,分析昨天(T-1)全天日志,推飞书。
 0 10 * * * cd /opt/live-crawler && /usr/bin/python3 -m scripts.daily_report >> logs/daily_report_cron.log 2>&1
+
+# 每天凌晨 3:00 刷新 TikTok account_credentials(query_string/fp/device_id 约 24h 失效),失败推飞书告警。
+0 3 * * * cd /opt/live-crawler && /usr/bin/python3 -m jobs.refresh_tiktok_credentials >> logs/refresh_tiktok_cron.log 2>&1
