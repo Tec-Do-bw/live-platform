@@ -5,9 +5,9 @@
 # @File       : live_crawler.py
 # @Description: 直播数据采集爬虫工厂类 - 主调度器
 
-import os
 from typing import List
 
+from core.config import Settings
 from utils.logger import logger
 from utils.credentials import load_credentials
 from crawlers.browser.base import BaseLiveCrawler
@@ -56,9 +56,10 @@ class LiveCrawler:
             ValueError: 不支持的平台
         """
         if platform == 'tiktok':
-            mode = os.getenv('TIKTOK_CRAWLER_MODE', 'browser').strip().lower()
+            tiktok_cfg = Settings.PLATFORM_CONFIG.get('tiktok', {}) or {}
+            mode = str(tiktok_cfg.get('crawler_type', 'browser')).strip().lower()
             if mode not in {'browser', 'http'}:
-                logger.warning(f'TIKTOK_CRAWLER_MODE={mode} 无效，回退 browser')
+                logger.warning(f'PLATFORM_CONFIG.tiktok.crawler_type={mode} 无效，回退 browser')
                 mode = 'browser'
 
             account_mode = None
@@ -66,7 +67,7 @@ class LiveCrawler:
                 cred = load_credentials(browser_id, platform='tiktok') if browser_id else None
                 account_mode = cred.crawler_mode.strip().lower() if cred and cred.crawler_mode else None
             except Exception as e:
-                logger.warning(f'读取 TikTok crawler_mode 失败，使用环境变量路由: {e}')
+                logger.warning(f'读取 TikTok crawler_mode 失败，使用平台默认路由: {e}')
 
             if mode == 'http' or account_mode == 'http':
                 logger.info(

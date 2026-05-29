@@ -227,7 +227,8 @@ python -m pytest tests/monitor/ -v
 ### 1. 配置环境变量
 
 ```bash
-# 飞书 Webhook(必填)
+# 飞书 Webhook(选填):默认复用 ALERT_CONFIG['webhook_url'](与运行时告警同一个机器人)
+# 仅当日报需要走独立机器人时才设置以覆盖
 export FEISHU_DAILY_REPORT_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
 # 飞书自定义机器人加签密钥(选填,启用了"自定义关键词加签"才需要)
 export FEISHU_DAILY_REPORT_SECRET="your_secret"

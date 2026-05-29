@@ -78,6 +78,9 @@ class BaseConfig(BaseSettings):
     # 平台采集配置
     PLATFORM_CONFIG: Dict[str, Any] = {
         "tiktok": {
+            # 采集器类型：'browser' | 'http'
+            # 优先级低于账号粒度的 credentials.crawler_mode，仅在账号未指定时生效
+            "crawler_type": "browser",
             # 是否启用实时获取user_ids（从AdsPower分组中获取）
             "use_dynamic_users": False,
 
@@ -90,7 +93,10 @@ class BaseConfig(BaseSettings):
             "group_names": ['新加坡团队-tiktok'],
 
             # 需要采集的账号（当use_dynamic_users=False时使用）
-            "user_ids": [],
+            "user_ids": ['k19ly6f4', 'k1cvlr5b', 'k1cqlv5t'],
+            # 美国：k19ly6f4
+            # 墨西哥：k1cvlr5b
+            # 越南： k1cqlv5t
 
             # TikTok平台需要访问的页面URL
             "page_urls": [
@@ -265,12 +271,30 @@ class BaseConfig(BaseSettings):
         }
     }
 
+    # OpenAI 配置（日报生成，scripts/openai_client.py 使用）
+    # 取值优先级：环境变量 > 此处默认值，未配置 api_key 时日报自动降级为纯文本
+    OPENAI_CONFIG: Dict[str, Any] = {
+        # 模型名称（可通过环境变量 OPENAI_MODEL 覆盖）
+        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        # 请求超时时间（秒，可通过环境变量 OPENAI_TIMEOUT_SECONDS 覆盖）
+        "timeout_seconds": int(os.getenv("OPENAI_TIMEOUT_SECONDS", "30")),
+        # API 密钥（可通过环境变量 OPENAI_API_KEY 覆盖；为空则日报降级为纯文本）
+        "api_key": os.getenv("OPENAI_API_KEY", ""),
+    }
+
     # AdsPower指纹浏览器配置
     ADSPOWER_CONFIG: Dict[str, Any] = {
         # AdsPower API地址
         "api_url": "http://127.0.0.1:50325",
         # 按平台筛选分组时，排除以下前缀开头的分组名称
         "exclude_group_prefixes": [],
+    }
+
+    # Cookie 管理 API 配置（monitor/api/cookie_routes.py 使用）
+    # 供 adspower-server 远程写入 Cookie 时做身份校验
+    COOKIE_API_CONFIG: Dict[str, Any] = {
+        # 访问令牌（请求头 X-API-Token 必须与此一致才放行）
+        "token": "sk-5eajkJEpzRQL4pvMpqxxoffm3hgFi7FCNDs2OXfWIJuOipvx",
     }
 
     # 补采配置
@@ -371,6 +395,9 @@ class ProConfig(BaseConfig):
 
     PLATFORM_CONFIG: Dict[str, Any] = {
         "tiktok": {
+            # 采集器类型：'browser' | 'http'
+            # 优先级低于账号粒度的 credentials.crawler_mode，仅在账号未指定时生效
+            "crawler_type": "browser",
             # 是否启用实时获取user_ids（从AdsPower分组中获取）
             "use_dynamic_users": True,
 

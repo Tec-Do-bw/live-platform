@@ -18,22 +18,37 @@ DEFAULT_TIMEOUT = 10
 DEFAULT_MAX_RETRIES = 3
 
 
+def _alert_config() -> dict:
+    """读取 ALERT_CONFIG 作为 webhook/secret 的回退源。
+
+    懒加载导入,避免模块级硬依赖 core.config;导入失败时返回空字典安全降级。
+    """
+    try:
+        from core.config import Settings
+
+        return Settings.ALERT_CONFIG or {}
+    except Exception as e:  # 配置不可用时不应阻断推送链路
+        logger.warning(f"读取 ALERT_CONFIG 失败,回退源不可用: {e}")
+        return {}
+
+
 def send_card(title: str, content_md: str) -> bool:
     """发送飞书富文本卡片。
 
-    依赖环境变量:
-    - FEISHU_DAILY_REPORT_WEBHOOK: 必填,Webhook URL
-    - FEISHU_DAILY_REPORT_SECRET: 选填,签名密钥(机器人启用了"自定义关键词加签"时必填)
+    Webhook 与签名密钥优先读环境变量,缺失时回退到 Settings.ALERT_CONFIG,
+    与运行时告警(utils/alert.py)共用同一个飞书机器人:
+    - 环境变量 FEISHU_DAILY_REPORT_WEBHOOK / FEISHU_DAILY_REPORT_SECRET(可选覆盖)
+    - 回退源 ALERT_CONFIG['webhook_url'] / ALERT_CONFIG['secret']
 
     Returns:
         bool: 是否发送成功
     """
-    webhook = os.getenv("FEISHU_DAILY_REPORT_WEBHOOK")
+    webhook = os.getenv("FEISHU_DAILY_REPORT_WEBHOOK") or _alert_config().get("webhook_url")
     if not webhook:
-        logger.error("FEISHU_DAILY_REPORT_WEBHOOK 未配置,放弃推送")
+        logger.error("飞书 Webhook 未配置(环境变量与 ALERT_CONFIG 均为空),放弃推送")
         return False
 
-    secret = os.getenv("FEISHU_DAILY_REPORT_SECRET")
+    secret = os.getenv("FEISHU_DAILY_REPORT_SECRET") or _alert_config().get("secret")
     payload = _build_card_payload(title, content_md, secret)
 
     last_err: Exception | None = None

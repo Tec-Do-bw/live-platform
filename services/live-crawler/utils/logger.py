@@ -35,9 +35,14 @@ class Logings:
         return cls.__instance
 
     def __init__(self, logging_name=None, *args, **kwargs):
-        # 延迟初始化日志级别
+        # 延迟初始化日志级别（统一从 core.config.Settings.LOG_LEVEL 读取，
+        # 导入失败时降级为 INFO 兜底，确保 logger 自身可独立工作）
         if Logings.level is None:
-            Logings.level = os.getenv('LOG_LEVEL', 'INFO')
+            try:
+                from core.config import Settings
+                Logings.level = Settings.LOG_LEVEL
+            except Exception:
+                Logings.level = 'INFO'
 
         if not self._is_logger_added:  # 只有当logger还没有添加handler时才执行添加
             # 配置控制台输出，启用颜色

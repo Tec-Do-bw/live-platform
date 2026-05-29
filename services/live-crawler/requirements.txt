@@ -2,8 +2,8 @@
 # Python版本要求: >=3.8
 requests>=2.31.0
 # 数据验证和序列化
-pydantic==2.12.4
-pydantic-settings==2.12.0
+pydantic==2.13.4
+pydantic-settings==2.14.1
 # Kafka集成
 kafka-python>=2.2.15
 

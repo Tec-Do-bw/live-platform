@@ -16,9 +16,36 @@ except ImportError:  # 未安装 openai 时降级也能工作
 
 from utils.logger import logger
 
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-DEFAULT_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
 DEFAULT_MAX_RETRIES = 2
+
+
+def _openai_config() -> dict:
+    """读取 OPENAI_CONFIG 作为 model/timeout/api_key 的回退源。
+
+    懒加载导入,避免模块级硬依赖 core.config;导入失败时返回空字典安全降级。
+    """
+    try:
+        from core.config import Settings
+
+        return Settings.OPENAI_CONFIG or {}
+    except Exception as e:  # 配置不可用时不应阻断日报生成
+        logger.warning(f"读取 OPENAI_CONFIG 失败,回退源不可用: {e}")
+        return {}
+
+
+def _resolve_model() -> str:
+    return os.getenv("OPENAI_MODEL") or _openai_config().get("model") or "gpt-4o-mini"
+
+
+def _resolve_timeout() -> int:
+    raw = os.getenv("OPENAI_TIMEOUT_SECONDS")
+    if raw:
+        return int(raw)
+    return int(_openai_config().get("timeout_seconds", 30))
+
+
+def _resolve_api_key() -> str | None:
+    return os.getenv("OPENAI_API_KEY") or _openai_config().get("api_key") or None
 
 
 def generate_report(
@@ -33,7 +60,7 @@ def generate_report(
         (markdown 文案, is_llm_generated)
         is_llm_generated=False 表示走了降级路径
     """
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = _resolve_api_key()
     if not api_key or OpenAI is None:
         logger.warning("OPENAI_API_KEY 未配置或 openai 包未安装,降级为纯文本摘要")
         return _fallback_report(today_summary, yesterday_summary, problem_accounts), False
@@ -44,12 +71,13 @@ def generate_report(
         "problem_accounts": problem_accounts,
     }
 
-    client = OpenAI(api_key=api_key, timeout=DEFAULT_TIMEOUT)
+    client = OpenAI(api_key=api_key, timeout=_resolve_timeout())
+    model = _resolve_model()
     last_err: Exception | None = None
     for attempt in range(1, DEFAULT_MAX_RETRIES + 1):
         try:
             resp = client.chat.completions.create(
-                model=DEFAULT_MODEL,
+                model=model,
                 messages=[
                     {"role": "system", "content": prompt_template},
                     {

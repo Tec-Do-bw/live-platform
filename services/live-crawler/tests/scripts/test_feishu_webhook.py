@@ -21,8 +21,61 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(k, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _empty_alert_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认隔离 ALERT_CONFIG 回退源,避免单测依赖真实配置。"""
+    monkeypatch.setattr(feishu_webhook, "_alert_config", lambda: {})
+
+
 def test_missing_webhook_returns_false() -> None:
     assert feishu_webhook.send_card("t", "c") is False
+
+
+def test_fallback_to_alert_config_webhook(monkeypatch: pytest.MonkeyPatch) -> None:
+    """环境变量缺失时,应回退到 ALERT_CONFIG 的 webhook_url 与 secret。"""
+    monkeypatch.setattr(
+        feishu_webhook,
+        "_alert_config",
+        lambda: {"webhook_url": "https://fallback.example.com/hook", "secret": "fb-secret"},
+    )
+    captured: dict = {}
+
+    def fake_post(url: str, json: dict, timeout: int):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        captured["json"] = json
+        resp = MagicMock()
+        resp.json.return_value = {"code": 0}
+        resp.raise_for_status.return_value = None
+        return resp
+
+    with patch("scripts.feishu_webhook.requests.post", side_effect=fake_post):
+        assert feishu_webhook.send_card("t", "c") is True
+
+    assert captured["url"] == "https://fallback.example.com/hook"
+    assert "sign" in captured["json"]  # 回退 secret 生效
+
+
+def test_env_overrides_alert_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """环境变量优先级高于 ALERT_CONFIG 回退源。"""
+    monkeypatch.setenv("FEISHU_DAILY_REPORT_WEBHOOK", "https://env.example.com/hook")
+    monkeypatch.setattr(
+        feishu_webhook,
+        "_alert_config",
+        lambda: {"webhook_url": "https://fallback.example.com/hook"},
+    )
+    captured: dict = {}
+
+    def fake_post(url: str, json: dict, timeout: int):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        resp = MagicMock()
+        resp.json.return_value = {"code": 0}
+        resp.raise_for_status.return_value = None
+        return resp
+
+    with patch("scripts.feishu_webhook.requests.post", side_effect=fake_post):
+        assert feishu_webhook.send_card("t", "c") is True
+
+    assert captured["url"] == "https://env.example.com/hook"
 
 
 def test_payload_structure(monkeypatch: pytest.MonkeyPatch) -> None:

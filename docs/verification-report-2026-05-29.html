@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok HTTP 重构 + Phase 4A/4B 实施完整性校验报告</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #1a1a1a;
+            border-bottom: 3px solid #e74c3c;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+            font-size: 32px;
+        }
+
+        h2 {
+            color: #2c3e50;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            font-size: 24px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+
+        h3 {
+            color: #34495e;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .meta-info {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 30px;
+        }
+
+        .meta-info p {
+            margin: 8px 0;
+        }
+
+        .meta-info strong {
+            color: #2c3e50;
+            min-width: 120px;
+            display: inline-block;
+        }
+
+        .verdict {
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .verdict.fail {
+            background: #fee;
+            border-left: 5px solid #e74c3c;
+            color: #c0392b;
+        }
+
+        .verdict.pass-warnings {
+            background: #fef9e7;
+            border-left: 5px solid #f39c12;
+            color: #d68910;
+        }
+
+        .verdict.pass {
+            background: #eafaf1;
+            border-left: 5px solid #27ae60;
+            color: #1e8449;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card.critical {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        }
+
+        .stat-card.high {
+            background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+        }
+
+        .stat-card.medium {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+        }
+
+        .stat-card.low {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+        }
+
+        .stat-number {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .issue {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 15px 0;
+            transition: box-shadow 0.3s;
+        }
+
+        .issue:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .issue-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .severity-badge {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-right: 15px;
+        }
+
+        .severity-badge.critical {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .severity-badge.high {
+            background: #e67e22;
+            color: white;
+        }
+
+        .severity-badge.medium {
+            background: #f39c12;
+            color: white;
+        }
+
+        .severity-badge.low {
+            background: #3498db;
+            color: white;
+        }
+
+        .issue-file {
+            color: #7f8c8d;
+            font-size: 14px;
+            font-family: "Consolas", "Monaco", monospace;
+            margin-bottom: 10px;
+        }
+
+        .issue-description {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            line-height: 1.8;
+        }
+
+        .issue-evidence {
+            background: #f8f9fa;
+            border-left: 3px solid #3498db;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 13px;
+            overflow-x: auto;
+        }
+
+        .verdict {
+            background: #fff3cd;
+            border-left: 3px solid #ffc107;
+            padding: 15px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .verdict-header {
+            font-weight: bold;
+            color: #856404;
+            margin-bottom: 8px;
+        }
+
+        .verdict-reason {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .recommendation {
+            background: #fff;
+            border-left: 4px solid #27ae60;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .recommendation.p0 {
+            border-left-color: #e74c3c;
+            background: #fee;
+        }
+
+        .recommendation.p1 {
+            border-left-color: #f39c12;
+            background: #fef9e7;
+        }
+
+        .recommendation.p2 {
+            border-left-color: #3498db;
+            background: #ebf5fb;
+        }
+
+        .recommendation-header {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .recommendation-header .priority {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 10px;
+        }
+
+        .priority.p0 {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .priority.p1 {
+            background: #f39c12;
+            color: white;
+        }
+
+        .priority.p2 {
+            background: #3498db;
+            color: white;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 13px;
+        }
+
+        .summary-box {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+            line-height: 1.8;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 TikTok HTTP 重构 + Phase 4A/4B 实施完整性校验报告</h1>
+
+        <div class="meta-info">
+            <p><strong>校验日期：</strong>2026-05-29</p>
+            <p><strong>当前分支：</strong>feature/tiktok-crawler-refactor</p>
+            <p><strong>校验范围：</strong></p>
+            <ul style="margin-left: 120px; margin-top: 5px;">
+                <li>docs/plans/2026-05-28-tiktok-http-refactor.md — TikTok HTTP 重构</li>
+                <li>docs/archive/2026-05-28-phase4a-daily-report-agent.md — Phase 4A 日报 Agent</li>
+                <li>docs/archive/2026-05-28-phase4b-remove-sqlite-recrawl-frontend.md — Phase 4B 删除 SQLite/补采/前端</li>
+            </ul>
+            <p><strong>校验方法：</strong>Worker-Verifier 对抗模式（5 维度并行审查 + Devil's Advocate 对抗验证）</p>
+            <p><strong>Agent 数量：</strong>45 个 subagents</p>
+            <p><strong>执行时长：</strong>37 分钟</p>
+        </div>
+
+        <div class="verdict fail">
+            ❌ 总体判定：FAIL
+        </div>
+
+        <div class="summary-box">
+            <strong>执行摘要：</strong><br>
+            本轮校验覆盖 TikTok HTTP 重构、Phase 4A 日报 Agent、Phase 4B 删除 SQLite/补采/前端 三项计划，共提取 72 条验收标准，确认 24 个真实问题（全部经过对抗验证 refuted=false）。按裁决后的严重度计，0 个 critical、1 个 high、6 个 medium、其余为 low。<br><br>
+            <strong>唯一 high 项：</strong>HTTP 增量采集完全丢失 live/stats 每日聚合能力，构成相对浏览器版的功能回归，因此总体判定为 FAIL。
+        </div>
+
+        <h2>📊 问题统计</h2>
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">总验收标准</div>
+                <div class="stat-number">72</div>
+            </div>
+            <div class="stat-card critical">
+                <div class="stat-label">Critical</div>
+                <div class="stat-number">0</div>
+            </div>
+            <div class="stat-card high">
+                <div class="stat-label">High</div>
+                <div class="stat-number">1</div>
+            </div>
+            <div class="stat-card medium">
+                <div class="stat-label">Medium</div>
+                <div class="stat-number">6</div>
+            </div>
+            <div class="stat-card low">
+                <div class="stat-label">Low</div>
+                <div class="stat-number">17</div>
+            </div>
+        </div>
+
+        <h2>🔥 High 严重性问题</h2>
+
+        <div class="issue">
+            <div class="issue-header">
+                <span class="severity-badge high">HIGH</span>
+                <span style="flex: 1; font-weight: bold; color: #2c3e50;">增量模式完全不采集 live/stats 日聚合数据</span>
+            </div>
+            <div class="issue-file">📁 services/live-crawler/crawlers/http/tiktok/collector.py:419</div>
+            <div class="issue-description">
+                <strong>问题：</strong>增量模式完全不采集 live/stats 日聚合。<code>if full:</code> 把整个 live/stats 循环（<code>for days_back in range(1,29)</code>）门控在全量分支，增量（full=False）路径一天都不发。浏览器版 browserapi.py:131-137 增量会生成 T-1/T-2/T-3 三天 payload。<br><br>
+                <strong>违反规则：</strong>.claude/rules/tiktok-collection-time.md（增量=T-1/T-2/T-3，明确不得缩减）<br><br>
+                <strong>业务影响：</strong>走 HTTP 路由的账号在常态增量日采中丢失每日 GMV/营收等关键聚合，与浏览器版形成功能回归。夜间字段 diff 仅校验 format_message 结构、不覆盖 API 调用集合，无法发现此缺口。
+            </div>
+            <div class="issue-evidence">
+collector.py:419 `if full:` 之后才 for days_back in range(1,29) 调 fetch_live_stats；
+增量分支无任何 live/stats 调用。
+对照 browserapi.py:131-137 增量生成 [latest, latest-1, latest-2] 三天 payload。
+            </div>
+            <div class="verdict">
+                <div class="verdict-header">✅ 对抗验证结果：确认为真实问题（refuted=false）</div>
+                <div class="verdict-reason">
+                    问题属实，无法反驳。代码现状、浏览器版不对称、规则违反、业务影响全部成立。可降低严重度的因素：周期性全量运行会以 T-28 窗口回补同样的日聚合数据，因此损失更接近"在下一次全量前出现延迟/空档"而非永久丢失。但增量主模式下的每日聚合采集能力确实缺失，与浏览器版形成功能回归。
+                </div>
+            </div>
+        </div>
+
+        <h2>⚠️ Medium 严重性问题</h2>
+
+        <div class="issue">
+            <div class="issue-header">
+                <span class="severity-badge medium">MEDIUM</span>
+                <span style="flex: 1; font-weight: bold; color: #2c3e50;">fetch_live_stats 全量日期窗用进程本地时区</span>
+            </div>
+            <div class="issue-file">📁 services/live-crawler/crawlers/http/tiktok/collector.py:420</div>
+            <div class="issue-description">
+                <strong>问题：</strong>fetch_live_stats 全量日期窗用进程本地 <code>date.today()</code> 而非账号区域时区。浏览器版 browserapi.py:111-115 用 _infer_timezone 推导的账号当地 today-1。<br><br>
+                <strong>影响：</strong>server 时区≠账号时区且采集落在日期边界时，28 天集合锚点错位一天（重叠 27/28），且可能把账号当地未结束的当天纳入采到不完整数据。同文件 _time_window(97-108) 已有 TIMEZONE_OFFSET_MAP 可复用却未复用。
+            </div>
+            <div class="issue-evidence">
+collector.py:420 `today = date.today()`（无时区）
+对照 browserapi.py:112-115 `now_local=datetime.now(tz); latest_available_date=today_local-timedelta(days=1)`
+_time_window(97-108) 为 live/list 正确用了 TIMEZONE_OFFSET_MAP，但 fetch_live_stats 没复用
+            </div>
+        </div>
+
+        <div class="issue">
+            <div class="issue-header">
+                <span class="severity-badge medium">MEDIUM</span>
+                <span style="flex: 1; font-weight: bold; color: #2c3e50;">采集中途登出无法识别为登录态失效</span>
+            </div>
+            <div class="issue-file">📁 services/live-crawler/crawlers/http/tiktok/collector.py:389-414</div>
+            <div class="issue-description">
+                <strong>问题：</strong>仅启动时 fetch_account_info 校验一次；room 循环内 fetch_trend_chart/core_stats 的 raise_for_status() 遇 401/403 被宽泛 except 当普通房间错误 yield False，fetch_live_list 的 401/403 冒泡到 adapter 通用 except，二者均不置 login_status=False。<br><br>
+                <strong>对比：</strong>浏览器版 base.py:238-274 逐页 check_login_status 并发登出回调。<br><br>
+                <strong>影响：</strong>HTTP 会把登出误报为采集失败（login_status 仍 True），不触发登出回调与恢复流程；若登出表现为 HTTP200+JSON 错误码则更糟（从不校验 code，无效数据当正常上报）。灰度阶段（浏览器版可回滚、sessionid≈1年）缓解了即时影响。
+            </div>
+        </div>
+
+        <div class="issue">
+            <div class="issue-header">
+                <span class="severity-badge medium">MEDIUM</span>
+                <span style="flex: 1; font-weight: bold; color: #2c3e50;">fetch_live_stats 的 stats_types 硬编码错误</span>
+            </div>
+            <div class="issue-file">📁 services/live-crawler/crawlers/http/tiktok/collector.py:241</div>
+            <div class="issue-description">
+                <strong>问题：</strong>fetch_live_stats 的 stats_types 硬编码为 LIVE_LIST_STATS_TYPES，浏览器版 browserapi.py:153-161 是 deepcopy 页面原始 payload 仅改 time_selector、保留页面下发的 stats_types。<br><br>
+                <strong>证据：</strong>项目自有 spec（tiktok-live-stats-按天聚合说明.md:186/279）与 test_daily_payloads.py:160 显示页面原生集为 [11,115,13,200,106,81,82,201,202,70,210,211,212,213]，与 LIVE_LIST 那套 26 个仅 3 个重叠。<br><br>
+                <strong>影响：</strong>导致上报字段集不同；结构也不同（扁平 stats_types vs params[0].stats_types+is_live_type），且 classifier.py:79-84 会因含 100/101 把同一端点误分类为 data_overview。
+            </div>
+        </div>
+
+        <div class="issue">
+            <div class="issue-header">
+                <span class="severity-badge medium">MEDIUM</span>
+                <span style="flex: 1; font-weight: bold; color: #2c3e50;">TikTok 凭据刷新未接入调度且无失败告警</span>
+            </div>
+            <div class="issue-file">📁 jobs/refresh_tiktok_credentials.py + cron.txt</div>
+            <div class="issue-description">
+                <strong>问题：</strong>jobs/refresh_tiktok_credentials.py 仅有 __main__ 入口，全仓无 add_job/cron 引用它（CookieKeeperScheduler 仅刷 Lazada）；cron.txt 仅含日报 <code>0 10 * * *</code>，无凌晨 3 点条目；refresh_all(40-59) 仅 logger.info 失败数、无 send_card 飞书告警。<br><br>
+                <strong>计划要求：</strong>§5.4（772/788-792）与验收清单第 934 行明确要求 cron+飞书告警，仍未勾选。<br><br>
+                <strong>缓解因素：</strong>send_card 基建现成、sessionid≈1 年有效缓解了即时影响，但 query_string（fp/device_id）24h 失效需定时兜底。HTTP 模式放量前应补齐。
+            </div>
+        </div>
+
+        <div class="issue">
+            <div class="issue-header">
+                <span class="severity-badge medium">MEDIUM</span>
+                <span style="flex: 1; font-weight: bold; color: #2c3e50;">飞书 webhook 硬编码明文生产地址</span>
+            </div>
+            <div class="issue-file">📁 services/live-crawler/core/config_base.py:259</div>
+            <div class="issue-description">
+                <strong>问题：</strong>ALERT_CONFIG.webhook_url 硬编码明文生产飞书 hook（51079d39-...），已入 git（commit cc0c6ce），Dev/Pro 均未覆盖故生产实际生效；而日报模块 feishu_webhook.py:31 走 os.getenv('FEISHU_DAILY_REPORT_WEBHOOK')。<br><br>
+                <strong>违反实践：</strong>两套配置方式不一致，且 webhook 入库违反团队『凭据不入库』实践（泄露后他人可向该机器人推送消息）。<br><br>
+                <strong>建议：</strong>改为 os.getenv 读取并轮换已泄露 hook。
+            </div>
+        </div>
+
+        <h2>📋 修复建议（按优先级排序）</h2>
+
+        <div class="recommendation p0">
+            <div class="recommendation-header">
+                <span class="priority p0">P0</span>
+                修复增量 live/stats 缺失（阻塞放量）
+            </div>
+            <p>在 <code>collect_tiktok</code> 增量（full=False）分支补 T-1/T-2/T-3 的 <code>fetch_live_stats</code> 调用，与 browserapi._generate_daily_payloads(131-137) 对齐，并为该路径补一条覆盖 API 调用集合的回归测试（现有 diff 工具不覆盖）。</p>
+            <p><strong>影响：</strong>HTTP 路由账号在常态增量日采中丢失每日 GMV/营收等关键聚合。</p>
+        </div>
+
+        <div class="recommendation p1">
+            <div class="recommendation-header">
+                <span class="priority p1">P1</span>
+                补齐养号刷新自动化（HTTP 模式正式灰度放量前）
+            </div>
+            <p>在 cron.txt/README 增加 <code>0 3 * * * python -m jobs.refresh_tiktok_credentials</code> 条目，并在 refresh_all 失败时接入现成的 <code>scripts.feishu_webhook.send_card</code> 告警，勾选计划验收清单第 934 行。</p>
+        </div>
+
+        <div class="recommendation p1">
+            <div class="recommendation-header">
+                <span class="priority p1">P1</span>
+                fetch_live_stats 全量锚点改为基于账号时区
+            </div>
+            <p>改为基于 <code>TIMEZONE_OFFSET_MAP[cred.region]</code> 推得的账号当地 today-1，与同文件 _time_window 及浏览器版统一时区口径。</p>
+        </div>
+
+        <div class="recommendation p1">
+            <div class="recommendation-header">
+                <span class="priority p1">P1</span>
+                完善中途登出检测
+            </div>
+            <p>在 room 循环与 fetch_live_list 路径识别 401/403（及 HTTP200+JSON 错误码 10001/10002），置 login_status=False 并补 send_login_callback 登出回调，对齐浏览器版 per-page 检测与计划 §8 兜底回调要求。</p>
+        </div>
+
+        <div class="recommendation p1">
+            <div class="recommendation-header">
+                <span class="priority p1">P1</span>
+                为 live/stats 单独定义正确的 stats_types 常量
+            </div>
+            <p>单独定义与页面原生一致的 stats_types 常量并改回 params[0]+is_live_type 结构，避免上报字段集偏移与 classifier 误分类；以线上原始 payload 核对。</p>
+        </div>
+
+        <div class="recommendation p1">
+            <div class="recommendation-header">
+                <span class="priority p1">P1</span>
+                飞书 webhook 改为环境变量读取
+            </div>
+            <p>改为 os.getenv 读取（与日报模块统一）并轮换已泄露的 hook；同步将 api_sign 等密钥材料从 config_base.py 默认值移出，统一走环境变量注入。</p>
+        </div>
+
+        <div class="recommendation p2">
+            <div class="recommendation-header">
+                <span class="priority p2">P2</span>
+                清理 Phase 4B 遗留
+            </div>
+            <p>删除 config_base.py:277-284 的死配置 RECRAWL_CONFIG，确认 classifier.py/registry.py 孤儿模块去留，移除 services/live-monitor/ReCrawl/ 残留空目录与 .pyc；将 monitor/__init__.py:13-14 的 <code>_sq+lite3</code>/<code>monitor+.db</code> 拼接改回直白写法。</p>
+        </div>
+
+        <div class="recommendation p2">
+            <div class="recommendation-header">
+                <span class="priority p2">P2</span>
+                优化凭据加载
+            </div>
+            <p>将工厂层（live_crawler.py:66）读出的 cred 透传给 adapter/collector 复用，避免单账号单轮重复读库 3 次（DRY 整洁度，无功能风险）。</p>
+        </div>
+
+        <div class="recommendation p2">
+            <div class="recommendation-header">
+                <span class="priority p2">P2</span>
+                补齐验证质量
+            </div>
+            <p>按计划第 873 行用真实浏览器版 format_api_message 输出替换手写 fixture tiktok_browser_message.json；将 CREATE_TABLE_SQL 改为从 utils.credentials 导入避免 migrate 脚本重复定义。</p>
+        </div>
+
+        <div class="recommendation p2">
+            <div class="recommendation-header">
+                <span class="priority p2">P2</span>
+                文档同步收尾（建议待 plan 完成时统一处理）
+            </div>
+            <ul style="margin-left: 20px; margin-top: 10px;">
+                <li>CLAUDE.md 补录 5 项重要技术决策（account_credentials 公共表、group_name/region 正交约束、双重灰度路由、_format_message 字段级一致、养号/采集解耦）</li>
+                <li>ROADMAP 登记 Phase 4A</li>
+                <li>README 更新 TikTok 双轨说明+TIKTOK_CRAWLER_MODE+刷新 cron</li>
+                <li>修复 README:166『见规则七』→『规则五』悬空引用</li>
+                <li>按需补 live-crawler/.env.example 或确认其与无 dotenv 架构的取舍</li>
+                <li>更新 lazada-http-crawler-spec.md 目录树已删结构</li>
+            </ul>
+        </div>
+
+        <h2>📝 Low 严重性问题摘要</h2>
+        <p style="margin: 20px 0; color: #666;">以下 17 个 low 严重性问题主要涉及文档同步滞后、清理遗漏、配置冗余等，不影响核心功能，建议在 plan 完成时统一处理：</p>
+
+        <ul style="margin-left: 40px; line-height: 2;">
+            <li>HTTP 采集检测到登录态失效时不发送登出回调（adapter.py:76-79）</li>
+            <li>单账号单轮采集重复读库 3 次（凭据加载效率）</li>
+            <li>字段 diff 工具实现偏弱（手写 fixture 而非真实浏览器版输出）</li>
+            <li>BaseConfig 硬编码过期 JWT（已被篡改为占位符，实际风险低）</li>
+            <li>cron.txt 缺少 TikTok 凭据刷新任务条目</li>
+            <li>config_base.py 保留 RECRAWL_CONFIG 死配置</li>
+            <li>account_credentials 建表 SQL 在两处重复定义</li>
+            <li>live-crawler 子项目无 .env.example（与无 dotenv 架构一致）</li>
+            <li>lazada-http-crawler-spec.md 目录树引用已删除结构</li>
+            <li>classifier.py 疑似孤儿代码（无生产调用）</li>
+            <li>registry.py 疑似孤儿代码（无生产调用）</li>
+            <li>services/live-monitor/ReCrawl/ 残留空目录与 .pyc</li>
+            <li>monitor/__init__.py 字符串拼接混淆（<code>_sq+lite3</code>）</li>
+            <li>CLAUDE.md 未更新 TikTok HTTP 双轨采集内容</li>
+            <li>CLAUDE.md 未记录 5 项重要技术决策</li>
+            <li>ROADMAP 未登记 Phase 4A 完成</li>
+            <li>README 功能特性仍把 TikTok 标为「浏览器采集」</li>
+            <li>README:166 悬空引用「见规则七」（实际为规则五）</li>
+        </ul>
+
+        <h2>🎯 校验方法论</h2>
+        <div class="summary-box">
+            <strong>本次校验采用 Worker-Verifier 对抗模式：</strong><br><br>
+            <strong>Phase 1 - 需求解析：</strong>3 个 worker agents 并行读取三个 plan 文档，提取 72 条结构化验收标准。<br><br>
+            <strong>Phase 2 - 代码审查：</strong>5 个维度并行审查（架构完整性、契约一致性、配置正确性、清理完整性、文档同步），共发现 36 个初步问题。<br><br>
+            <strong>Phase 3 - 对抗验证：</strong>使用 pipeline 模式（无等待），每个维度的发现立即进入验证。每个问题启动独立的 skeptic agent 尝试反驳，检查是否已修复、是否误报、是否有合理设计理由、影响范围是否被高估。<br><br>
+            <strong>Phase 4 - 综合报告：</strong>汇总未被反驳的 24 个确认问题，按严重性分组，给出总体判定和优先级排序的修复建议。<br><br>
+            <strong>关键设计：</strong>
+            <ul style="margin-left: 20px; margin-top: 10px;">
+                <li>Worker（前 5 个 reviewer）目标：找问题</li>
+                <li>Verifier（Devil's Advocate）目标：反驳问题</li>
+                <li>两者心思相反，通过对抗提高质量</li>
+                <li>pipeline 优于 barrier：维度 A 的问题可以在验证阶段时，维度 B 还在审查阶段，最大化并行效率</li>
+            </ul>
+        </div>
+
+        <h2>📌 结论与建议</h2>
+        <div class="summary-box">
+            <p><strong>总体判定：FAIL</strong></p>
+            <p style="margin-top: 15px;">当前实施存在 1 个 high 严重性问题（增量模式完全不采集 live/stats 日聚合），构成相对浏览器版的功能回归，阻塞 HTTP 模式正式灰度放量。</p>
+            <p style="margin-top: 15px;"><strong>建议行动：</strong></p>
+            <ol style="margin-left: 20px; margin-top: 10px; line-height: 1.8;">
+                <li><strong>立即修复 P0 问题：</strong>补齐增量模式的 live/stats T-1/T-2/T-3 采集，并补充回归测试。</li>
+                <li><strong>放量前补齐 P1 问题：</strong>凭据刷新自动化、时区对齐、登出检测、stats_types 修正、webhook 环境变量化。</li>
+                <li><strong>技术债管理：</strong>P2 问题主要为文档同步滞后和清理遗漏，建议在 plan 完成时统一处理（按项目规则，ROADMAP/CLAUDE.md 更新发生在 plan 完成时）。</li>
+                <li><strong>灰度策略：</strong>当前 HTTP 模式处于灰度阶段（TIKTOK_CRAWLER_MODE 门控），建议修复 P0+P1 问题后再扩大灰度范围。</li>
+            </ol>
+        </div>
+
+        <hr style="margin: 40px 0; border: none; border-top: 1px solid #ddd;">
+
+        <div style="text-align: center; color: #999; font-size: 14px; padding: 20px 0;">
+            <p>本报告由 Agent Team 自动生成</p>
+            <p>校验时间：2026-05-29 | 执行时长：37 分钟 | Agent 数量：45</p>
+            <p>方法论：Worker-Verifier 对抗模式 + 5 维度并行审查 + 对抗验证</p>
+        </div>
+    </div>
+</body>
+</html>

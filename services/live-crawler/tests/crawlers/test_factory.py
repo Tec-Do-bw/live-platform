@@ -14,17 +14,27 @@ class TestFactoryRouting:
     """工厂类路由测试"""
 
     def test_browser_crawler_tiktok(self, monkeypatch):
-        """tiktok 路由到浏览器爬虫"""
-        monkeypatch.delenv('TIKTOK_CRAWLER_MODE', raising=False)
+        """tiktok 默认 crawler_type=browser 时路由到浏览器爬虫"""
         from crawlers.browser.live_crawler import LiveCrawler
+        from core.config import Settings
+        monkeypatch.setitem(
+            Settings.PLATFORM_CONFIG,
+            'tiktok',
+            {**Settings.PLATFORM_CONFIG.get('tiktok', {}), 'crawler_type': 'browser'},
+        )
         monkeypatch.setattr('crawlers.browser.live_crawler.load_credentials', lambda *args, **kwargs: None)
         crawler = LiveCrawler(platform='tiktok', browser_id='b1')
         assert crawler.__class__.__name__ == 'TikTokLiveCrawler'
 
-    def test_http_crawler_tiktok_env_mode(self, monkeypatch):
-        """TIKTOK_CRAWLER_MODE=http 时 tiktok 路由到 HTTP 适配器"""
-        monkeypatch.setenv('TIKTOK_CRAWLER_MODE', 'http')
+    def test_http_crawler_tiktok_config_mode(self, monkeypatch):
+        """PLATFORM_CONFIG.tiktok.crawler_type=http 时 tiktok 路由到 HTTP 适配器"""
         from crawlers.browser.live_crawler import LiveCrawler
+        from core.config import Settings
+        monkeypatch.setitem(
+            Settings.PLATFORM_CONFIG,
+            'tiktok',
+            {**Settings.PLATFORM_CONFIG.get('tiktok', {}), 'crawler_type': 'http'},
+        )
         monkeypatch.setattr('crawlers.browser.live_crawler.load_credentials', lambda *args, **kwargs: None)
         crawler = LiveCrawler(platform='tiktok', browser_id='b1')
         assert crawler.__class__.__name__ == 'TikTokHttpCollector'
