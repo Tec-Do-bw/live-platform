@@ -1,0 +1,14 @@
+{
+  "params": "",
+  "cookies": "[{\"name\": \"sessionid\", \"value\": \"sid\"}]",
+  "fromUrl": "https://shop.tiktok.com/api/v2/insights/creator/live/list?device_id=dev1",
+  "extra": "{\"request\": {\"params\": [{\"stats_types\": [10, 15]}]}}",
+  "sign": "4fk0050d4c9c2c7ba8efc59684acf",
+  "userType": 6.0,
+  "updateTime": 1770000000000,
+  "request": {
+    "response": "{\"code\": 0, \"data\": {\"segments\": []}}",
+    "url": "https://shop.tiktok.com/api/v2/insights/creator/live/list?device_id=dev1"
+  },
+  "socketUserId": "socket-1"
+}

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS account_credentials (
     proxy         TEXT,
     ext_json      TEXT,
     extra         TEXT,
+    crawler_mode  TEXT DEFAULT NULL,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -41,6 +42,7 @@ class Credentials:
     proxy: str
     ext_json: str
     extra: str
+    crawler_mode: str | None = None
     updated_at: str = ""
 
     @property
@@ -85,6 +87,7 @@ class Credentials:
             proxy=self.proxy,
             ext_json=self.ext_json,
             extra=self.extra,
+            crawler_mode=self.crawler_mode,
         )
 
 
@@ -115,6 +118,9 @@ def ensure_table(conn: Any | None = None) -> None:
     conn = conn or get_connection()
     try:
         conn.executescript(CREATE_TABLE_SQL)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(account_credentials)").fetchall()}
+        if "crawler_mode" not in columns:
+            conn.execute("ALTER TABLE account_credentials ADD COLUMN crawler_mode TEXT DEFAULT NULL")
         conn.commit()
     finally:
         if own_conn:
@@ -129,7 +135,7 @@ def load_credentials(account_id: str, platform: str = "tiktok") -> Credentials |
         row = conn.execute(
             """
             SELECT account_id, platform, group_name, token, region, proxy,
-                   ext_json, extra, updated_at
+                   ext_json, extra, crawler_mode, updated_at
             FROM account_credentials
             WHERE account_id = ? AND platform = ?
             """,
@@ -146,6 +152,7 @@ def load_credentials(account_id: str, platform: str = "tiktok") -> Credentials |
             proxy=row["proxy"] or "",
             ext_json=row["ext_json"] or "{}",
             extra=row["extra"] or "{}",
+            crawler_mode=row["crawler_mode"],
             updated_at=row["updated_at"] or "",
         )
     finally:
@@ -161,6 +168,7 @@ def save_credentials(
     proxy: str | None = "",
     ext_json: str | dict[str, Any] | None = "{}",
     extra: str | dict[str, Any] | None = "{}",
+    crawler_mode: str | None = None,
 ) -> None:
     """写入或更新账号凭据。"""
     conn = get_connection()
@@ -170,9 +178,9 @@ def save_credentials(
             """
             INSERT INTO account_credentials (
                 account_id, platform, group_name, token, region, proxy,
-                ext_json, extra, updated_at
+                ext_json, extra, crawler_mode, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(account_id) DO UPDATE SET
                 platform=excluded.platform,
                 group_name=excluded.group_name,
@@ -181,6 +189,7 @@ def save_credentials(
                 proxy=excluded.proxy,
                 ext_json=excluded.ext_json,
                 extra=excluded.extra,
+                crawler_mode=COALESCE(excluded.crawler_mode, account_credentials.crawler_mode),
                 updated_at=CURRENT_TIMESTAMP
             """,
             (
@@ -192,6 +201,7 @@ def save_credentials(
                 proxy or "",
                 _dumps_json(ext_json),
                 _dumps_json(extra),
+                crawler_mode,
             ),
         )
         conn.commit()
@@ -208,7 +218,7 @@ def list_accounts(platform: str = "tiktok", group_name: str | None = None) -> li
             rows = conn.execute(
                 """
                 SELECT account_id, platform, group_name, token, region, proxy,
-                       ext_json, extra, updated_at
+                       ext_json, extra, crawler_mode, updated_at
                 FROM account_credentials
                 WHERE platform = ?
                 ORDER BY updated_at DESC
@@ -219,7 +229,7 @@ def list_accounts(platform: str = "tiktok", group_name: str | None = None) -> li
             rows = conn.execute(
                 """
                 SELECT account_id, platform, group_name, token, region, proxy,
-                       ext_json, extra, updated_at
+                       ext_json, extra, crawler_mode, updated_at
                 FROM account_credentials
                 WHERE platform = ? AND group_name = ?
                 ORDER BY updated_at DESC
@@ -237,6 +247,7 @@ def list_accounts(platform: str = "tiktok", group_name: str | None = None) -> li
                 proxy=row["proxy"] or "",
                 ext_json=row["ext_json"] or "{}",
                 extra=row["extra"] or "{}",
+                crawler_mode=row["crawler_mode"],
                 updated_at=row["updated_at"] or "",
             )
             for row in rows

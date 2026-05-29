@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS account_credentials (
     proxy         TEXT,
     ext_json      TEXT,
     extra         TEXT,
+    crawler_mode  TEXT DEFAULT NULL,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -180,14 +181,17 @@ def _load_candidates(conn: Any, skip_adspower: bool) -> list[MigrationCandidate]
 
 def _execute_migration(conn: Any, candidates: list[MigrationCandidate]) -> None:
     conn.executescript(CREATE_TABLE_SQL)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(account_credentials)").fetchall()}
+    if "crawler_mode" not in columns:
+        conn.execute("ALTER TABLE account_credentials ADD COLUMN crawler_mode TEXT DEFAULT NULL")
     for item in candidates:
         conn.execute(
             """
             INSERT INTO account_credentials (
                 account_id, platform, group_name, token, region, proxy,
-                ext_json, extra, updated_at
+                ext_json, extra, crawler_mode, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), CURRENT_TIMESTAMP))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, COALESCE(NULLIF(?, ''), CURRENT_TIMESTAMP))
             ON CONFLICT(account_id) DO UPDATE SET
                 platform=excluded.platform,
                 group_name=excluded.group_name,
@@ -196,6 +200,7 @@ def _execute_migration(conn: Any, candidates: list[MigrationCandidate]) -> None:
                 proxy=excluded.proxy,
                 ext_json=excluded.ext_json,
                 extra=excluded.extra,
+                crawler_mode=COALESCE(excluded.crawler_mode, account_credentials.crawler_mode),
                 updated_at=excluded.updated_at
             """,
             (

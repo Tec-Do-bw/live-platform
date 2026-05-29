@@ -117,8 +117,12 @@ live_dp/
 │   │   ├── live_crawler.py  # LiveCrawler 工厂类（双轨路由）
 │   │   ├── tiktok.py        # TikTok 爬虫
 │   │   └── shopee.py        # Shopee 爬虫
-│   └── http/                 # HTTP 采集器（Lazada）
-│       └── base.py          # BaseHttpCrawler 抽象基类
+│   └── http/                 # HTTP 采集器（Lazada、TikTok）
+│       ├── base.py          # BaseHttpCrawler 抽象基类
+│       ├── lazada.py        # Lazada HTTP 采集器
+│       └── tiktok/          # TikTok HTTP 采集器
+│           ├── collector.py # 纯函数 fetch_* + collect_tiktok 编排
+│           └── adapter.py   # start_crawl 适配层
 ├── services/                  # 共享业务服务
 │   ├── cookie_manager.py     # Cookie 统一管理（CRUD）
 │   ├── data_reporter.py      # 数据上报（重试、落盘）
@@ -126,7 +130,10 @@ live_dp/
 ├── cookie_keeper/             # Cookie 养号服务（HTTP 采集体系登录态管理）
 │   ├── __main__.py           # 独立进程入口
 │   ├── keeper.py             # CookieKeeperScheduler 调度器
-│   └── browser_refresher.py  # BrowserRefresher 浏览器刷新器
+│   ├── browser_refresher.py  # BrowserRefresher 浏览器刷新器
+│   └── tiktok_refresher.py   # TikTok account_credentials 刷新器
+├── jobs/                      # 独立任务入口
+│   └── refresh_tiktok_credentials.py # TikTok 凭据刷新任务
 ├── downloader/                # HTTP 批量下载器（代理管理）
 │   ├── core.py               # Downloader 核心
 │   ├── models.py             # 请求/响应模型
@@ -146,6 +153,7 @@ live_dp/
 │   └── browserapi.py         # AdsPower API 封装
 ├── scripts/                   # 辅助脚本
 │   ├── init_tracker.py       # 初始化采集追踪文件
+│   ├── migrate_account_credentials.py # cookies → account_credentials 迁移脚本
 │   ├── list_shopee_accounts.py # 列出 Shopee 账号
 │   ├── daily_report.py       # 每日采集报告主入口(日志驱动 + OpenAI + 飞书)
 │   ├── log_parser.py         # 日志预过滤/结构化解析
@@ -156,7 +164,11 @@ live_dp/
 │       └── daily_report.md   # OpenAI Prompt 模板
 ├── utils/                     # 工具模块
 │   ├── adspower_client.py    # AdsPower API 统一客户端（含限流重试，见规则七）
+│   ├── credentials.py        # account_credentials 读写
+│   ├── headers.py            # HTTP 采集请求头构造
+│   ├── http_session.py       # curl_cffi Session 工厂 + sync_retry
 │   ├── kafka_client.py       # Kafka 客户端
+│   ├── types.py              # HTTP 采集共享类型与异常
 │   └── logger.py             # loguru 日志
 └── tests/                     # 测试
     ├── crawlers/             # 采集器测试
