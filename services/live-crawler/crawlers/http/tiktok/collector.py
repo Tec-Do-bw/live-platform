@@ -21,6 +21,21 @@ from utils.types import FatalError, FetchResult, LoginRequired
 BASE_URL = "https://shop.tiktok.com"
 REFERER_URL = f"{BASE_URL}/streamer/compass/livestream-analytics/view"
 
+# 直播录像列表（webcast）：账号级接口，host/language 按区域变化，仅 count/offset 翻页变化
+REPLAY_INFO_PATH = "/webcast/room/replay/info/"
+LIVECENTER_URL = "https://livecenter.tiktok.com"
+REPLAY_REFERER_URL = f"{LIVECENTER_URL}/replay"
+# 固定 query 参数（不含 count/offset/webcast_language），与 livecenter 直播录像页原生下发一致
+REPLAY_FIXED_PARAMS = {
+    "aid": "304449",
+    "app_name": "tiktok_live_center",
+    "device_platform": "web_pc",
+    "need_suffix": "true",
+}
+REPLAY_COUNT_INCREMENTAL = 6   # 增量：仅取最新一页
+REPLAY_COUNT_FULL = 30         # 全量：单页拉满以减少翻页请求数
+REPLAY_MAX_PAGES = 50          # has_more 异常时的翻页安全上限，防止死循环
+
 LIVE_LIST_STATS_TYPES = [
     10, 15, 11, 12, 13, 14, 80, 88, 95, 90, 72, 96, 70, 86,
     20, 29, 25, 50, 41, 42, 21, 40, 100, 101, 62, 61,
@@ -35,14 +50,101 @@ CORE_STATS_TYPES = [
     315, 314, 349, 241, 3, 2, 5, 18, 290, 291, 292,
     -23, -20, -39, -330, -10, -3, -2, -18,
 ]
+
+# 接口英文标识 → 中文名，用于日志可读性（grep 仍可用英文标识，人读直接看中文）
+API_DISPLAY_NAMES = {
+    "account_info": "账号信息",
+    "replay_info": "直播录像列表",
+    "live_list": "直播间列表",
+    "live_stats": "关键指标",
+    "trend_chart": "直播间趋势图",
+    "core_stats": "直播大屏-流量分析-流量转化",
+}
+
+
+def _api_label(api_name: str) -> str:
+    """返回 'english 中文' 形式的接口标识，无映射时回退为纯英文。"""
+    cn = API_DISPLAY_NAMES.get(api_name, "")
+    return f"{api_name} {cn}" if cn else api_name
+
+
+class TikTokRegionProfile(TypedDict):
+    """TikTok 不同国家请求特征。"""
+
+    timezone_offset: int
+    webcast_base_url: str
+    webcast_language: str
+
+
+TIKTOK_REGION_PROFILES: dict[str, TikTokRegionProfile] = {
+    # 覆盖 SCHEDULER_CONFIG.cron_config 的 UTC+9/+8/+7/-3/-6/-8 时区组
+    "JP": {
+        "timezone_offset": 32400,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "ja-JP",
+    },
+    "SG": {
+        "timezone_offset": 28800,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "en",
+    },
+    "MY": {
+        "timezone_offset": 28800,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "en",
+    },
+    "CN": {
+        "timezone_offset": 28800,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "en",
+    },
+    "ID": {
+        "timezone_offset": 25200,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "en",
+    },
+    "TH": {
+        "timezone_offset": 25200,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "en",
+    },
+    "VN": {
+        "timezone_offset": 25200,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "vi-VN",
+    },
+    "PH": {
+        # 存疑：依据历史 request_context 数据(carrier_region=ph 但 timezone_name=Asia/Bangkok)
+        # 推断为 UTC+7=25200，未经活账号验证。PH 本土时区实际可能是 Asia/Manila(UTC+8=28800)。
+        # 待有 PH 活账号投屏时核实，再据实修正。
+        "timezone_offset": 25200,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "en",
+    },
+    "BR": {
+        "timezone_offset": -10800,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "pt",
+    },
+    "MX": {
+        "timezone_offset": -21600,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "es-419",
+    },
+    "US": {
+        "timezone_offset": -28800,
+        "webcast_base_url": "https://webcast.us.tiktok.com",
+        "webcast_language": "en",
+    },
+}
+DEFAULT_REGION_PROFILE: TikTokRegionProfile = {
+    "timezone_offset": 0,
+    "webcast_base_url": "https://webcast.tiktok.com",
+    "webcast_language": "en",
+}
 TIMEZONE_OFFSET_MAP = {
-    "US": -28800,
-    "ID": 25200,
-    "MY": 28800,
-    "SG": 28800,
-    "MX": -21600,
-    "TH": 25200,
-    "VN": 25200,
+    region: profile["timezone_offset"]
+    for region, profile in TIKTOK_REGION_PROFILES.items()
 }
 
 
@@ -71,6 +173,22 @@ def _parse_ext(cred: Credentials) -> dict[str, Any]:
     }
 
 
+def _region_profile(region: str) -> TikTokRegionProfile:
+    """根据账号真实国家获取 TikTok 请求特征。
+
+    region 缺失或未知时降级到 DEFAULT_REGION_PROFILE（UTC+0），并告警提示，
+    避免静默按 UTC+0 推算时间窗导致采集日期错位却无迹可查。
+    """
+    if not region:
+        logger.warning("TikTok 账号 region 缺失，降级使用 UTC+0 默认请求特征")
+        return DEFAULT_REGION_PROFILE
+    profile = TIKTOK_REGION_PROFILES.get(region.upper())
+    if profile is None:
+        logger.warning(f"TikTok 未知 region={region}，降级使用 UTC+0 默认请求特征")
+        return DEFAULT_REGION_PROFILE
+    return profile
+
+
 def _build_url(path: str, query_string: str = "", extra_params: dict[str, Any] | None = None) -> str:
     """构造完整 URL，保留账号级 query string。"""
     params = parse_qs(query_string, keep_blank_values=True)
@@ -97,9 +215,18 @@ def _build_tiktok_headers(cred: Credentials, extra: dict[str, str] | None = None
     return build_headers(origin=BASE_URL, referer=REFERER_URL, cred=cred, extra=headers_extra)
 
 
+def _build_webcast_headers(cred: Credentials) -> dict[str, str]:
+    """构造 webcast 接口请求头（origin/referer 指向 livecenter 直播录像页）。"""
+    extra: dict[str, str] = {}
+    ext = _parse_ext(cred)
+    if ext.get("user_agent"):
+        extra["user-agent"] = ext["user_agent"]
+    return build_headers(origin=LIVECENTER_URL, referer=REPLAY_REFERER_URL, cred=cred, extra=extra)
+
+
 def _time_window(region: str, full: bool) -> dict[str, int | str]:
     """计算 TikTok live/list 时间窗。"""
-    offset = TIMEZONE_OFFSET_MAP.get(region.upper(), 0)
+    offset = _region_profile(region)["timezone_offset"]
     tz_obj = timezone(timedelta(seconds=offset))
     now = datetime.now(tz_obj)
     return {
@@ -132,13 +259,28 @@ def _check_code(data: dict[str, Any], endpoint: str, account_id: str) -> bool:
     return False
 
 
+def _check_webcast_code(data: dict[str, Any], endpoint: str, account_id: str) -> bool:
+    """校验 webcast 接口业务码：webcast 用 status_code==0 表示成功（兼容 code）。"""
+    code = data.get("status_code", data.get("code"))
+    if code == 0:
+        return True
+    msg = data.get("message") or data.get("status_msg", "")
+    logger.warning(f"[{account_id}/{endpoint}] webcast 业务码异常 status_code={code} message={msg}")
+    return False
+
+
+def _replay_has_more(data: dict[str, Any]) -> bool:
+    """从 replay/info 响应解析 data.has_more，缺失时按 False 处理（停止翻页）。"""
+    return bool(data.get("data", {}).get("has_more"))
+
+
 def _local_yesterday(region: str) -> date:
     """根据账号区域时区推算当地 today-1（latest_available_date）。
 
     与浏览器版 browserapi._generate_daily_payloads 时区口径一致，
     避免 server 时区≠账号时区时日期窗口错位。
     """
-    offset = TIMEZONE_OFFSET_MAP.get(region.upper(), 0)
+    offset = _region_profile(region)["timezone_offset"]
     tz_obj = timezone(timedelta(seconds=offset))
     return (datetime.now(tz_obj) - timedelta(days=1)).date()
 
@@ -214,7 +356,33 @@ def fetch_account_info(session: Any, cred: Credentials) -> FetchResult:
     resp.raise_for_status()
     data = _response_json(resp)
     ok = _check_code(data, "account_info", cred.account_id) and bool(data.get("data", {}).get("user_id"))
-    logger.info(f"[{cred.account_id}/account_info] HTTP {resp.status_code} ok={ok}")
+    logger.info(f"[{cred.account_id}/{_api_label('account_info')}] HTTP {resp.status_code} ok={ok}")
+    return _make_result(ok=ok, url=url, request_body=None, response_body=resp.text, data=data)
+
+
+@sync_retry(retries=2, delay=1.0)
+def fetch_replay_info(session: Any, cred: Credentials, count: int, offset: int) -> FetchResult:
+    """获取直播录像回放列表分页（webcast 账号级接口）。
+
+    GET https://webcast*.tiktok.com/webcast/room/replay/info/
+    host/webcast_language 按 region 派生；翻页由调用方依据 data.has_more 推进。
+    """
+    profile = _region_profile(cred.region)
+    params = {
+        **REPLAY_FIXED_PARAMS,
+        "count": str(count),
+        "offset": str(offset),
+        "webcast_language": profile["webcast_language"],
+    }
+    url = f"{profile['webcast_base_url']}{REPLAY_INFO_PATH}?{urlencode(params)}"
+    resp = session.get(url, headers=_build_webcast_headers(cred), timeout=10)
+    resp.raise_for_status()
+    data = _response_json(resp)
+    ok = _check_webcast_code(data, "replay_info", cred.account_id)
+    logger.info(
+        f"[{cred.account_id}/{_api_label('replay_info')}] offset={offset} count={count} "
+        f"HTTP {resp.status_code} ok={ok} has_more={_replay_has_more(data)}"
+    )
     return _make_result(ok=ok, url=url, request_body=None, response_body=resp.text, data=data)
 
 
@@ -248,7 +416,7 @@ def fetch_live_list(session: Any, cred: Credentials, full: bool = False) -> Fetc
     resp.raise_for_status()
     data = _response_json(resp)
     ok = _check_code(data, "live_list", cred.account_id)
-    logger.info(f"[{cred.account_id}/live_list] HTTP {resp.status_code} ok={ok} len={len(resp.text)}")
+    logger.info(f"[{cred.account_id}/{_api_label('live_list')}] HTTP {resp.status_code} ok={ok} len={len(resp.text)}")
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
@@ -282,7 +450,7 @@ def fetch_live_stats(session: Any, cred: Credentials, target_date: date) -> Fetc
     resp.raise_for_status()
     data = _response_json(resp)
     ok = _check_code(data, "live_stats", cred.account_id)
-    logger.info(f"[{cred.account_id}/live_stats] date={target_date} HTTP {resp.status_code} ok={ok}")
+    logger.info(f"[{cred.account_id}/{_api_label('live_stats')}] date={target_date} HTTP {resp.status_code} ok={ok}")
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
@@ -307,7 +475,7 @@ def fetch_trend_chart(
     resp.raise_for_status()
     data = _response_json(resp)
     ok = _check_code(data, "trend_chart", cred.account_id)
-    logger.info(f"[{cred.account_id}/trend_chart] room={room_id} HTTP {resp.status_code} ok={ok}")
+    logger.info(f"[{cred.account_id}/{_api_label('trend_chart')}] room={room_id} HTTP {resp.status_code} ok={ok}")
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
@@ -349,7 +517,7 @@ def fetch_core_stats(session: Any, cred: Credentials, room_id: str) -> FetchResu
     resp.raise_for_status()
     data = _response_json(resp)
     ok = _check_code(data, "core_stats", cred.account_id)
-    logger.info(f"[{cred.account_id}/core_stats] room={room_id} HTTP {resp.status_code} ok={ok}")
+    logger.info(f"[{cred.account_id}/{_api_label('core_stats')}] room={room_id} HTTP {resp.status_code} ok={ok}")
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
@@ -386,7 +554,7 @@ def filter_rooms_by_window(rooms: list[RoomMeta], region: str, full: bool) -> li
     """按采集窗口过滤直播间。"""
     if full:
         return rooms
-    offset = TIMEZONE_OFFSET_MAP.get(region.upper(), 0)
+    offset = _region_profile(region)["timezone_offset"]
     tz_obj = timezone(timedelta(seconds=offset))
     now = datetime.now(tz_obj)
     cutoff = now - timedelta(days=3)
@@ -432,19 +600,98 @@ def _yield_fetch_result(item: FetchResult) -> tuple[bool, FetchResult | dict[str
     }
 
 
-def collect_tiktok(account_id: str, full: bool = False) -> Iterator[tuple[bool, FetchResult | dict[str, Any]]]:
-    """TikTok HTTP 采集编排生成器。"""
+def _collect_replay_info(
+    session: Any, cred: Credentials, full: bool
+) -> Iterator[FetchResult]:
+    """采集直播回放列表，按 has_more 翻页。
+
+    增量：count=6 仅取最新一页（不翻页，最新直播覆盖增量窗口足矣）；
+    全量：count=30 单页拉满，data.has_more 为 true 时 offset 累加 count 继续。
+    """
+    count = REPLAY_COUNT_FULL if full else REPLAY_COUNT_INCREMENTAL
+    offset = 0
+    for _ in range(REPLAY_MAX_PAGES):
+        result = fetch_replay_info(session, cred, count, offset)
+        yield result
+        # 业务码异常或增量模式：不翻页
+        if not result["ok"] or not full:
+            return
+        if not _replay_has_more(result["data"]):
+            return
+        offset += count
+
+
+def setup_session(account_id: str) -> tuple[Credentials, Any, FetchResult]:
+    """加载凭据、建立会话并验证登录态。
+
+    从 collect_tiktok 头部抽出，供 adapter 在进入数据采集前先验证登录态：
+    验证通过才发 success 回调并决定本轮 full，验证失败抛 LoginRequired 走登出回调。
+
+    Returns:
+        (cred, session, login_result) 三元组；登录态失效时抛 LoginRequired。
+        调用方负责在使用完毕后 session.close()。
+    """
     cred = load_credentials(account_id, platform="tiktok")
     if not cred or not cred.token:
         raise FatalError(f"[{account_id}] 凭据缺失，需要刷新")
 
+    # query_string 携带设备指纹（device_id/fp/browser_* 等），是所有 fetch_* 接口
+    # 构造合法 URL 的前提；缺失时 TikTok 会返回 no login/invalid params。
+    # 浏览器版从拦截请求动态提取可运行时容错，HTTP 版静态读库必须在采集前校验，
+    # 否则会静默降级成无指纹请求。不可降级，抛 FatalError 走调度层重新刷新。
+    if not _parse_ext(cred)["query_string"]:
+        raise FatalError(
+            f"[{account_id}] 凭据 ext_json.query_string 缺失（设备指纹），需要重新刷新"
+        )
+
     session = get_session(cred.fingerprint_spec, proxy=cred.proxy)
     try:
         session.cookies.update(_cookie_dict_from_token(cred.token_data))
-
         login_result = fetch_account_info(session, cred)
-        if not login_result["ok"]:
-            raise LoginRequired(f"[{account_id}] 登录态失效")
+    except Exception:
+        session.close()
+        raise
+    if not login_result["ok"]:
+        session.close()
+        raise LoginRequired(f"[{account_id}] 登录态失效")
+    return cred, session, login_result
+
+
+def collect_tiktok(
+    account_id: str,
+    full: bool = False,
+    *,
+    cred: Credentials | None = None,
+    session: Any | None = None,
+    login_result: FetchResult | None = None,
+) -> Iterator[tuple[bool, FetchResult | dict[str, Any]]]:
+    """TikTok HTTP 采集编排生成器。
+
+    三个 keyword 参数同时缺省时自动 setup_session（向后兼容旧调用）；
+    adapter 已在外部完成验证与回调时，注入复用以避免重复请求 account_info。
+    注入会话由调用方负责关闭；自建会话在 finally 中关闭。
+    """
+    owns_session = cred is None or session is None or login_result is None
+    if owns_session:
+        cred, session, login_result = setup_session(account_id)
+    try:
+        # 账号信息（个人资料）上报：自建会话时在此 yield；
+        # 注入模式下 adapter 已在验证阶段上报过，跳过避免重复上报
+        if owns_session:
+            yield _yield_fetch_result(login_result)
+
+        # 直播回放列表（webcast 账号级接口），按 has_more 翻页
+        try:
+            for replay_result in _collect_replay_info(session, cred, full):
+                yield _yield_fetch_result(replay_result)
+        except Exception as e:
+            logger.exception(f"[{account_id}] replay_info 采集失败")
+            yield False, {
+                "url": "",
+                "request_body": None,
+                "response_body": "",
+                "data": {"error": str(e), "endpoint": "replay_info"},
+            }
 
         list_result = fetch_live_list(session, cred, full)
         yield _yield_fetch_result(list_result)
@@ -490,4 +737,6 @@ def collect_tiktok(account_id: str, full: bool = False) -> Iterator[tuple[bool, 
                     "data": {"error": str(e), "date": target.isoformat()},
                 }
     finally:
-        session.close()
+        # 自建会话由本函数关闭；注入会话交回 adapter 在 finally 中关闭
+        if owns_session:
+            session.close()

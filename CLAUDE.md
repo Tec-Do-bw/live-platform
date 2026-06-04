@@ -51,9 +51,10 @@ Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower
 | `live-room-api-contract.md` | 修改 `services/live-monitor/utils/*Tool.py` | 维护爬虫工具返回值契约 |
 | `collection-mode-rules.md` | 编辑 live-crawler 采集调度入口 | 全量/增量/登出恢复模式判断优先级 |
 | `logout-recovery-flow.md` | 编辑 live-crawler base/scheduler/login 相关代码 | 即时恢复(2 轮)与 Fallback(3 轮)路径 |
-| `login-callback-spec.md` | 编辑 adspower-server 或 live-crawler 登录回调代码 | login_status 三态、reason 字段、回调优先级与去重 |
+| `login-callback-spec.md` | 编辑 adspower-server 或 live-crawler 登录回调代码(含 tiktok HTTP adapter/refresher) | 浏览器侧三态 vs HTTP 侧二态、reason 字段、回调优先级与去重 |
 | `shopee-special-rules.md` | 编辑 live-crawler shopee 相关代码 | page_urls 模板、时区 T-1、域名映射、JS 注入采集 |
-| `tiktok-collection-time.md` | 编辑 live-crawler tiktok/browserapi | 增量 T-3、全量 T-28、禁用 SETTLEMENT_HOUR |
+| `tiktok-collection-time.md` | 编辑 live-crawler tiktok(http collector/browser)/browserapi | 增量 T-3、全量 T-28、禁用 SETTLEMENT_HOUR |
+| `tiktok-http-lifecycle.md` | 编辑 tiktok HTTP 三链路(adapter/collector/refresher/refresh_routes/login_monitor) | 登录态一律走 HTTP account_info、回调三铁律、三链路衔接契约 |
 
 其他工作流约定:
 

@@ -80,7 +80,7 @@ class BaseConfig(BaseSettings):
         "tiktok": {
             # 采集器类型：'browser' | 'http'
             # 优先级低于账号粒度的 credentials.crawler_mode，仅在账号未指定时生效
-            "crawler_type": "browser",
+            "crawler_type": "http",
             # 是否启用实时获取user_ids（从AdsPower分组中获取）
             "use_dynamic_users": False,
 
@@ -93,10 +93,8 @@ class BaseConfig(BaseSettings):
             "group_names": ['新加坡团队-tiktok'],
 
             # 需要采集的账号（当use_dynamic_users=False时使用）
-            "user_ids": ['k19ly6f4', 'k1cvlr5b', 'k1cqlv5t'],
-            # 美国：k19ly6f4
-            # 墨西哥：k1cvlr5b
-            # 越南： k1cqlv5t
+            "user_ids": [ 'k1a6whig', 'k19h3sst', 'k16oa8ox'],
+            #   'k1cdtjwe','k172cdy8','k1b48i29','k19ly6f4','k1cvlr5b','k1bwoe9e'
 
             # TikTok平台需要访问的页面URL
             "page_urls": [

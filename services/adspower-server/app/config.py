@@ -88,6 +88,8 @@ class Settings:
     LOGIN_TIMEOUT_SECONDS: int = int(os.getenv("LOGIN_TIMEOUT_SECONDS", "900"))
     MONITOR_API_URL: str = os.getenv("MONITOR_API_URL", "http://localhost:8777")
     COOKIE_API_TOKEN: str = os.getenv("COOKIE_API_TOKEN", "sk-5eajkJEpzRQL4pvMpqxxoffm3hgFi7FCNDs2OXfWIJuOipvx")
+    # TikTok 登录成功后触发 live-crawler 刷新凭据的开关(默认开启)
+    TIKTOK_REFRESH_ON_LOGIN: bool = os.getenv("TIKTOK_REFRESH_ON_LOGIN", "true").lower() == "true"
     LOGIN_CALLBACK_URL: str = os.getenv(
         "LOGIN_CALLBACK_URL",
         # "https://test01-patrick-star.tec-develop.cn/live/v1.0/live/room/account/login/callback"

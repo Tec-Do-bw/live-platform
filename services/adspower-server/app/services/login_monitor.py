@@ -135,6 +135,8 @@ class LoginMonitorService:
             # 立即设置状态，防止竞态条件导致 closed 回调
             session.login_status = "success"
             await self._handle_result(session, status="success", reason="", shop_id=session.validate_id)
+            # 复登成功后通知 live-crawler 刷新 HTTP 采集凭据(等投屏浏览器关闭后再开,避免 profile 冲突)
+            self._schedule_tiktok_credential_refresh(session)
         else:
             # 店铺不匹配，返回实际登录的 shop_id
             # 立即设置状态，防止竞态条件导致 closed 回调
@@ -608,6 +610,78 @@ class LoginMonitorService:
             logger.info("已触发兜底页面: {}", trigger_url)
         except Exception as e:
             logger.warning("触发兜底页面失败: {}", e)
+
+    def _schedule_tiktok_credential_refresh(self, session: Session) -> None:
+        """调度 TikTok 复登后凭据刷新(异步,不阻塞登录回调)。
+
+        投屏浏览器登录成功后 LOGIN_SUCCESS_CLOSE_DELAY_SECONDS 秒会被关闭,
+        刷新必须等其关闭后再开新浏览器,否则同一 AdsPower profile 冲突。
+        """
+        if not settings.TIKTOK_REFRESH_ON_LOGIN:
+            return
+        if not session.profile_id:
+            logger.warning("TikTok 复登刷新跳过：缺少 profile_id, session={}", session.session_id)
+            return
+        asyncio.create_task(self._refresh_tiktok_credential(session))
+
+    async def _refresh_tiktok_credential(self, session: Session) -> None:
+        """等投屏浏览器确实关闭后,通知 live-crawler 刷新 TikTok 采集凭据。
+
+        投屏浏览器和养号刷新用同一个 AdsPower profile,不能同时打开。
+        轮询浏览器活跃状态(每 10s 一次,最长 15 分钟),确认 Inactive 才触发刷新;
+        超时未关闭则放弃本次刷新(由每日 cron 兜底),避免 profile 冲突。
+        """
+        account_id = session.profile_id
+
+        # 先给关浏览器流程一点起步时间,再开始轮询
+        await asyncio.sleep(settings.LOGIN_SUCCESS_CLOSE_DELAY_SECONDS + 2)
+
+        poll_interval = 10        # 每 10s 查一次状态
+        max_wait_seconds = 15 * 60  # 最长等 15 分钟
+        waited = 0
+        while waited < max_wait_seconds:
+            is_active = await self._adspower_service.check_browser_active(account_id)
+            if not is_active:
+                logger.info("投屏浏览器已关闭,触发 TikTok 凭据刷新: account_id={}", account_id)
+                break
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+        else:
+            # 超时仍未关闭:主动强制关闭浏览器,再继续刷新(避免 profile 冲突)
+            logger.warning(
+                "等待投屏浏览器关闭超时({}s),主动调用 stop_browser 强制关闭: account_id={}",
+                max_wait_seconds, account_id,
+            )
+            await self._adspower_service.stop_browser(account_id)
+            # 给关闭生效留时间,再确认一次
+            await asyncio.sleep(5)
+            if await self._adspower_service.check_browser_active(account_id):
+                logger.warning(
+                    "强制关闭后浏览器仍活跃,放弃本次 TikTok 复登刷新(由每日 cron 兜底): account_id={}",
+                    account_id,
+                )
+                return
+            logger.info("强制关闭成功,触发 TikTok 凭据刷新: account_id={}", account_id)
+
+        url = f"{settings.MONITOR_API_URL}/api/refresh_tiktok_credential"
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Token": settings.COOKIE_API_TOKEN,
+        }
+        # 不传 group_name/proxy: 由 refresher 从 AdsPower profile 查权威值,避免格式不一致
+        payload = {"account_id": account_id}
+
+        try:
+            # 刷新会开浏览器拦截,耗时较长,给足超时
+            async with httpx.AsyncClient(timeout=60*3) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code == 200:
+                    logger.info("TikTok 复登凭据刷新已触发: account_id={}, resp={}", account_id, resp.json())
+                else:
+                    logger.warning("TikTok 复登凭据刷新返回异常状态: status={}, account_id={}",
+                                   resp.status_code, account_id)
+        except Exception as exc:
+            logger.warning("TikTok 复登凭据刷新调用失败: account_id={}, err={}", account_id, exc)
 
     async def callback_close(self, session: Session, reason: str = "closed") -> None:
         """关闭时回调通知后端

@@ -9,7 +9,8 @@ paths:
   - "services/adspower-server/app/config.py"
   - "services/live-crawler/services/login_callback.py"
   - "services/live-crawler/scripts/login_callback.py"
-  - "services/live-crawler/crawlers/browser/base.py"
+  - "services/live-crawler/crawlers/**/*"
+  - "services/live-crawler/cookie_keeper/tiktok_refresher.py"
   - "services/live-crawler/cookie_keeper/keeper.py"
   - "services/live-crawler/tests/services/test_login_callback.py"
 ---
@@ -199,6 +200,21 @@ Lazada 登录需要两个端口协同完成：
 2. **sellercenter 端口（50326）**：接收账密后自动填充并提交登录表单，登录成功后保存 Cookie
 
 核心实现在 `adspower-server/app/services/login_monitor.py` 的 `_run_lazada` 方法中。
+
+### 5.4 TikTok HTTP 链路（二态，与上文浏览器侧不同）
+
+上文 §1~§5.3 描述的是 **adspower-server（浏览器侧）** 的回调，`login_status` 为三态 `success`/`error`/`closed`。
+
+TikTok HTTP 化后，**养号刷新**（`cookie_keeper/tiktok_refresher.py`）和 **HTTP 采集**（`crawlers/http/tiktok/adapter.py`）走的是 **live-crawler 侧** 的 `services/login_callback.py:send_login_callback`，语义不同：
+
+| 维度 | adspower-server（浏览器侧） | live-crawler（HTTP 侧） |
+|------|---------------------------|------------------------|
+| 状态值 | `success` / `error` / `closed` | **`success` / `logout`**（二态） |
+| 函数签名 | `_callback_backend(session, status, reason, shop_id)` | `send_login_callback(browser_id, platform, group_name, login_status, reason)` |
+| 返回值 | 无 | `{callback_sent: bool, login_recovery: bool}` |
+| 判活依据 | cookie multi_sids + JS fetch account_info | curl_cffi 直连 account_info（同一端点） |
+
+**HTTP 侧发回调三铁律**（在线→success / 明确登出→logout 不写脏凭据 / 状态未知→不发回调）与即时恢复 `login_recovery` 标记，统一见 [[tiktok-http-lifecycle]]，登出恢复路径见 [[logout-recovery-flow]]。
 
 ## 6. 回调优先级与去重
 

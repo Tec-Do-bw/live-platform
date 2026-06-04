@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from fastapi import FastAPI
 
 from monitor.api.cookie_routes import router as cookie_router
+from monitor.api.tiktok_refresh_routes import router as tiktok_refresh_router
 from monitor import get_db_connection, init_db
 
 
@@ -15,6 +16,7 @@ app = FastAPI(title="Cookie API", version="1.0")
 
 init_db(get_db_connection())
 app.include_router(cookie_router)
+app.include_router(tiktok_refresh_router)
 
 
 if __name__ == "__main__":
