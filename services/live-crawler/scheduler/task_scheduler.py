@@ -101,23 +101,28 @@ class TaskScheduler:
             hour = str(time_config.get('hour', '4'))
             minute = str(time_config.get('minute', '0'))
             tz_group = time_config.get('timezone_group')
+            platform_filter = time_config.get('platform_filter')
 
             # 创建cron触发器
             trigger = CronTrigger(hour=hour, minute=minute)
 
-            # 添加任务（job_id 包含时区分组，避免同时刻不同分组冲突）
+            # 添加任务（job_id 包含时区分组和平台，避免同时刻不同分组/平台冲突）
             tz_label = tz_group or 'ALL'
-            task_id = f'live_crawl_task_{idx}_{tz_label}'
+            platform_label = platform_filter or 'ALL'
+            task_id = f'live_crawl_task_{idx}_{tz_label}_{platform_label}'
             self.scheduler.add_job(
                 func=self.execute_crawl_task,
                 trigger=trigger,
                 id=task_id,
-                name=f'直播数据采集任务 {idx} [{tz_label}]',
+                name=f'直播数据采集任务 {idx} [{tz_label}/{platform_label}]',
                 replace_existing=True,
-                kwargs={'timezone_group': tz_group},
+                kwargs={'timezone_group': tz_group, 'platform_filter': platform_filter},
             )
 
-            logger.info(f'定时任务 {idx} 已添加：每天 {hour}:{minute} 执行 [时区分组: {tz_label}]')
+            logger.info(
+                f'定时任务 {idx} 已添加：每天 {hour}:{minute} 执行 '
+                f'[时区分组: {tz_label}, 平台: {platform_label}]'
+            )
 
         # 为 Lazada 平台添加实时采集任务（历史采集遵循通用时区分组调度）
         platform_configs = Settings.PLATFORM_CONFIG

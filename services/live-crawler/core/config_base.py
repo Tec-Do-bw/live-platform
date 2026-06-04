@@ -246,6 +246,14 @@ class BaseConfig(BaseSettings):
             # UTC-8 美国（本地 00:00 / 16:00）
             {"hour": "16", "minute": "10", "timezone_group": "UTC-8"},
             {"hour": "8",  "minute": "0", "timezone_group": "UTC-8"},
+
+            # TikTok 关键指标中午补采：账号当地约 13:00，仅跑 TikTok，避免 Shopee/Lazada 额外负载
+            {"hour": "12", "minute": "0",  "timezone_group": "UTC+9", "platform_filter": "tiktok"},
+            {"hour": "13", "minute": "0",  "timezone_group": "UTC+8", "platform_filter": "tiktok"},
+            {"hour": "14", "minute": "0",  "timezone_group": "UTC+7", "platform_filter": "tiktok"},
+            {"hour": "0",  "minute": "0",  "timezone_group": "UTC-3", "platform_filter": "tiktok"},
+            {"hour": "3",  "minute": "10", "timezone_group": "UTC-6", "platform_filter": "tiktok"},
+            {"hour": "5",  "minute": "0",  "timezone_group": "UTC-8", "platform_filter": "tiktok"},
         ],
         # 任务超时时间（小时）
         "task_timeout": 2,
@@ -253,6 +261,14 @@ class BaseConfig(BaseSettings):
         "max_retries": 3,
         # 重试延迟（秒）
         "retry_delay": 300,
+    }
+
+    # TikTok HTTP 采集配置
+    TIKTOK_HTTP_CONFIG: Dict[str, Any] = {
+        # 全量采集默认时间窗（天），可通过 TIKTOK_HTTP_FULL_WINDOW_DAYS 覆盖
+        "full_window_days": int(os.getenv("TIKTOK_HTTP_FULL_WINDOW_DAYS", "60")),
+        # 固定全量起始日期（YYYY-MM-DD），配置后优先于 full_window_days
+        "full_start_date": os.getenv("TIKTOK_HTTP_FULL_START_DATE", "").strip(),
     }
 
     # 告警配置
@@ -273,11 +289,13 @@ class BaseConfig(BaseSettings):
     # 取值优先级：环境变量 > 此处默认值，未配置 api_key 时日报自动降级为纯文本
     OPENAI_CONFIG: Dict[str, Any] = {
         # 模型名称（可通过环境变量 OPENAI_MODEL 覆盖）
-        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "model": os.getenv("OPENAI_MODEL", "deepseek-v4-flash"),
+        # OpenAI 兼容 API 地址（可通过环境变量 OPENAI_BASE_URL 覆盖）
+        "base_url": os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com"),
         # 请求超时时间（秒，可通过环境变量 OPENAI_TIMEOUT_SECONDS 覆盖）
         "timeout_seconds": int(os.getenv("OPENAI_TIMEOUT_SECONDS", "30")),
         # API 密钥（可通过环境变量 OPENAI_API_KEY 覆盖；为空则日报降级为纯文本）
-        "api_key": os.getenv("OPENAI_API_KEY", ""),
+        "api_key": os.getenv("OPENAI_API_KEY", "sk-b3f4fd65a6584a2fb0cc00fd223fb0c5"),
     }
 
     # AdsPower指纹浏览器配置
@@ -395,7 +413,7 @@ class ProConfig(BaseConfig):
         "tiktok": {
             # 采集器类型：'browser' | 'http'
             # 优先级低于账号粒度的 credentials.crawler_mode，仅在账号未指定时生效
-            "crawler_type": "browser",
+            "crawler_type": "http",
             # 是否启用实时获取user_ids（从AdsPower分组中获取）
             "use_dynamic_users": True,
 

@@ -35,6 +35,8 @@ REPLAY_FIXED_PARAMS = {
 REPLAY_COUNT_INCREMENTAL = 6   # 增量：仅取最新一页
 REPLAY_COUNT_FULL = 30         # 全量：单页拉满以减少翻页请求数
 REPLAY_MAX_PAGES = 50          # has_more 异常时的翻页安全上限，防止死循环
+LIVE_LIST_PAGE_SIZE = 500      # live/list 单页大小，页面原生请求同口径
+LIVE_LIST_MAX_PAGES = 10       # live/list 全量翻页安全上限，防止异常时死循环
 
 LIVE_LIST_STATS_TYPES = [
     10, 15, 11, 12, 13, 14, 80, 88, 95, 90, 72, 96, 70, 86,
@@ -224,11 +226,63 @@ def _build_webcast_headers(cred: Credentials) -> dict[str, str]:
     return build_headers(origin=LIVECENTER_URL, referer=REPLAY_REFERER_URL, cred=cred, extra=extra)
 
 
+def _tiktok_http_config() -> dict[str, Any]:
+    """读取 TikTok HTTP 采集配置。"""
+    return getattr(Settings, "TIKTOK_HTTP_CONFIG", {}) or {}
+
+
+def _full_window_days() -> int:
+    """读取全量默认时间窗天数。"""
+    raw_value = _tiktok_http_config().get("full_window_days", 60)
+    try:
+        days = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("TIKTOK_HTTP_FULL_WINDOW_DAYS 必须是正整数") from exc
+    if days <= 0:
+        raise ValueError("TIKTOK_HTTP_FULL_WINDOW_DAYS 必须是正整数")
+    return days
+
+
+def _full_window_bounds(region: str) -> tuple[int, int]:
+    """计算全量时间窗起止 UTC 时间戳（基于账号当地时区）。
+
+    默认起点 = 账号当地 today-N 00:00:00（N 默认 60）；
+    配置 TIKTOK_HTTP_FULL_START_DATE 后，起点 = 指定日期当地 00:00:00；
+    终点 = 账号当地 today 00:00:00（不含今天）。
+    """
+    offset = _region_profile(region)["timezone_offset"]
+    tz_obj = timezone(timedelta(seconds=offset))
+    now = datetime.now(tz_obj)
+    end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_date_text = str(_tiktok_http_config().get("full_start_date", "")).strip()
+    if start_date_text:
+        try:
+            start_date = date.fromisoformat(start_date_text)
+        except ValueError as exc:
+            raise ValueError("TIKTOK_HTTP_FULL_START_DATE 必须使用 YYYY-MM-DD 格式") from exc
+        start = datetime(start_date.year, start_date.month, start_date.day, tzinfo=tz_obj)
+    else:
+        start = end - timedelta(days=_full_window_days())
+
+    if start >= end:
+        raise ValueError("TIKTOK_HTTP_FULL_START_DATE 必须早于账号当地今天")
+    return int(start.timestamp()), int(end.timestamp())
+
+
 def _time_window(region: str, full: bool) -> dict[str, int | str]:
     """计算 TikTok live/list 时间窗。"""
     offset = _region_profile(region)["timezone_offset"]
     tz_obj = timezone(timedelta(seconds=offset))
     now = datetime.now(tz_obj)
+    if full:
+        start_ts, end_ts = _full_window_bounds(region)
+        return {
+            "period": 2,
+            "granularity": 1,
+            "start_timestamp": str(start_ts),
+            "end_timestamp": str(end_ts),
+            "timezone_offset": offset,
+        }
     return {
         "period": 33,
         "granularity": 32,
@@ -387,24 +441,29 @@ def fetch_replay_info(session: Any, cred: Credentials, count: int, offset: int) 
 
 
 @sync_retry(retries=2, delay=1.0)
-def fetch_live_list(session: Any, cred: Credentials, full: bool = False) -> FetchResult:
+def fetch_live_list(session: Any, cred: Credentials, full: bool = False, page: int = 0) -> FetchResult:
     """获取直播间列表，直接请求扩展 stats_types。"""
     ext = _parse_ext(cred)
     url = _build_url("/api/v2/insights/creator/live/list", ext["query_string"])
     tw = _time_window(cred.region, full)
+    time_selector = {
+        "period": tw["period"],
+        "granularity": tw["granularity"],
+        "timezone_offset": tw["timezone_offset"],
+    }
+    if full:
+        time_selector["start_timestamp"] = tw["start_timestamp"]
+        time_selector["end_timestamp"] = tw["end_timestamp"]
+    else:
+        time_selector["base_timestamp"] = tw["base_timestamp"]
     payload = {
         "request": {
             "params": [
                 {
-                    "time_selector": {
-                        "period": tw["period"],
-                        "granularity": tw["granularity"],
-                        "base_timestamp": tw["base_timestamp"],
-                        "timezone_offset": tw["timezone_offset"],
-                    },
+                    "time_selector": time_selector,
                     "list_control": {
                         "rules": [{"direction": 2, "field": "LIVE_LIST_LIVE_START_TIMESTAMP"}],
-                        "pagination": {"size": 500, "page": 0},
+                        "pagination": {"size": LIVE_LIST_PAGE_SIZE, "page": page},
                     },
                     "stats_types": LIVE_LIST_STATS_TYPES,
                 }
@@ -416,7 +475,10 @@ def fetch_live_list(session: Any, cred: Credentials, full: bool = False) -> Fetc
     resp.raise_for_status()
     data = _response_json(resp)
     ok = _check_code(data, "live_list", cred.account_id)
-    logger.info(f"[{cred.account_id}/{_api_label('live_list')}] HTTP {resp.status_code} ok={ok} len={len(resp.text)}")
+    logger.info(
+        f"[{cred.account_id}/{_api_label('live_list')}] page={page} "
+        f"HTTP {resp.status_code} ok={ok} len={len(resp.text)}"
+    )
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
@@ -621,6 +683,19 @@ def _collect_replay_info(
         offset += count
 
 
+def _full_stats_days_range(region: str) -> range:
+    """计算 live/stats 全量日聚合倒序天数范围。"""
+    latest = _local_yesterday(region)
+    start_ts, _ = _full_window_bounds(region)
+    offset = _region_profile(region)["timezone_offset"]
+    tz_obj = timezone(timedelta(seconds=offset))
+    start_date = datetime.fromtimestamp(start_ts, tz_obj).date()
+    days_count = (latest - start_date).days + 1
+    if days_count <= 0:
+        raise ValueError("TikTok HTTP 全量 live/stats 时间窗为空")
+    return range(0, days_count)
+
+
 def setup_session(account_id: str) -> tuple[Credentials, Any, FetchResult]:
     """加载凭据、建立会话并验证登录态。
 
@@ -693,12 +768,27 @@ def collect_tiktok(
                 "data": {"error": str(e), "endpoint": "replay_info"},
             }
 
-        list_result = fetch_live_list(session, cred, full)
-        yield _yield_fetch_result(list_result)
+        list_rooms: list[RoomMeta] = []
+        creator_id = ""
+        max_pages = LIVE_LIST_MAX_PAGES if full else 1
+        for page in range(max_pages):
+            list_result = fetch_live_list(session, cred, full, page=page)
+            yield _yield_fetch_result(list_result)
 
-        rooms, creator_id = parse_rooms(list_result["data"])
+            page_rooms, page_creator_id = parse_rooms(list_result["data"])
+            list_rooms.extend(page_rooms)
+            if page_creator_id and not creator_id:
+                creator_id = page_creator_id
+            if not list_result["ok"] or len(page_rooms) < LIVE_LIST_PAGE_SIZE:
+                break
+        else:
+            logger.warning(
+                f"[{account_id}/{_api_label('live_list')}] 已达到翻页上限 "
+                f"max_pages={LIVE_LIST_MAX_PAGES}，请核对是否存在截断"
+            )
+
         _update_creator_id(cred, creator_id)
-        rooms = filter_rooms_by_window(rooms, cred.region, full)
+        rooms = filter_rooms_by_window(list_rooms, cred.region, full)
         logger.info(f"[{account_id}] TikTok HTTP 找到 {len(rooms)} 个直播间 full={full}")
 
         for index, room in enumerate(rooms):
@@ -719,11 +809,11 @@ def collect_tiktok(
             if index < len(rooms) - 1:
                 time.sleep(random.uniform(0.5, 1.5))
 
-        # live/stats 日聚合：增量取 T-1/T-2/T-3，全量取 T-1 ~ T-28
+        # live/stats 日聚合：增量取 T-1/T-2/T-3，全量跟随 TikTok HTTP 配置时间窗
         # 时区锚点统一用账号当地 today-1，与浏览器版 browserapi._generate_daily_payloads 对齐
         # 详见 .claude/rules/tiktok-collection-time.md
         latest = _local_yesterday(cred.region)
-        days_range = range(0, 28) if full else range(0, 3)
+        days_range = _full_stats_days_range(cred.region) if full else range(0, 3)
         for days_back in days_range:
             target = latest - timedelta(days=days_back)
             try:

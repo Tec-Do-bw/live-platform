@@ -34,7 +34,11 @@ def _openai_config() -> dict:
 
 
 def _resolve_model() -> str:
-    return os.getenv("OPENAI_MODEL") or _openai_config().get("model") or "gpt-4o-mini"
+    return os.getenv("OPENAI_MODEL") or _openai_config().get("model") or "deepseek-v4-flash"
+
+
+def _resolve_base_url() -> str | None:
+    return os.getenv("OPENAI_BASE_URL") or _openai_config().get("base_url") or None
 
 
 def _resolve_timeout() -> int:
@@ -71,7 +75,7 @@ def generate_report(
         "problem_accounts": problem_accounts,
     }
 
-    client = OpenAI(api_key=api_key, timeout=_resolve_timeout())
+    client = OpenAI(api_key=api_key, base_url=_resolve_base_url(), timeout=_resolve_timeout())
     model = _resolve_model()
     last_err: Exception | None = None
     for attempt in range(1, DEFAULT_MAX_RETRIES + 1):
