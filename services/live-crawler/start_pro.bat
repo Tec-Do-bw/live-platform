@@ -3,7 +3,14 @@ setlocal
 cd /d "%~dp0"
 set APP_ENV=pro
 set LOG_LEVEL=INFO
-echo [live_dp] APP_ENV=%APP_ENV%, LOG_LEVEL=%LOG_LEVEL%
-python main.py --mode scheduler
+echo [live-crawler] APP_ENV=%APP_ENV%, LOG_LEVEL=%LOG_LEVEL%
+
+start "live-crawler scheduler" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python main.py --mode scheduler"
+start "live-crawler cookie-api" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m monitor.server"
+start "live-crawler lazada-cookie-keeper" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m cookie_keeper"
+start "live-crawler daily-report" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m scripts.daily_report"
+start "live-crawler refresh-tiktok-credentials" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m jobs.refresh_tiktok_credentials"
+
+echo 已启动 live-crawler 生产窗口。
 pause
 endlocal

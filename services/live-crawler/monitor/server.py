@@ -7,6 +7,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI
 
+from utils.logger import Logings
+
+Logings.configure("cookie_api")
+
 from monitor.api.cookie_routes import router as cookie_router
 from monitor.api.tiktok_refresh_routes import router as tiktok_refresh_router
 from monitor import get_db_connection, init_db

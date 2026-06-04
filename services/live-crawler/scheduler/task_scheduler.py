@@ -14,7 +14,7 @@ from core.config import Settings
 from core.collection_tracker import CollectionTracker
 from core.collection_mode import resolve_collection_mode
 from crawlers.browser.live_crawler import LiveCrawler
-from utils.logger import logger
+from utils.logger import Logings, logger
 from utils.alert import AlertManager
 from webdriver.browserapi import BrowserApi
 from monitor import get_monitor
@@ -429,6 +429,7 @@ class TaskScheduler:
 
 if __name__ == '__main__':
     # 测试代码
+    Logings.configure('scheduler')
     scheduler = TaskScheduler()
     
     # 手动执行一次

@@ -77,3 +77,34 @@ def test_missing_file(tmp_path: Path) -> None:
 def test_parse_by_date(log_file: Path) -> None:
     result = log_parser.parse_by_date(log_file.parent, date(2026, 5, 6))
     assert result["stats"]["total_rounds"] == 1
+
+
+def test_parse_by_date_merges_service_logs_and_ignores_realtime(tmp_path: Path) -> None:
+    services_dir = tmp_path / "services"
+    scheduler_dir = services_dir / "scheduler"
+    manual_dir = services_dir / "manual_once"
+    realtime_dir = tmp_path / "realtime" / "lazada"
+    scheduler_dir.mkdir(parents=True)
+    manual_dir.mkdir(parents=True)
+    realtime_dir.mkdir(parents=True)
+
+    scheduler_log = scheduler_dir / "2026-05-06.logs"
+    manual_log = manual_dir / "2026-05-06.logs"
+    realtime_log = realtime_dir / "2026-05-06.logs"
+
+    scheduler_log.write_text(SAMPLE_LOG, encoding="utf-8")
+    manual_log.write_text(SAMPLE_LOG.replace("00:01", "01:01"), encoding="utf-8")
+    realtime_log.write_text(SAMPLE_LOG.replace("00:01", "02:01"), encoding="utf-8")
+
+    result = log_parser.parse_by_date(tmp_path, date(2026, 5, 6))
+
+    assert result["stats"]["total_rounds"] == 2
+    assert result["stats"]["total_success"] == 2
+    assert result["stats"]["total_fail"] == 2
+    assert result["stats"]["total_accounts"] == 4
+
+
+def test_parse_by_date_falls_back_to_legacy_root_log(log_file: Path) -> None:
+    result = log_parser.parse_by_date(log_file.parent, date(2026, 5, 6))
+    assert result["log_path"] == str(log_file)
+    assert result["stats"]["total_rounds"] == 1

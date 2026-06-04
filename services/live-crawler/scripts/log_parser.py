@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """日志解析器 — 把 loguru 纯文本日志压缩为结构化 JSON 摘要。
 
-输入: services/live-crawler/logs/YYYY-MM-DD.logs(每天约 5 万行)
+输入: services/live-crawler/logs/services/{scheduler,manual_once,manual_full}/YYYY-MM-DD.logs
 输出: 结构化 dict,包含每轮汇总、单账号结果、错误聚合
 """
 
@@ -52,6 +52,8 @@ LOGOUT_PATTERNS = (
     "cookie 失效",
     "Cookie 过期",
 )
+
+COLLECTION_SERVICE_LOGS = ("scheduler", "manual_once", "manual_full")
 
 
 def parse_log_file(log_path: Path) -> dict:
@@ -178,6 +180,48 @@ def parse_log_file(log_path: Path) -> dict:
     return result
 
 
+def merge_log_results(results: list[dict], target_date: date) -> dict:
+    """合并多个入口日志解析结果。"""
+    merged: dict = {
+        "date": target_date.isoformat(),
+        "log_path": ",".join(r["log_path"] for r in results),
+        "log_paths": [r["log_path"] for r in results],
+        "rounds": [],
+        "account_results": [],
+        "errors": [],
+        "error_summary": {},
+        "stats": {
+            "total_rounds": 0,
+            "total_accounts": 0,
+            "total_success": 0,
+            "total_fail": 0,
+            "total_errors": 0,
+        },
+    }
+
+    error_counter: Counter[str] = Counter()
+    for result in results:
+        merged["rounds"].extend(result["rounds"])
+        merged["account_results"].extend(result["account_results"])
+        merged["errors"].extend(result["errors"])
+        error_counter.update(result["error_summary"])
+        for key in merged["stats"]:
+            merged["stats"][key] += result["stats"].get(key, 0)
+
+    merged["errors"] = merged["errors"][:200]
+    merged["error_summary"] = dict(error_counter.most_common(20))
+    return merged
+
+
+def _service_log_paths(logs_dir: Path, target_date: date) -> list[Path]:
+    """返回日报需要解析的普通采集入口日志路径。"""
+    log_name = f"{target_date.isoformat()}.logs"
+    return [
+        logs_dir / "services" / service_name / log_name
+        for service_name in COLLECTION_SERVICE_LOGS
+    ]
+
+
 def _platform_from_group(group_name: str) -> str | None:
     """从分组名(例 '泰国团队-lazada')提取平台。"""
     for p in ("lazada", "tiktok", "shopee"):
@@ -212,5 +256,16 @@ def _shorten_error(msg: str) -> str:
 
 def parse_by_date(logs_dir: Path, target_date: date) -> dict:
     """按日期解析(便于主入口直接传 date 对象)。"""
-    log_path = logs_dir / f"{target_date.isoformat()}.logs"
-    return parse_log_file(log_path)
+    existing_service_logs = [
+        log_path for log_path in _service_log_paths(logs_dir, target_date)
+        if log_path.exists()
+    ]
+    if existing_service_logs:
+        return merge_log_results(
+            [parse_log_file(log_path) for log_path in existing_service_logs],
+            target_date,
+        )
+
+    # 兼容旧版根目录日期日志，便于历史日期补跑日报。
+    legacy_log_path = logs_dir / f"{target_date.isoformat()}.logs"
+    return parse_log_file(legacy_log_path)

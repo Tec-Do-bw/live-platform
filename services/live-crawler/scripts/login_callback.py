@@ -32,7 +32,9 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
 from core.config import Settings
-from utils.logger import logger
+from utils.logger import Logings, logger
+
+Logings.configure("login_callback")
 
 
 def send_http_callback(collection_id: str, login_status: str, platform: str,

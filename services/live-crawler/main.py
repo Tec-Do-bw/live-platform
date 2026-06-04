@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root))
 
 from scheduler.task_scheduler import TaskScheduler
 from crawlers.browser.live_crawler import LiveCrawler
-from utils.logger import logger
+from utils.logger import Logings, logger
 from core.config import Settings
 from core.collection_tracker import CollectionTracker
 from core.collection_mode import resolve_collection_mode
@@ -40,6 +40,7 @@ def crawl_single_account(platform: str, account, full_collection: bool, batch_id
     else:
         user_id = account
         group_name = ''
+    Logings.configure('manual_full')
     try:
         crawler = LiveCrawler(platform=platform, browser_id=user_id,
                               full_collection=full_collection, group_name=group_name,
@@ -378,6 +379,13 @@ def main():
     )
 
     args = parser.parse_args()
+
+    service_name = {
+        'scheduler': 'scheduler',
+        'once': 'manual_once',
+        'full': 'manual_full',
+    }[args.mode]
+    Logings.configure(service_name)
     
     # 显示配置信息
     logger.info(f'Kafka状态: {"启用" if Settings.KAFKA_CONFIG["enabled"] else "禁用"}')

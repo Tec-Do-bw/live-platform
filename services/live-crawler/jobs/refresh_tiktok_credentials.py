@@ -15,8 +15,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from cookie_keeper.tiktok_refresher import TikTokRefresher
 from core.config import Settings
 from scripts.feishu_webhook import send_card
-from utils.logger import logger
+from utils.logger import Logings, logger
 from webdriver.browserapi import BrowserApi
+
+Logings.configure("refresh_tiktok_credentials")
 
 
 def _load_tiktok_accounts() -> list[dict[str, str]]:

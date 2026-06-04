@@ -26,7 +26,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.logger import logger  # noqa: E402
+from utils.logger import Logings, logger  # noqa: E402
+
+Logings.configure("daily_report")
 
 from scripts import feishu_webhook, log_parser, openai_client, status_tracker  # noqa: E402
 
