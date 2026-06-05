@@ -17,6 +17,7 @@ from urllib.parse import urlparse, parse_qs
 
 from utils.logger import logger
 from crawlers.browser.base import BaseLiveCrawler
+from crawlers.constants import DataSource
 
 import ddddocr
 
@@ -51,6 +52,10 @@ class TikTokLiveCrawler(BaseLiveCrawler):
     def get_platform_name(self) -> str:
         """返回TikTok平台标识"""
         return 'tiktok'
+
+    def get_data_source(self) -> str:
+        """返回数据源标识"""
+        return DataSource.TIKTOK
 
     # ==================== 导航方法 ====================
 

@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from crawlers.http.base import BaseHttpCrawler, ApiSequence
+from crawlers.constants import DataSource
 from core.config import Settings
 from downloader import Task, DownloadResult
 from services import cookie_manager
@@ -139,6 +140,10 @@ class LazadaHttpCrawler(BaseHttpCrawler):
     def get_platform_name(self) -> str:
         """返回平台标识。"""
         return 'lazada'
+
+    def get_data_source(self) -> str:
+        """返回数据源标识。"""
+        return DataSource.LAZADA
 
     def _parse_country_domain(self, group_name: str) -> str:
         """从 group_name 解析国家域名。
@@ -947,6 +952,7 @@ class LazadaHttpCrawler(BaseHttpCrawler):
             'sign': Settings.DATA_SERVER_CONFIG['api_sign'],
             'socketUserId': self.socket_user_id,
             'userType': 6.0,
+            'dataSource': DataSource.LAZADA,
             'updateTime': int(time.time() * 1000),
             'request': {
                 'response': response_text,

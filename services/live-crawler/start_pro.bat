@@ -9,7 +9,6 @@
   start "live-crawler cookie-api" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m monitor.server"
   start "live-crawler lazada-cookie-keeper" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m cookie_keeper"
   start "live-crawler daily-report" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m scripts.daily_report"
-  start "live-crawler refresh-tiktok-credentials" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m jobs.refresh_tiktok_credentials"
 
   echo.
   echo Started 5 live-crawler service windows

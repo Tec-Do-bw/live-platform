@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, TypedDict
 from urllib.parse import parse_qs, urlencode
 
+from crawlers.constants import DataSource
 from core.config import Settings
 from utils.credentials import Credentials, load_credentials
 from utils.headers import build_headers
@@ -391,6 +392,7 @@ def _format_message(
         "extra": extra,
         "sign": Settings.DATA_SERVER_CONFIG["api_sign"],
         "userType": 6.0,
+        "dataSource": DataSource.TIKTOK,
         "updateTime": int(time.time() * 1000),
         "request": {
             "response": response_str,
@@ -499,7 +501,7 @@ def fetch_live_stats(session: Any, cred: Credentials, target_date: date) -> Fetc
                 {
                     "time_selector": {
                         "period": 2,
-                        "granularity": 11,
+                        "granularity": 1,
                         "start_timestamp": str(start_ts),
                         "end_timestamp": str(end_ts),
                         "timezone_offset": "0",

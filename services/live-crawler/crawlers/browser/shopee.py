@@ -18,6 +18,7 @@ from urllib.parse import urlencode
 
 from utils.logger import logger
 from crawlers.browser.base import BaseLiveCrawler
+from crawlers.constants import DataSource
 from utils.request import RequestSession
 from core.config import Settings
 from monitor import get_monitor
@@ -100,6 +101,10 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
     def get_platform_name(self) -> str:
         """返回Shopee平台标识"""
         return 'shopee'
+
+    def get_data_source(self) -> str:
+        """返回数据源标识"""
+        return DataSource.SHOPEE
 
     def _get_country_yesterday(self) -> str:
         """获取对应国家时区的昨天日期（YYYY-MM-DD 格式）。"""
@@ -1370,6 +1375,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             "extra": extra_str,
             "sign": Settings.DATA_SERVER_CONFIG['api_sign'],
             "userType": 6.0,
+            "dataSource": DataSource.SHOPEE,
             "updateTime": int(time.time() * 1000),
             "request": {
                 "response": response_str,

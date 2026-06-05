@@ -102,6 +102,14 @@ class BaseHttpCrawler(ABC):
         """返回平台标识（如 'lazada'）"""
 
     @abstractmethod
+    def get_data_source(self) -> str:
+        """返回数据源标识（子类必须实现）
+
+        Returns:
+            str: 数据源标识（如 'live_crawler_lazada_http'）
+        """
+
+    @abstractmethod
     def build_api_sequence(self, cookies: dict, is_full: bool) -> list[ApiSequence]:
         """构造 API 序列列表（按执行顺序）。
 
@@ -207,6 +215,7 @@ class BaseHttpCrawler(ABC):
             "extra": extra,
             "sign": Settings.DATA_SERVER_CONFIG['api_sign'],
             "userType": 6.0,
+            "dataSource": self.get_data_source(),
             "updateTime": int(time.time() * 1000),
             "request": {"response": response_text, "url": url},
             "socketUserId": self.socket_user_id,
