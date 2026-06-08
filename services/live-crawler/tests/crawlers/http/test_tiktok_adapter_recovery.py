@@ -92,6 +92,57 @@ def test_normal_login_keeps_incremental(monkeypatch):
 
     assert result["login_recovery"] is False
     assert captured_full == [False]
+    assert result["success"] is True
+
+
+def test_skipped_business_error_keeps_account_success(monkeypatch):
+    """collector 内部跳过业务码失败时：adapter 不设置账号 error。"""
+    captured_full: list = []
+    callbacks: list = []
+    _patch(monkeypatch, recovery=False, captured_full=captured_full, callbacks=callbacks)
+
+    collector = TikTokHttpCollector(browser_id="acc-business-skip", full_collection=False)
+    result = collector.start_crawl()
+
+    assert result["success"] is True
+    assert result["error"] is None
+
+
+def test_plain_failed_payload_keeps_existing_account_failure(monkeypatch):
+    """普通 ok=False payload：adapter 保持现有账号失败语义。"""
+    fake_session = _FakeSession()
+
+    monkeypatch.setattr(
+        adapter_mod,
+        "setup_session",
+        lambda account_id: (_FakeCred(), fake_session, _LOGIN_RESULT),
+    )
+    monkeypatch.setattr(
+        adapter_mod,
+        "send_login_callback",
+        lambda **kwargs: {"callback_sent": True, "login_recovery": False},
+    )
+    monkeypatch.setattr(adapter_mod, "send_api_request", lambda *a, **k: True)
+
+    def fake_collect(account_id, full=False, **kwargs):
+        return iter(
+            [
+                (
+                    False,
+                    {
+                        "data": {"error": "业务码异常 code≠0"},
+                    },
+                )
+            ]
+        )
+
+    monkeypatch.setattr(adapter_mod, "collect_tiktok", fake_collect)
+
+    collector = TikTokHttpCollector(browser_id="acc-failed-payload", full_collection=False)
+    result = collector.start_crawl()
+
+    assert result["success"] is False
+    assert result["error"] == "业务码异常 code≠0"
 
 
 def test_login_required_sends_logout_callback(monkeypatch):

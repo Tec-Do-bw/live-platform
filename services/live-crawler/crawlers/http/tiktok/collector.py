@@ -14,7 +14,7 @@ from crawlers.constants import DataSource
 from core.config import Settings
 from utils.credentials import Credentials, load_credentials
 from utils.headers import build_headers
-from utils.http_session import get_session, sync_retry
+from utils.http_session import DEFAULT_RETRY_EXCEPTIONS, get_session, sync_retry
 from utils.logger import logger
 from utils.types import FatalError, FetchResult, LoginRequired
 
@@ -302,29 +302,48 @@ def _response_json(resp: Any) -> dict[str, Any]:
     return data if isinstance(data, dict) else {"data": data}
 
 
+class TikTokBusinessCodeError(Exception):
+    """TikTok 业务码异常，用于触发可重试业务失败。"""
+
+    def __init__(self, account_id: str, endpoint: str, code: Any, message: str):
+        self.account_id = account_id
+        self.endpoint = endpoint
+        self.code = code
+        self.message = message
+        super().__init__(f"[{account_id}/{endpoint}] 业务码异常 code={code} message={message}")
+
+
+TIKTOK_BUSINESS_RETRY_EXCEPTIONS = (*DEFAULT_RETRY_EXCEPTIONS, TikTokBusinessCodeError)
+
+
 def _check_code(data: dict[str, Any], endpoint: str, account_id: str) -> bool:
     """校验响应业务码，TikTok 全端点统一契约：code==0 表示成功。
 
     返回 True 表示业务成功；False 表示业务失败（HTTP 200 + code≠0），
     调用方应将其当作采集失败处理，避免脏数据上报下游。
     详见 docs/specs/防摸鱼T1数据接口说明文档.md
+
+    非 0 业务码会抛出 TikTokBusinessCodeError 触发重试机制。
     """
     code = data.get("code")
     if code == 0:
         return True
     msg = data.get("message", "")
     logger.warning(f"[{account_id}/{endpoint}] 业务码异常 code={code} message={msg}")
-    return False
+    raise TikTokBusinessCodeError(account_id, endpoint, code, msg)
 
 
 def _check_webcast_code(data: dict[str, Any], endpoint: str, account_id: str) -> bool:
-    """校验 webcast 接口业务码：webcast 用 status_code==0 表示成功（兼容 code）。"""
+    """校验 webcast 接口业务码：webcast 用 status_code==0 表示成功（兼容 code）。
+
+    非 0 业务码会抛出 TikTokBusinessCodeError 触发重试机制。
+    """
     code = data.get("status_code", data.get("code"))
     if code == 0:
         return True
     msg = data.get("message") or data.get("status_msg", "")
     logger.warning(f"[{account_id}/{endpoint}] webcast 业务码异常 status_code={code} message={msg}")
-    return False
+    raise TikTokBusinessCodeError(account_id, endpoint, code, msg)
 
 
 def _replay_has_more(data: dict[str, Any]) -> bool:
@@ -419,7 +438,7 @@ def fetch_account_info(session: Any, cred: Credentials) -> FetchResult:
     return _make_result(ok=ok, url=url, request_body=None, response_body=resp.text, data=data)
 
 
-@sync_retry(retries=2, delay=1.0)
+@sync_retry(retries=2, delay=1.0, retry_exceptions=TIKTOK_BUSINESS_RETRY_EXCEPTIONS)
 def fetch_replay_info(session: Any, cred: Credentials, count: int, offset: int) -> FetchResult:
     """获取直播录像回放列表分页（webcast 账号级接口）。
 
@@ -546,7 +565,7 @@ def fetch_trend_chart(
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
-@sync_retry(retries=2, delay=1.0)
+@sync_retry(retries=2, delay=1.0, retry_exceptions=TIKTOK_BUSINESS_RETRY_EXCEPTIONS)
 def fetch_core_stats(session: Any, cred: Credentials, room_id: str) -> FetchResult:
     """获取单房间核心统计。"""
     ext = _parse_ext(cred)
@@ -574,8 +593,8 @@ def fetch_core_stats(session: Any, cred: Credentials, room_id: str) -> FetchResu
             "room_filter": {
                 "room_id": room_id,
                 "is_content_type": 1,
-                "creator_id": ext["creator_id"],
-                "country": cred.region.upper(),
+                # "creator_id": ext["creator_id"],
+                # "country": cred.region.upper(),
             },
             "stats_types": CORE_STATS_TYPES,
         }
@@ -678,7 +697,11 @@ def _collect_replay_info(
     count = REPLAY_COUNT_FULL if full else REPLAY_COUNT_INCREMENTAL
     offset = 0
     for _ in range(REPLAY_MAX_PAGES):
-        result = fetch_replay_info(session, cred, count, offset)
+        try:
+            result = fetch_replay_info(session, cred, count, offset)
+        except TikTokBusinessCodeError as e:
+            logger.warning(f"[{cred.account_id}/replay_info] 业务码重试耗尽，跳过 replay 翻页: {e}")
+            return
         yield result
         # 业务码异常或增量模式：不翻页
         if not result["ok"] or not full:
@@ -801,7 +824,10 @@ def collect_tiktok(
             try:
                 yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_BASIC))
                 yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_FULL))
-                yield _yield_fetch_result(fetch_core_stats(session, cred, room_id))
+                try:
+                    yield _yield_fetch_result(fetch_core_stats(session, cred, room_id))
+                except TikTokBusinessCodeError as e:
+                    logger.warning(f"[{account_id}] room={room_id} core_stats 业务码重试耗尽，跳过该接口: {e}")
             except Exception as e:
                 logger.exception(f"[{account_id}] room={room_id} 采集失败")
                 yield False, {
