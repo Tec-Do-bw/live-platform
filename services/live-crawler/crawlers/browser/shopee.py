@@ -812,6 +812,145 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         logger.info(f'当前店铺 {self.media_shop_id} 与目标 {validate_id} 不符，尝试切换')
         return self._switch_to_shop(str(validate_id), original_url)
 
+    def _switch_to_shop_by_http(self, target_shop_id: str, region: str) -> bool:
+        """跨境店通过 HTTP API 切换店铺（非浏览器点击）
+
+        Steps:
+            ① POST switch_merchant_shop/  切换店铺
+            ② POST set_language/          设置语言（必需）
+            ③ GET  get_session/           校验 current_shop_id == target
+
+        Args:
+            target_shop_id: 目标店铺 ID
+            region: 店铺所在国家（大写，如 MY/TH/VN）
+
+        Returns:
+            True: 切换成功
+            False: 失败（HTTP 403 表示 Cookie 过期）
+        """
+        if not self.is_cross_border:
+            logger.error("HTTP 切换仅适用于跨境店")
+            return False
+
+        try:
+            # 读取 Cookie 用于 query params
+            cookies_list = self.tab.cookies(all_info=True)
+            cookie_dict = {c.get('name'): c.get('value') for c in cookies_list}
+            spc_cds = cookie_dict.get('SPC_CDS')
+            if not spc_cds:
+                logger.error("缺少 SPC_CDS Cookie，无法切换店铺")
+                return False
+
+            # 构造公共 query 参数
+            switch_url = (
+                f"https://seller.shopee.cn/api/cnsc/selleraccount/switch_merchant_shop/"
+                f"?cnsc_shop_id={self.media_shop_id}&cbsc_shop_region={region.upper()}"
+                f"&SPC_CDS={spc_cds}&SPC_CDS_VER=2"
+            )
+            lang_url = (
+                f"https://seller.shopee.cn/api/cnsc/selleraccount/set_language/"
+                f"?cnsc_shop_id={self.media_shop_id}&cbsc_shop_region={region.upper()}"
+                f"&SPC_CDS={spc_cds}&SPC_CDS_VER=2"
+            )
+
+            # ① 切换店铺
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': switch_url,
+                    'method': 'POST',
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({'shop_id': int(target_shop_id)}),
+                    'credentials': 'include',
+                }],
+                max_retries=0,
+            )
+
+            if not results or not results[0]:
+                logger.error("切换店铺接口超时")
+                return False
+
+            switch_result = results[0]
+            if 'error' in switch_result:
+                error_msg = switch_result['error']
+                if 'status_403' in error_msg:
+                    logger.warning("Cookie 已过期（HTTP 403），需重新登录")
+                    self.send_login_callback("logout", reason="cookie_expired")
+                    return False
+                logger.error(f"切换店铺接口失败: {error_msg}")
+                return False
+
+            # ② 设置语言（必需）
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': lang_url,
+                    'method': 'POST',
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({'language': 'zh-CN'}),
+                    'credentials': 'include',
+                }],
+                max_retries=0,
+            )
+
+            if not results or not results[0] or 'error' in results[0]:
+                logger.warning("设置语言失败，但不阻塞切换流程")
+
+            # ③ 校验：重新获取 get_session，检查 current_shop_id
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': 'https://seller.shopee.cn/api/cnsc/selleraccount/get_session/',
+                    'method': 'GET',
+                    'credentials': 'include',
+                }],
+                max_retries=1,
+            )
+
+            if not results or not results[0] or 'error' in results[0]:
+                logger.error("校验切换结果失败：get_session 接口异常")
+                return False
+
+            session_data = results[0].get('response', {})
+            new_current = (session_data.get('sub_account_info') or {}).get('current_shop_id')
+
+            if str(new_current) != str(target_shop_id):
+                logger.error(f"切换后店铺 ID 仍不匹配: {new_current} != {target_shop_id}")
+                return False
+
+            logger.info(f"跨境店 HTTP 切换成功: {target_shop_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"跨境店 HTTP 切换异常: {e}")
+            return False
+
+    def _get_shop_region_from_list(self, shop_id: str) -> str | None:
+        """从跨境店多店列表中查询指定店铺的 region"""
+        try:
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': 'https://seller.shopee.cn/api/cnsc/selleraccount/get_merchant_shop_list/',
+                    'method': 'GET',
+                    'credentials': 'include',
+                }],
+                max_retries=1,
+            )
+
+            if not results or not results[0] or 'error' in results[0]:
+                return None
+
+            list_data = results[0].get('response', {})
+            shops = list_data.get('data', {}).get('shops', [])
+            for shop in shops:
+                if str(shop.get('shop_id')) == str(shop_id):
+                    return shop.get('region')
+            return None
+        except Exception as e:
+            logger.warning(f"查询店铺 region 失败: {e}")
+            return None
+
     def _switch_to_shop(self, target_shop_id: str, original_url: str) -> bool:
         """导航到店铺列表页，点击目标店铺的 Details 按钮完成切换
 
