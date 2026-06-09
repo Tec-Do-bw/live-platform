@@ -363,6 +363,19 @@ class LoginMonitorService:
         except Exception as exc:
             logger.debug("停止监听失败: {}", exc)
 
+        # 最终 API 验证兜底（防止被动监听误报）
+        if login_ok or shop_ids:
+            final_ok, final_ids = self._fetch_shopee_shop_ids(session)
+            if final_ok:
+                # 合并最终验证结果
+                shop_ids.update(final_ids)
+                login_ok = True
+                logger.info("最终 API 验证通过，shop_ids: {}", shop_ids)
+            else:
+                # 最终验证失败，判定为未登录
+                logger.warning("最终 API 验证失败，判定为未登录")
+                return None
+
         if not login_ok and not shop_ids:
             return None
         return {"login_ok": login_ok, "shop_ids": shop_ids}

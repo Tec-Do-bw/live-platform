@@ -127,3 +127,56 @@ def test_poll_window_var_timeout(service, mock_tab):
     mock_tab.run_js.return_value = None
     result = service._poll_window_var(mock_tab, "__test_var", timeout=0.5)
     assert result is None
+
+
+def test_listen_once_false_positive_blocked(service, session_local, mock_tab):
+    """被动监听误报，最终 API 验证拦截"""
+    # Mock 被动监听返回 shop_id（误报）
+    mock_packet = type('Packet', (), {
+        'url': 'https://seller.shopee.com.my/api/v2/login',
+        'response': type('Response', (), {
+            'body': '{"errcode": 0, "shopid": 789012}'
+        })()
+    })()
+    
+    mock_tab.listen.start = lambda x: None
+    mock_tab.listen.wait = lambda timeout: mock_packet
+    mock_tab.listen.stop = lambda: None
+    mock_tab.url = "https://seller.shopee.com.my/"
+    
+    # 最终 API 验证返回未登录
+    with patch.object(service, '_fetch_shopee_shop_ids') as mock_final:
+        mock_final.return_value = (False, set())  # 最终验证失败
+        
+        result = service._listen_once(session_local)
+        
+        # 应该被最终验证拦截，返回 None
+        assert result is None
+        assert mock_final.call_count >= 1  # 主动验证 + 最终验证
+
+
+def test_listen_once_final_verify_pass(service, session_local, mock_tab):
+    """被动监听 + 最终 API 验证都通过"""
+    mock_packet = type('Packet', (), {
+        'url': 'https://seller.shopee.com.my/api/v2/login',
+        'response': type('Response', (), {
+            'body': '{"errcode": 0, "shopid": 789012}'
+        })()
+    })()
+    
+    mock_tab.listen.start = lambda x: None
+    mock_tab.listen.wait = lambda timeout: mock_packet
+    mock_tab.listen.stop = lambda: None
+    mock_tab.url = "https://seller.shopee.com.my/"
+    
+    # 最终 API 验证返回成功
+    with patch.object(service, '_fetch_shopee_shop_ids') as mock_final:
+        mock_final.return_value = (True, {789012, 111111})  # 最终验证成功
+        
+        result = service._listen_once(session_local)
+        
+        # 应该合并最终验证结果
+        assert result is not None
+        assert result['login_ok'] is True
+        assert 789012 in result['shop_ids']
+        assert 111111 in result['shop_ids']
