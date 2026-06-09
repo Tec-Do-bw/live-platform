@@ -4,7 +4,126 @@
 
 ## 一、核心维度与分支点
 
-### 1.1 三个维度的组合
+### 1.1 账号体系全景
+
+Shopee 卖家账号由**三个正交维度**交叉决定,任何一个具体账号都是这三者的组合：
+
+| 维度 | 取值 | 数据来源 |
+|------|------|---------|
+| **店铺类型** | 跨境店 (cb=1) / 本土店 (cb=0) | AdsPower remark `cb:` 字段 |
+| **账号权限** | 主账号 / 多店铺子账号 / 单店铺子账号 | 运行时由 `get_shop_list` 成功与否推断 |
+| **国家站点** | MY/ID/TH/VN/BR/MX/SG/PH/TW | remark `country:` > 分组名 > 默认 com.my |
+
+关键认知：**主账号与子账号只是"登录过程"和"取身份信息的接口"不同，监控用的业务数据接口完全一致**；真正决定 API 域名的是"店铺类型 + 国家"，而非账号权限。
+
+```mermaid
+graph LR
+    subgraph 维度交叉
+        D1["店铺类型<br/>cb=0/1"]
+        D2["账号权限<br/>主/多店子/单店子"]
+        D3["国家<br/>MY/ID/TH/..."]
+    end
+
+    subgraph 影响的技术层面
+        L1["① 域名层<br/>请求打到哪个域名"]
+        L2["② 登录验证层<br/>用哪个接口验登录态"]
+        L3["③ 身份获取层<br/>从哪取 user_id/shop_id"]
+        L4["④ 店铺枚举层<br/>能否列出多店铺"]
+    end
+
+    D1 --> L1
+    D3 --> L1
+    D1 --> L2
+    D1 --> L3
+    D2 --> L4
+
+    L1 -.->|业务数据接口统一| Biz["⑤ 业务采集层<br/>/api/supply/lm/sellercenter/*<br/>跨境/本土/主/子 完全一致"]
+
+    style Biz fill:#ccffcc
+    style D2 fill:#fff3cd
+```
+
+#### 1.1.1 ① 域名层：店铺类型 + 国家决定域名
+
+```mermaid
+graph TD
+    A["解析域名<br/>_resolve_prelogin_country_domain"] --> CB{"cb=1?"}
+    CB -->|"是 跨境店"| CN["强制 seller.shopee.cn<br/>(CNSC 统一后台)"]
+    CB -->|"否 本土店"| Country{"国家来源优先级"}
+    Country --> R["remark country:"]
+    Country --> G["分组名关键词"]
+    Country --> Def["默认 com.my"]
+    R --> Domain["seller.shopee.{domain}<br/>各国独立域名"]
+    G --> Domain
+    Def --> Domain
+
+    style CN fill:#ffe6e6
+    style Domain fill:#e6f3ff
+```
+
+跨境店无论实际卖到哪个国家，域名永远是 `cn`；实际国家仅通过 `get_or_set_shop` 反查 `shop_region`，**只用于币种上报，不改域名**。本土店则各国域名独立，无统一后台。
+
+#### 1.1.2 ②③ 登录验证层 + 身份获取层：店铺类型决定接口
+
+```mermaid
+graph TD
+    Login["登录态检测 / 取身份"] --> Type{"cb=1?"}
+
+    Type -->|"跨境店"| CN1["验证: CN get_session<br/>判据 code==0"]
+    CN1 --> CN2["身份: get_session.sub_account_info<br/>+ 补调 userInfo 取 userId<br/>current_shop_id 作店铺 ID"]
+
+    Type -->|"本土店"| L1["先查 Cookie SPC_SC_SESSION"]
+    L1 --> L2["验证: api/v2/login<br/>判据 errcode==0"]
+    L2 --> L3["身份: login 直接返回<br/>id/shopid/username<br/>或 user.user_id/user.shop_id"]
+
+    style CN1 fill:#ffe6e6
+    style CN2 fill:#ffe6e6
+    style L2 fill:#e6f3ff
+    style L3 fill:#e6f3ff
+```
+
+#### 1.1.3 ④ 店铺枚举层：账号权限决定能否列店
+
+```mermaid
+graph TD
+    Need["需要确认/切换店铺"] --> Try["尝试 subaccount/get_shop_list"]
+    Try --> OK{"成功?"}
+    OK -->|"是"| Main["主账号 / 多店铺子账号<br/>拿到全部授权店铺列表<br/>支持一号多店切换"]
+    OK -->|"否 权限不足"| Fallback["单店铺子账号<br/>回退 selleraccount/shop_info<br/>只返回当前登录店铺"]
+
+    Main --> Switch["validate_id ≠ 当前店?<br/>→ 导航 /portal/shop 点 Details 切换"]
+    Fallback --> Lock["锁定单店上下文<br/>无法切换"]
+
+    style Main fill:#cce5ff
+    style Fallback fill:#fff3cd
+```
+
+这是主账号与子账号在 API 层**唯一的实质差异**：`get_shop_list` 能否成功。业务数据接口对主子账号无差别，取决于子账号被授予的角色权限。
+
+#### 1.1.4 实际存在的账号类型组合（已验证样本）
+
+```mermaid
+graph TD
+    Root["Shopee 账号"] --> CB["跨境店 cb=1<br/>域名固定 cn"]
+    Root --> Local["本土店 cb=0<br/>各国域名"]
+
+    CB --> CBM["跨境主账号"]
+    CB --> CBS["跨境子账号<br/>✅ k1curyr1 中国团队"]
+
+    Local --> LM["本土主账号"]
+    Local --> LMulti["本土多店铺子账号<br/>✅ k1a414nc 马来 361degreesstore"]
+    Local --> LSingle["本土单店铺子账号<br/>✅ k1br26np 新加坡"]
+
+    style CB fill:#ffe6e6
+    style Local fill:#e6f3ff
+    style CBS fill:#ffcccc
+    style LMulti fill:#cce5ff
+    style LSingle fill:#fff3cd
+```
+
+> 说明：跨境主账号 vs 子账号是否需区分、跨境店是否有多店铺接口，目前代码未明确，见 [§3.1 跨境店的未知点](#31-跨境店的未知点)。
+
+### 1.2 三个维度的组合
 
 ```mermaid
 graph TD
@@ -40,7 +159,7 @@ graph TD
     style Local_Single fill:#cce5ff
 ```
 
-### 1.2 当前已知的分支映射
+### 1.3 当前已知的分支映射
 
 | 维度 | 分支 | live-crawler 处理 | adspower-server 处理 | 缺失/问题 |
 |------|------|-------------------|---------------------|-----------|
@@ -233,19 +352,54 @@ graph TD
     style CallbackError fill:#ffcccc
 ```
 
-## 三、关键问题与缺失信息
+### 2.3 子账号登录流程（2026-05 新流程）⚠️
 
-### 3.1 跨境店的未知点
+> **重大变更**：2026-05-22 起，子账号的 Username/Password 登录方式全面停用，改为 Google OAuth 强制认证。
 
-| 问题 | 当前处理 | 需要确认 |
-|------|---------|---------|
-| 跨境店是否有多店铺列表接口？ | ❌ live-crawler 只用 `get_session` 的 `current_shop_id` | ✅ 请提供跨境店多店铺接口（如果存在） |
-| 跨境主账号 vs 子账号的区别？ | ❌ 未区分 | ✅ 是否需要区分？接口是否不同？ |
-| 跨境店切换店铺的方式？ | ⚠️ live-crawler 用本土店的切换逻辑 | ✅ 跨境店能否通过点击 Details 切换？ |
+```mermaid
+flowchart TD
+    Start([打开登录页]) --> Redirect["自动跳转到<br/>agentaccount.seller.shopee.com"]
+    
+    Redirect --> SelectPlatform["① 选择平台<br/>点击 Seller Centre"]
+    
+    SelectPlatform --> SelectSubAccount["② 选择子账号<br/>从预创建列表选择<br/>(如 MYWBS:andrew.tansq)"]
+    
+    SelectSubAccount --> ConfirmAuth["③ 点击 Confirm<br/>完成 Google OAuth 认证"]
+    
+    ConfirmAuth --> RedirectShopList["跳转到<br/>seller.shopee.{domain}/portal/shop?next=%2F"]
+    
+    RedirectShopList --> ChooseShop["④ Choose a Shop to Manage 页面<br/>筛选店铺(名称/用户名/ID)"]
+    
+    ChooseShop --> ClickDetail["⑤ 点击目标店铺的 Detail 按钮"]
+    
+    ClickDetail --> EnterSellerCentre["⑥ 进入 Seller Centre 主页<br/>登录完成"]
+    
+    EnterSellerCentre --> TriggerMonitoring["触发被动监听<br/>捕获 get_shop_list 或 shop_info"]
+    
+    style Redirect fill:#ffe6e6
+    style ConfirmAuth fill:#fff3cd
+    style EnterSellerCentre fill:#ccffcc
+```
 
-### 3.2 本土店的未知点
+**关键特征**：
+- **入口域名统一**：`agentaccount.seller.shopee.com`（跨境/本土、各国通用）
+- **中转页面两层**：① Agent Account 主页（选平台+子账号） → ② Shop List 页面（选店铺）
+- **监听时机延后**：登录态只有在进入 Seller Centre 主页后才稳定，需延长监听超时时长
+- **识别标志**：URL 中包含 `agentaccount.seller.shopee.com` 或 `/portal/shop?next=` 即为子账号登录流程
 
-| 问题 | 当前处理 | 需要确认 |
+## 三、关键问题与确认信息
+
+### 3.1 跨境店（已确认✅）
+
+| 问题 | 确认结果 |
+|------|---------|
+| 跨境店多店铺列表接口 | ✅ `GET https://seller.shopee.cn/api/cnsc/selleraccount/get_merchant_shop_list/`<br/>响应 `shops` 数组，每个店铺含 `region/shop_id/user_id/cb_option` 等字段<br/>示例：361degrees 账号管理 22 个跨国店铺 |
+| 主账号 vs 子账号区别 | ✅ **数据采集和相关 API 完全一样，唯一区别是登录流程** |
+| 跨境店切换店铺 | ⚠️ 支持切换，但逻辑与本土店不同；当前无可用账号样本，暂按单店铺处理（待补充） |
+
+### 3.2 本土店（已确认✅）
+
+| 问题 | 确认结果 |
 |------|---------|---------|
 | 单店铺子账号如何提前识别？ | ❌ 只能通过 `get_shop_list` 失败后才知道 | ✅ 有没有更早的判断方式？ |
 | 主账号一定有 `get_shop_list` 权限吗？ | ⚠️ live-crawler 假设有 | ✅ 是否有反例？ |
@@ -256,95 +410,260 @@ graph TD
 |------|---------|---------|
 | 所有国家的登录页 URL 模式？ | ⚠️ 只知道 `seller/login` 和 `account/signin` | ✅ 是否有其他变体？（如 PH/TW） |
 | 登录成功后的跳转 URL 模式？ | ❌ 未明确 | ✅ 各国跳转到的 URL 是否统一？ |
-| OTP 页面的 URL 特征？ | ⚠️ 你提到包含 `account/signin` 或 `seller/login` | ✅ 是否所有国家都一致？ |
+### 3.2 本土店（已确认✅）
 
-### 3.4 接口响应的未知点
+| 问题 | 确认结果 |
+|------|---------|
+| 单店铺子账号如何提前识别？ | ✅ **无法提前识别**，只能通过 `get_shop_list` 失败后才知道，保持当前兜底逻辑 |
+| 主账号一定有 `get_shop_list` 权限吗？ | ✅ **一般都有权限**，响应示例：<br/>`{"code":0, "account_type":"main_merchant", "shops":[...], "region_count":{...}}` |
+| `shop_info` 接口适用场景 | ✅ 主账号/子账号/跨境类型的接口和响应都一样，保持当前 `_get_shop_country_by_shop_info` 逻辑 |
 
-| 问题 | 当前处理 | 需要确认 |
+### 3.3 域名与登录流程（已确认✅ + 重大变更⚠️）
+
+| 问题 | 确认结果 |
+|------|---------|
+| 子账号登录流程变更 | ⚠️ **2026-05-22 起强制 Google OAuth 登录**<br/>• 统一入口：`agentaccount.seller.shopee.com`<br/>• 两层中转：① Agent Account 主页（选平台+子账号） → ② `/portal/shop?next=/`（选店铺）<br/>• 识别标志：URL 含 `agentaccount.seller.shopee.com` 或 `/portal/shop?next=`<br/>• 监听时机延后：登录态稳定时间点在进入 Seller Centre 主页后 |
+| 登录成功后跳转 URL | ✅ 子账号已确认：`agentaccount.seller.shopee.com` → `seller.shopee.{domain}/portal/shop?next=%2F` → Seller Centre 主页<br/>主账号跳转模式未明确（待补充） |
+| 域名映射完整性 | ✅ 当前 `_SHOPEE_SELLER_DOMAIN_MAP` 已覆盖所有运营中国家 |
+
+### 3.4 接口响应边界情况（已确认✅）
+
+| 场景 | 响应示例 | 判定策略 |
 |------|---------|---------|
-| `get_shop_list` 失败的响应码？ | ⚠️ live-crawler 检查 `code != 0` | ✅ 权限不足时的 `code` 和 `message` 是什么？ |
-| `shop_info` 的适用场景？ | ⚠️ 只知道是单店铺子账号的兜底 | ✅ 是否有其他场景需要调用？ |
-| CN `get_session` 的异常响应？ | ⚠️ live-crawler 检查 `code == 0` | ✅ 未登录/会话过期时的 `code` 是什么？ |
+| 未登录 - 本土店 | `{"errcode":1,"fields":null}` | **以 HTTP 200 + `errcode != 0` 判定未登录** |
+| 未登录 - 跨境店 | `{"errcode":2, "message": "token not found"}` | **以 HTTP 200 + `code != 0` 或 `errcode != 0` 判定未登录** |
+| 会话过期 | 应与未登录响应一致 | 同未登录处理逻辑 |
+| 权限不足 | ✅ **不存在权限不足场景**（`get_shop_list` 和 `shop_info` 不会因权限被拒绝） | 失败即为登录态失效，非权限问题 |
 
-## 四、需要你补充的信息
+## 四、待补充信息（优先级排序）
 
-### 4.1 跨境店相关
+### P0 - 必须解决（阻塞重构）✅ 已确认
 
-请提供以下信息（如果存在）：
+#### 1. 跨境店切换店铺流程（已确认）
 
-1. **跨境店多店铺列表接口**
-   - 接口 URL 和方法
-   - 请求参数
-   - 响应示例（成功和失败）
-   - 是否区分主账号和子账号
+**关键差异**：跨境店切换是 **HTTP API 调用**，而非本土店的浏览器点击 Details 按钮。
 
-2. **跨境店账号类型识别**
-   - 如何判断是主账号还是子账号？
-   - 两者在接口权限上有何区别？
+**切换步骤**：
+```python
+# ① 调用切换接口
+POST https://seller.shopee.cn/api/cnsc/selleraccount/switch_merchant_shop/
+Query params:
+  - cnsc_shop_id: 当前店铺 ID
+  - cbsc_shop_region: 当前店铺 region（大写，如 MY/TH/VN）
+  - SPC_CDS: Cookie 中的值
+  - SPC_CDS_VER: 2
+Body: {"shop_id": target_shop_id}
 
-3. **跨境店切换店铺**
-   - 是否支持切换店铺？
-   - 如果支持，流程是什么？（URL、点击元素、验证方式）
+# ② 切换成功后设置语言（必需）
+POST https://seller.shopee.cn/api/cnsc/selleraccount/set_language/
+Query params: 同上
+Body: {"language": "zh-CN"}
 
-### 4.2 本土店相关
+# ③ 验证：重新获取 get_session，检查 current_shop_id 是否等于 target_shop_id
+```
 
-请提供以下信息：
+**错误处理**：
+- HTTP 403 → Cookie 已过期，需重新登录
+- HTTP 200 → 切换成功
 
-1. **单店铺子账号的早期识别**
-   - 是否有接口可以提前判断账号类型？
-   - 或者只能通过 `get_shop_list` 失败后才知道？
+**参考代码**：`D:\SpiderCode\dev\livelab-crawler\seller-shopee-spider\tasks\switch_shop.py`
 
-2. **`get_shop_list` 权限不足的响应**
-   - 完整的响应 JSON 示例
-   - `code` 和 `message` 字段的值
+#### 2. 主账号登录跳转 URL（已确认）
 
-3. **`shop_info` 接口详情**
-   - 何时需要调用？（仅单店铺子账号？）
-   - 响应示例
+| 账号类型 | 登录后跳转 URL | 备注 |
+|---------|---------------|------|
+| 跨境主账号 | `https://seller.shopee.cn/?cnsc_shop_id={shop_id}` | 直接落地卖家中心首页，带店铺 ID 参数 |
+| 本土主账号 | `https://seller.shopee.{domain}/` | 直接落地卖家中心首页，无中转页面 |
+| 子账号（跨境/本土） | `agentaccount.seller.shopee.com` → `seller.shopee.{domain}/portal/shop?next=/` → Seller Centre | 两层中转（见 §2.3） |
 
-### 4.3 多国相关
+**识别逻辑**：
+- URL 含 `agentaccount.seller.shopee.com` 或 `/portal/shop?next=` → 子账号登录流程
+- URL 直接是 `seller.shopee.{domain}/` 或 `seller.shopee.cn/?cnsc_shop_id=` → 主账号登录完成
 
-请提供以下信息：
+#### 3. 监听接口调整（已确认）
 
-1. **各国登录页和 OTP 页的 URL 特征**
-   - MY/ID/TH/VN/BR/MX/SG/PH/TW 各国的 URL 模式
-   - 是否都是 `seller/login` 或 `account/signin`？
+**新增监听接口**：
+- 跨境店：`get_merchant_shop_list`（替代或补充 `get_session` 的 `current_shop_id`）
+- 本土店：保持现有 `get_shop_list` / `shop_info`
 
-2. **登录成功后的跳转 URL**
-   - 各国登录成功后跳转到哪里？
-   - URL 是否包含固定的路径特征？（如 `portal`、`creator-center`）
+**子账号 OAuth 流程接口触发时机**：
+- 登录态稳定时间点：进入 Seller Centre 主页后
+- 建议监听超时从 30s 延长至 **60s**（两层中转页面 + Google OAuth 耗时）
 
-3. **域名映射的完整性**
-   - 当前 `_SHOPEE_SELLER_DOMAIN_MAP` 是否覆盖所有国家？
-   - 是否有遗漏或错误？
+**更新后的监听优先级**：
 
-### 4.4 接口响应的边界情况
+| 账号类型 | 监听接口 | 超时 |
+|---------|---------|------|
+| 跨境主账号 | ① `get_session` → ② `get_merchant_shop_list`（新增） | 30s |
+| 跨境子账号 | ① `get_session` → ② `get_merchant_shop_list`（新增） | **60s** |
+| 本土主账号 | ① `api/v2/login` → ② `get_shop_list` | 30s |
+| 本土子账号 | ① `api/v2/login` → ② `get_shop_list` | **60s** |
 
-请提供以下边界情况的响应示例：
+### P1 - 优化体验（非阻塞）
 
-1. **未登录时各接口的响应**
-   - `api/v2/login` (本土店)
-   - `CN get_session` (跨境店)
-   - `get_shop_list`
-   - `shop_info`
-
-2. **会话过期时的响应**
-   - 是否与未登录相同？
-
-3. **权限不足时的响应**
-   - `get_shop_list` 被拒绝
-   - `shop_info` 被拒绝
-
-## 五、补充信息后的优化方向
-
-一旦你补充了上述信息，我可以：
-
-1. **绘制完整的决策树**：涵盖所有 跨境/本土 × 主账号/多店铺子账号/单店铺子账号 × 9 个国家 的组合
-2. **设计统一的认证客户端**：封装所有接口调用逻辑，屏蔽跨境/本土差异
-3. **优化 adspower-server 的主动验证**：精确知道何时调用哪个接口、如何解析响应
-4. **制定域名纠错策略**：当主动验证打到错误域名时，如何通过被动监听纠正
-5. **简化分支逻辑**：消除所有"打补丁"式的 if-else，用策略模式或责任链模式重构
+1. **跨境店主账号与子账号在 `get_merchant_shop_list` 权限上的差异**
+   - 是否存在只有主账号能调用的情况？
+   
+2. **各国 OTP 页面的 URL 特征统一性**
+   - 当前假设所有国家的 OTP 页面都包含 `account/signin` 或 `seller/login`
+   - 是否有反例？
 
 ---
 
-**请按上述 4.1~4.4 的结构，补充你能提供的信息。即使部分信息不全也没关系，我会根据现有信息设计容错方案。**
+## 五、基于确认信息的优化方向
+
+根据已补充信息，重构可聚焦以下方向：
+
+### 5.1 统一认证客户端设计
+
+```python
+class ShopeeAuthClient:
+    """统一跨境/本土、主账号/子账号的认证逻辑"""
+    
+    def verify_login(self, cb_option: int) -> bool:
+        """根据店铺类型选择验证接口"""
+        if cb_option == 1:
+            # 跨境店：CN get_session，判据 code==0
+            return self._verify_cn_session()
+        else:
+            # 本土店：api/v2/login，判据 errcode==0
+            return self._verify_local_login()
+    
+    def get_shop_list(self, cb_option: int) -> list[dict]:
+        """获取店铺列表（自动处理跨境/本土差异）"""
+        if cb_option == 1:
+            # 跨境店：get_merchant_shop_list
+            return self._fetch_cn_merchant_shops()
+        else:
+            # 本土店：get_shop_list，失败回退 shop_info
+            return self._fetch_local_shops_with_fallback()
+```
+
+### 5.2 子账号登录流程专用状态机
+
+针对新的 Google OAuth 流程，需设计独立的状态机：
+
+```python
+# adspower-server 新增
+class SubAccountLoginStateMachine:
+    STATES = {
+        "AGENT_ACCOUNT_PAGE": "agentaccount.seller.shopee.com",
+        "SHOP_SELECTION_PAGE": "/portal/shop?next=",
+        "SELLER_CENTRE_PAGE": "后台主页（触发接口监听）"
+    }
+    
+    def detect_login_type(self, url: str) -> LoginType:
+        """根据 URL 判断是主账号还是子账号登录"""
+        if "agentaccount.seller.shopee.com" in url:
+            return LoginType.SUB_ACCOUNT_OAUTH
+        elif "accounts.shopee." in url or "seller/login" in url:
+            return LoginType.MAIN_ACCOUNT_TRADITIONAL
+```
+
+### 5.3 接口监听策略调整
+
+| 账号类型 | 监听接口优先级 | 超时时长调整 |
+|---------|--------------|------------|
+| 跨境主账号 | ① `get_session` → ② `get_merchant_shop_list` | 保持当前 |
+| 跨境子账号 | ① `get_session` → ② `get_merchant_shop_list`（新增） | **延长至 60s**（OAuth 中转耗时） |
+| 本土主账号 | ① `api/v2/login` → ② `get_shop_list` | 保持当前 |
+| 本土子账号 | ① `api/v2/login` → ② `get_shop_list`（新增） | **延长至 60s**（OAuth + 选店铺） |
+
+### 5.4 域名纠错机制简化
+
+由于确认了：
+- 跨境店域名永远是 `cn`（不会因国家变化）
+- 本土店域名映射已完整
+
+可将纠错逻辑从"被动监听 + 多次重试"简化为"启动时一次性校验 + remark 同步"。
+
+---
+
+## 六、附录：接口响应示例
+
+### 6.1 跨境店多店铺列表接口
+
+**接口**：`GET https://seller.shopee.cn/api/cnsc/selleraccount/get_merchant_shop_list/`
+
+**成功响应**：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "debug_message": "congratulations!",
+  "data": {
+    "shops": [
+      {
+        "username": "361degrees",
+        "user_id": 295137110,
+        "region": "TW",
+        "enabled": true,
+        "shop_name": "361度官方旗艦店",
+        "shop_id": 295117757,
+        "cb_option": 1,
+        "portrait": "13f2d7f0388b18f120a066bdfafd0f29"
+      },
+      {
+        "username": "361degrees.my",
+        "user_id": 289718580,
+        "region": "MY",
+        "shop_id": 289699378,
+        "cb_option": 1
+      }
+    ],
+    "region_count": {"TW": 1, "MY": 1},
+    "total": 22
+  }
+}
+```
+
+### 6.2 本土店多店铺列表接口
+
+**接口**：`POST https://seller.shopee.{domain}/api/selleraccount/subaccount/get_shop_list/`
+
+**成功响应（主账号）**：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "debug_message": "congratulations!",
+  "account_type": "main_merchant",
+  "shops": [
+    {
+      "merchant_id": 0,
+      "country": "ph",
+      "username": "361dstore",
+      "user_id": 1549913258,
+      "shop_name": "361 Degrees Store",
+      "shop_id": 1549074989,
+      "last_login": 1780972864
+    },
+    {
+      "merchant_id": 0,
+      "country": "my",
+      "username": "361degreesstore",
+      "user_id": 1523528882,
+      "shop_name": "361 Degrees Store",
+      "shop_id": 1522712905
+    }
+  ],
+  "region_count": {"MY": 1, "PH": 1},
+  "total": 2
+}
+```
+
+### 6.3 未登录响应
+
+**本土店 `api/v2/login`**：
+```json
+{"errcode": 1, "fields": null}
+```
+
+**跨境店 `CN get_session`**：
+```json
+{"errcode": 2, "message": "token not found"}
+```
+
+**判定策略**：HTTP 200 + `errcode != 0` 或 `code != 0` 即为未登录/会话过期。
+
+---

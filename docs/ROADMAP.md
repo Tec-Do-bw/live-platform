@@ -15,6 +15,7 @@
 
 ## 最近完成 (Recently Done · 仅显示最近 10 项)
 
+- [x] 2026-06-09 Shopee 登录检测重构 Phase 1：主动验证快速路径 + 跨境店多店列表接口 + HTTP 切换
 - [x] 2026-05-28 Phase 4B 删除 SQLite 监控面板、补采系统与旧前端
 - [x] 2026-05-28 `/get_roominfo` 排除 `flv_url=error` 的采集失败房间
 - [x] 2026-05-27 代理策略极简化 + Downloader 短响应自动重试

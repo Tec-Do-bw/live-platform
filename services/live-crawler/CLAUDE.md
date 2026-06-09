@@ -62,3 +62,18 @@
 ### 运行时数据不入 git
 
 `resource/collection_tracker.json` 为运行时数据，禁止提交。
+
+### Shopee 跨境店 HTTP 切换（2026-06-09）
+
+跨境店切换店铺改用 HTTP API 替代浏览器点击，避免前端控件异常导致的切换失败：
+
+- **`_switch_to_shop`**：入口，根据 `is_cross_border` 分流跨境/本土切换逻辑
+- **`_switch_to_shop_by_http`**（跨境店）：
+  1. POST `switch_merchant_shop/` 切换店铺
+  2. POST `set_language/` 设置语言（必需）
+  3. GET `get_session/` 校验 `current_shop_id` 是否匹配
+  4. HTTP 403 触发 `cookie_expired` 回调
+- **`_switch_to_shop_by_browser`**（本土店）：保持原浏览器点击逻辑（导航到店铺列表页 → 点击 Details）
+- **`_get_shop_region_from_list`**：查询目标店铺所在 `region`（switch API 必需参数）
+
+**测试覆盖**：`tests/crawlers/browser/test_shopee_switch_to_shop.py`（5 个用例）

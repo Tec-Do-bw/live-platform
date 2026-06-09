@@ -421,7 +421,7 @@ def _format_message(
     }
 
 
-@sync_retry(retries=2, delay=1.0)
+@sync_retry(retries=2, delay=1.0, retry_exceptions=TIKTOK_BUSINESS_RETRY_EXCEPTIONS)
 def fetch_account_info(session: Any, cred: Credentials) -> FetchResult:
     """获取账号信息并验证登录态。"""
     ext = _parse_ext(cred)
@@ -464,7 +464,7 @@ def fetch_replay_info(session: Any, cred: Credentials, count: int, offset: int) 
     return _make_result(ok=ok, url=url, request_body=None, response_body=resp.text, data=data)
 
 
-@sync_retry(retries=2, delay=1.0)
+@sync_retry(retries=2, delay=1.0, retry_exceptions=TIKTOK_BUSINESS_RETRY_EXCEPTIONS)
 def fetch_live_list(session: Any, cred: Credentials, full: bool = False, page: int = 0) -> FetchResult:
     """获取直播间列表，直接请求扩展 stats_types。"""
     ext = _parse_ext(cred)
@@ -506,7 +506,7 @@ def fetch_live_list(session: Any, cred: Credentials, full: bool = False, page: i
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
-@sync_retry(retries=2, delay=1.0)
+@sync_retry(retries=2, delay=1.0, retry_exceptions=TIKTOK_BUSINESS_RETRY_EXCEPTIONS)
 def fetch_live_stats(session: Any, cred: Credentials, target_date: date) -> FetchResult:
     """获取单日 live/stats 汇总。"""
     ext = _parse_ext(cred)
@@ -540,7 +540,7 @@ def fetch_live_stats(session: Any, cred: Credentials, target_date: date) -> Fetc
     return _make_result(ok=ok, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 
 
-@sync_retry(retries=2, delay=1.0)
+@sync_retry(retries=2, delay=1.0, retry_exceptions=TIKTOK_BUSINESS_RETRY_EXCEPTIONS)
 def fetch_trend_chart(
     session: Any,
     cred: Credentials,
@@ -751,6 +751,9 @@ def setup_session(account_id: str) -> tuple[Credentials, Any, FetchResult]:
     try:
         session.cookies.update(_cookie_dict_from_token(cred.token_data))
         login_result = fetch_account_info(session, cred)
+    except TikTokBusinessCodeError as e:
+        session.close()
+        raise LoginRequired(f"[{account_id}] 登录态失效: {e}") from e
     except Exception:
         session.close()
         raise
@@ -800,7 +803,11 @@ def collect_tiktok(
         creator_id = ""
         max_pages = LIVE_LIST_MAX_PAGES if full else 1
         for page in range(max_pages):
-            list_result = fetch_live_list(session, cred, full, page=page)
+            try:
+                list_result = fetch_live_list(session, cred, full, page=page)
+            except TikTokBusinessCodeError as e:
+                logger.warning(f"[{account_id}/live_list] page={page} 业务码重试耗尽，停止 live_list 翻页: {e}")
+                break
             yield _yield_fetch_result(list_result)
 
             page_rooms, page_creator_id = parse_rooms(list_result["data"])
@@ -822,8 +829,14 @@ def collect_tiktok(
         for index, room in enumerate(rooms):
             room_id = room["room_id"]
             try:
-                yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_BASIC))
-                yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_FULL))
+                try:
+                    yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_BASIC))
+                except TikTokBusinessCodeError as e:
+                    logger.warning(f"[{account_id}] room={room_id} trend_chart basic 业务码重试耗尽，跳过该接口: {e}")
+                try:
+                    yield _yield_fetch_result(fetch_trend_chart(session, cred, room_id, TREND_CHART_STATS_FULL))
+                except TikTokBusinessCodeError as e:
+                    logger.warning(f"[{account_id}] room={room_id} trend_chart full 业务码重试耗尽，跳过该接口: {e}")
                 try:
                     yield _yield_fetch_result(fetch_core_stats(session, cred, room_id))
                 except TikTokBusinessCodeError as e:
@@ -849,6 +862,8 @@ def collect_tiktok(
             target = latest - timedelta(days=days_back)
             try:
                 yield _yield_fetch_result(fetch_live_stats(session, cred, target))
+            except TikTokBusinessCodeError as e:
+                logger.warning(f"[{account_id}] live_stats {target} 业务码重试耗尽，跳过该日期: {e}")
             except Exception as e:
                 logger.exception(f"[{account_id}] live_stats {target} 失败")
                 yield False, {
