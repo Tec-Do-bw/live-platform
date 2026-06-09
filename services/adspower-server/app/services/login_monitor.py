@@ -37,7 +37,8 @@ class LoginMonitorService:
         "subaccount/get_shop_list",
         "selleraccount/shop_info",
         "shop_info/get_shop_inactive_status",
-        "cnsc/selleraccount/get_session"
+        "cnsc/selleraccount/get_session",
+        "cnsc/selleraccount/get_merchant_shop_list",
     ]
 
     # TikTok 登录验证 Cookie Key
@@ -595,6 +596,166 @@ class LoginMonitorService:
         except Exception as e:
             logger.warning("Shopee API 验证异常: {}", e)
             return False, None
+
+    def _fetch_shopee_shop_ids(self, session: Session) -> tuple[bool, set[int]]:
+        """主动验证登录态并获取 shop_id 集合。
+
+        通过 JS 注入调用验证接口 + 店铺列表接口，5s 节流后在 URL 离开登录页时调用。
+
+        Args:
+            session: 会话对象，包含 cb_option/country/drissionpage_tab
+
+        Returns:
+            (login_ok, shop_ids): 登录态是否有效 + 店铺 ID 集合
+        """
+        tab = session.drissionpage_tab
+
+        if session.cb_option == 1:
+            # 跨境店：CN get_session + get_merchant_shop_list
+            return self._fetch_cn_shop_ids(tab)
+        else:
+            # 本土店：api/v2/login + get_shop_list
+            return self._fetch_local_shop_ids(tab, session.country)
+
+    def _fetch_cn_shop_ids(self, tab) -> tuple[bool, set[int]]:
+        """跨境店主动验证：CN get_session + get_merchant_shop_list"""
+        try:
+            ts = int(time.time() * 1000)
+            session_key = f"__cn_session_{ts}"
+            list_key = f"__cn_list_{ts}"
+
+            js_code = f"""
+            window['{session_key}'] = null;
+            window['{list_key}'] = null;
+            fetch('https://seller.shopee.cn/api/cnsc/selleraccount/get_session/', {{
+                method: 'GET', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{session_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{session_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{session_key}'] = {{ error: String(e) }}; }});
+
+            fetch('https://seller.shopee.cn/api/cnsc/selleraccount/get_merchant_shop_list/', {{
+                method: 'GET', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{list_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{list_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{list_key}'] = {{ error: String(e) }}; }});
+            """
+
+            self._inject_js_with_retry(tab, js_code)
+
+            # Poll 等待结果
+            session_result = self._poll_window_var(tab, session_key, timeout=10.0)
+            list_result = self._poll_window_var(tab, list_key, timeout=10.0)
+
+            # 清理
+            try:
+                tab.run_js(f"delete window['{session_key}']; delete window['{list_key}'];")
+            except Exception:
+                pass
+
+            # 验证 get_session
+            if not session_result or 'error' in session_result:
+                return False, set()
+            session_data = session_result.get('response', {})
+            if session_data.get('code') != 0:
+                return False, set()
+
+            # 提取 current_shop_id
+            shop_ids = set()
+            sub_info = session_data.get('sub_account_info', {}) or {}
+            current_id = self._to_int(sub_info.get('current_shop_id'))
+            if current_id:
+                shop_ids.add(current_id)
+
+            # 提取 merchant_shop_list（可能无权限，不影响 login_ok）
+            if list_result and 'error' not in list_result:
+                list_data = list_result.get('response', {})
+                if list_data.get('code') == 0:
+                    shops = list_data.get('data', {}).get('shops', [])
+                    for shop in shops:
+                        sid = self._to_int(shop.get('shop_id'))
+                        if sid:
+                            shop_ids.add(sid)
+
+            return True, shop_ids
+        except Exception as e:
+            logger.warning("跨境店主动验证异常: {}", e)
+            return False, set()
+
+    def _fetch_local_shop_ids(self, tab, country: str) -> tuple[bool, set[int]]:
+        """本土店主动验证：api/v2/login + get_shop_list"""
+        try:
+            domain = get_shopee_seller_domain(country)
+            ts = int(time.time() * 1000)
+            login_key = f"__local_login_{ts}"
+            list_key = f"__local_list_{ts}"
+
+            js_code = f"""
+            window['{login_key}'] = null;
+            window['{list_key}'] = null;
+            fetch('https://{domain}/api/v2/login/', {{
+                method: 'GET', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{login_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{login_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{login_key}'] = {{ error: String(e) }}; }});
+
+            fetch('https://{domain}/api/selleraccount/subaccount/get_shop_list/', {{
+                method: 'POST', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{list_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{list_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{list_key}'] = {{ error: String(e) }}; }});
+            """
+
+            self._inject_js_with_retry(tab, js_code)
+
+            login_result = self._poll_window_var(tab, login_key, timeout=10.0)
+            list_result = self._poll_window_var(tab, list_key, timeout=10.0)
+
+            try:
+                tab.run_js(f"delete window['{login_key}']; delete window['{list_key}'];")
+            except Exception:
+                pass
+
+            if not login_result or 'error' in login_result:
+                return False, set()
+            login_data = login_result.get('response', {})
+            if login_data.get('errcode') != 0:
+                return False, set()
+
+            shop_ids = set()
+            current_id = self._to_int(
+                login_data.get('shopid') or (login_data.get('user') or {}).get('shop_id')
+            )
+            if current_id:
+                shop_ids.add(current_id)
+
+            if list_result and 'error' not in list_result:
+                list_data = list_result.get('response', {})
+                if list_data.get('code') == 0:
+                    shops = list_data.get('shops', [])
+                    for shop in shops:
+                        sid = self._to_int(shop.get('shop_id'))
+                        if sid:
+                            shop_ids.add(sid)
+
+            return True, shop_ids
+        except Exception as e:
+            logger.warning("本土店主动验证异常: {}", e)
+            return False, set()
+
+    def _poll_window_var(self, tab, var_name: str, timeout: float = 10.0) -> dict | None:
+        """Poll 等待 window 变量赋值完成"""
+        import time
+        start = time.time()
+        while time.time() - start < timeout:
+            val = tab.run_js(f"return window['{var_name}'];")
+            if val is not None:
+                return val
+            time.sleep(0.5)
+        return None
 
     def _trigger_shop_info(self, tab, session: Session) -> None:
         """主动导航到页面触发 shop_id 接口"""
