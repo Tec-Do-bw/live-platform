@@ -952,7 +952,34 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             return None
 
     def _switch_to_shop(self, target_shop_id: str, original_url: str) -> bool:
-        """导航到店铺列表页，点击目标店铺的 Details 按钮完成切换
+        """切换店铺入口：跨境店走 HTTP API，本土店走浏览器点击
+
+        Args:
+            target_shop_id: 目标店铺 ID
+            original_url: 原始采集页面 URL，切换后需要回到此页面
+        """
+        if self.is_cross_border:
+            # 跨境店：HTTP API 切换
+            region = self._get_shop_region_from_list(target_shop_id)
+            if not region:
+                # 从 remark 或域名兜底推断
+                region = (self._get_country_from_remark() or self.country_domain).upper()
+
+            success = self._switch_to_shop_by_http(target_shop_id, region)
+            if success:
+                # HTTP 切换成功后需重新获取 login info 并导航回采集页
+                if not self._fetch_login_info_via_js():
+                    return False
+                self._sync_remark_country_if_needed(target_shop_id)
+                logger.info(f'导航回原始采集页面: {original_url}')
+                self._open_collection_page(original_url)
+            return success
+        else:
+            # 本土店：保持原有浏览器点击逻辑
+            return self._switch_to_shop_by_browser(target_shop_id, original_url)
+
+    def _switch_to_shop_by_browser(self, target_shop_id: str, original_url: str) -> bool:
+        """本土店通过浏览器点击 Details 按钮切换店铺（保持原逻辑）
 
         Args:
             target_shop_id: 目标店铺 ID
