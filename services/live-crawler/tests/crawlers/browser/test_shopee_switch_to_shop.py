@@ -97,7 +97,8 @@ def test_switch_to_shop_cross_border_route():
 
     assert result is True
     crawler._switch_to_shop_by_http.assert_called_once_with("789012", "MY")
-    crawler._fetch_login_info_via_js.assert_called_once()
+    # HTTP 切换内部已更新 media_shop_id，切换成功后直接导航回采集页
+    crawler._open_collection_page.assert_called_once_with("https://seller.shopee.cn/test")
 
 
 def test_switch_to_shop_local_route():

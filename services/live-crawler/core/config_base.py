@@ -93,7 +93,7 @@ class BaseConfig(BaseSettings):
             "group_names": ['新加坡团队-tiktok'],
 
             # 需要采集的账号（当use_dynamic_users=False时使用）
-            "user_ids": [ 'k1cdtjwe','k172cdy8','k1b48i29','k19ly6f4','k1cvlr5b','k1bwoe9e'],
+            "user_ids": [ 'k19l47cu'],
             #   'k1cdtjwe','k172cdy8','k1b48i29','k19ly6f4','k1cvlr5b','k1bwoe9e'
 
             # TikTok平台需要访问的页面URL

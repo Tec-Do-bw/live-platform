@@ -38,6 +38,42 @@ REPLAY_COUNT_FULL = 30         # 全量：单页拉满以减少翻页请求数
 REPLAY_MAX_PAGES = 50          # has_more 异常时的翻页安全上限，防止死循环
 LIVE_LIST_PAGE_SIZE = 500      # live/list 单页大小，页面原生请求同口径
 LIVE_LIST_MAX_PAGES = 10       # live/list 全量翻页安全上限，防止异常时死循环
+ALLIANCE_QUERY_KEYS = (
+    "user_language",
+    "locale",
+    "aid",
+    "app_name",
+    "device_id",
+    "fp",
+    "device_platform",
+    "cookie_enabled",
+    "screen_width",
+    "screen_height",
+    "browser_language",
+    "browser_platform",
+    "browser_name",
+    "browser_version",
+    "browser_online",
+    "timezone_name",
+    "page_scene",
+    "carrier_region",
+)
+CORE_STATS_QUERY_KEYS = (
+    "app_name",
+    "device_id",
+    "fp",
+    "device_platform",
+    "cookie_enabled",
+    "screen_width",
+    "screen_height",
+    "browser_language",
+    "browser_platform",
+    "browser_name",
+    "browser_version",
+    "browser_online",
+    "timezone_name",
+    "vertical",
+)
 
 # LIVE_LIST_STATS_TYPES = [
 #     10, 15, 11, 12, 13, 14, 80, 88, 95, 90, 72, 96, 70, 86,
@@ -142,15 +178,16 @@ TIKTOK_REGION_PROFILES: dict[str, TikTokRegionProfile] = {
         "webcast_base_url": "https://webcast.us.tiktok.com",
         "webcast_language": "en",
     },
+    "DE": {
+        "timezone_offset": 7200,
+        "webcast_base_url": "https://webcast.tiktok.com",
+        "webcast_language": "de-DE",
+    },
 }
 DEFAULT_REGION_PROFILE: TikTokRegionProfile = {
     "timezone_offset": 0,
     "webcast_base_url": "https://webcast.tiktok.com",
     "webcast_language": "en",
-}
-TIMEZONE_OFFSET_MAP = {
-    region: profile["timezone_offset"]
-    for region, profile in TIKTOK_REGION_PROFILES.items()
 }
 
 
@@ -195,9 +232,35 @@ def _region_profile(region: str) -> TikTokRegionProfile:
     return profile
 
 
+def _region_tz(region: str) -> tuple[int, timezone]:
+    """根据账号区域返回 (timezone_offset 秒, tzinfo)，收口重复的时区构造样板。"""
+    offset = _region_profile(region)["timezone_offset"]
+    return offset, timezone(timedelta(seconds=offset))
+
+
 def _build_url(path: str, query_string: str = "", extra_params: dict[str, Any] | None = None) -> str:
     """构造完整 URL，保留账号级 query string。"""
     params = parse_qs(query_string, keep_blank_values=True)
+    if extra_params:
+        for key, value in extra_params.items():
+            params[key] = [str(value)]
+    query = urlencode(params, doseq=True)
+    return f"{BASE_URL}{path}?{query}" if query else f"{BASE_URL}{path}"
+
+
+def _build_filtered_url(
+    path: str,
+    query_string: str,
+    allowed_keys: tuple[str, ...],
+    extra_params: dict[str, Any] | None = None,
+) -> str:
+    """按端点白名单构造 URL query，避免透传拦截请求里的动态脏参数。"""
+    raw_params = parse_qs(query_string, keep_blank_values=True)
+    params = {
+        key: raw_params[key]
+        for key in allowed_keys
+        if key in raw_params
+    }
     if extra_params:
         for key, value in extra_params.items():
             params[key] = [str(value)]
@@ -254,8 +317,7 @@ def _full_window_bounds(region: str) -> tuple[int, int]:
     配置 TIKTOK_HTTP_FULL_START_DATE 后，起点 = 指定日期当地 00:00:00；
     终点 = 账号当地 today 00:00:00（不含今天）。
     """
-    offset = _region_profile(region)["timezone_offset"]
-    tz_obj = timezone(timedelta(seconds=offset))
+    offset, tz_obj = _region_tz(region)
     now = datetime.now(tz_obj)
     end = now.replace(hour=0, minute=0, second=0, microsecond=0)
     start_date_text = str(_tiktok_http_config().get("full_start_date", "")).strip()
@@ -275,9 +337,7 @@ def _full_window_bounds(region: str) -> tuple[int, int]:
 
 def _time_window(region: str, full: bool) -> dict[str, int | str]:
     """计算 TikTok live/list 时间窗。"""
-    offset = _region_profile(region)["timezone_offset"]
-    tz_obj = timezone(timedelta(seconds=offset))
-    now = datetime.now(tz_obj)
+    offset, tz_obj = _region_tz(region)
     if full:
         start_ts, end_ts = _full_window_bounds(region)
         return {
@@ -287,12 +347,12 @@ def _time_window(region: str, full: bool) -> dict[str, int | str]:
             "end_timestamp": str(end_ts),
             "timezone_offset": offset,
         }
+    now = datetime.now(tz_obj)
     return {
         "period": 33,
         "granularity": 32,
         "base_timestamp": str(int(now.timestamp())),
         "timezone_offset": offset,
-        "days_back": 28 if full else 3,
     }
 
 
@@ -357,8 +417,7 @@ def _local_yesterday(region: str) -> date:
     与浏览器版 browserapi._generate_daily_payloads 时区口径一致，
     避免 server 时区≠账号时区时日期窗口错位。
     """
-    offset = _region_profile(region)["timezone_offset"]
-    tz_obj = timezone(timedelta(seconds=offset))
+    _, tz_obj = _region_tz(region)
     return (datetime.now(tz_obj) - timedelta(days=1)).date()
 
 
@@ -426,9 +485,7 @@ def fetch_account_info(session: Any, cred: Credentials) -> FetchResult:
     """获取账号信息并验证登录态。"""
     ext = _parse_ext(cred)
     url = _build_url(
-        "/api/v1/streamer_desktop/account_info/get",
-        ext["query_string"],
-        {"version": "1"},
+        "/api/v1/streamer_desktop/account_info/get"
     )
     resp = session.get(url, headers=_build_tiktok_headers(cred), timeout=10)
     resp.raise_for_status()
@@ -468,7 +525,11 @@ def fetch_replay_info(session: Any, cred: Credentials, count: int, offset: int) 
 def fetch_live_list(session: Any, cred: Credentials, full: bool = False, page: int = 0) -> FetchResult:
     """获取直播间列表，直接请求扩展 stats_types。"""
     ext = _parse_ext(cred)
-    url = _build_url("/api/v2/insights/creator/live/list", ext["query_string"])
+    url = _build_filtered_url(
+        "/api/v2/insights/creator/live/list",
+        ext["query_string"],
+        ALLIANCE_QUERY_KEYS,
+    )
     tw = _time_window(cred.region, full)
     time_selector = {
         "period": tw["period"],
@@ -510,7 +571,11 @@ def fetch_live_list(session: Any, cred: Credentials, full: bool = False, page: i
 def fetch_live_stats(session: Any, cred: Credentials, target_date: date) -> FetchResult:
     """获取单日 live/stats 汇总。"""
     ext = _parse_ext(cred)
-    url = _build_url("/api/v2/insights/creator/live/stats", ext["query_string"])
+    url = _build_filtered_url(
+        "/api/v2/insights/creator/live/stats",
+        ext["query_string"],
+        ALLIANCE_QUERY_KEYS,
+    )
     start_ts = int(datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc).timestamp())
     end_ts = start_ts + 86400
     # 结构对齐页面原生 payload：params 数组包裹 + is_live_type，不可用扁平结构（详见接口文档 §2.1）
@@ -549,7 +614,11 @@ def fetch_trend_chart(
 ) -> FetchResult:
     """获取单房间趋势图。"""
     ext = _parse_ext(cred)
-    url = _build_url("/api/v1/insights/creator/liveroom/recap/trend/chart", ext["query_string"])
+    url = _build_filtered_url(
+        "/api/v1/insights/creator/liveroom/recap/trend/chart",
+        ext["query_string"],
+        ALLIANCE_QUERY_KEYS,
+    )
     payload = {
         "request": {
             "room_filter": {"room_id": room_id, "query_online": True},
@@ -569,25 +638,12 @@ def fetch_trend_chart(
 def fetch_core_stats(session: Any, cred: Credentials, room_id: str) -> FetchResult:
     """获取单房间核心统计。"""
     ext = _parse_ext(cred)
-    keep_keys = {
-        "device_id",
-        "fp",
-        "device_platform",
-        "cookie_enabled",
-        "screen_width",
-        "screen_height",
-        "browser_language",
-        "browser_platform",
-        "browser_name",
-        "browser_version",
-        "browser_online",
-        "timezone_name",
-    }
-    raw_params = parse_qs(ext["query_string"], keep_blank_values=True)
-    base_params = {key: values[0] for key, values in raw_params.items() if key in keep_keys}
-    base_params["app_name"] = "i18n_ecom_shop"
-    base_params["vertical"] = "3"
-    url = f"{BASE_URL}/api/v1/insights/workbench/live/detail/core/stats?{urlencode(base_params)}"
+    url = _build_filtered_url(
+        "/api/v1/insights/workbench/live/detail/core/stats",
+        ext["query_string"],
+        CORE_STATS_QUERY_KEYS,
+        {"app_name": "i18n_ecom_shop", "vertical": "3"},
+    )
     payload = {
         "request": {
             "room_filter": {
@@ -640,8 +696,7 @@ def filter_rooms_by_window(rooms: list[RoomMeta], region: str, full: bool) -> li
     """按采集窗口过滤直播间。"""
     if full:
         return rooms
-    offset = _region_profile(region)["timezone_offset"]
-    tz_obj = timezone(timedelta(seconds=offset))
+    _, tz_obj = _region_tz(region)
     now = datetime.now(tz_obj)
     cutoff = now - timedelta(days=3)
     cutoff_dt = datetime(cutoff.year, cutoff.month, cutoff.day, tzinfo=tz_obj)
@@ -686,6 +741,16 @@ def _yield_fetch_result(item: FetchResult) -> tuple[bool, FetchResult | dict[str
     }
 
 
+def _error_result(**data_fields: Any) -> tuple[bool, dict[str, Any]]:
+    """构造采集异常的 (False, 错误占位包) 二元组，data 字段由调用方传入。"""
+    return False, {
+        "url": "",
+        "request_body": None,
+        "response_body": "",
+        "data": data_fields,
+    }
+
+
 def _collect_replay_info(
     session: Any, cred: Credentials, full: bool
 ) -> Iterator[FetchResult]:
@@ -715,8 +780,7 @@ def _full_stats_days_range(region: str) -> range:
     """计算 live/stats 全量日聚合倒序天数范围。"""
     latest = _local_yesterday(region)
     start_ts, _ = _full_window_bounds(region)
-    offset = _region_profile(region)["timezone_offset"]
-    tz_obj = timezone(timedelta(seconds=offset))
+    _, tz_obj = _region_tz(region)
     start_date = datetime.fromtimestamp(start_ts, tz_obj).date()
     days_count = (latest - start_date).days + 1
     if days_count <= 0:
@@ -792,12 +856,7 @@ def collect_tiktok(
                 yield _yield_fetch_result(replay_result)
         except Exception as e:
             logger.exception(f"[{account_id}] replay_info 采集失败")
-            yield False, {
-                "url": "",
-                "request_body": None,
-                "response_body": "",
-                "data": {"error": str(e), "endpoint": "replay_info"},
-            }
+            yield _error_result(error=str(e), endpoint="replay_info")
 
         list_rooms: list[RoomMeta] = []
         creator_id = ""
@@ -843,12 +902,7 @@ def collect_tiktok(
                     logger.warning(f"[{account_id}] room={room_id} core_stats 业务码重试耗尽，跳过该接口: {e}")
             except Exception as e:
                 logger.exception(f"[{account_id}] room={room_id} 采集失败")
-                yield False, {
-                    "url": "",
-                    "request_body": None,
-                    "response_body": "",
-                    "data": {"error": str(e), "room_id": room_id},
-                }
+                yield _error_result(error=str(e), room_id=room_id)
 
             if index < len(rooms) - 1:
                 time.sleep(random.uniform(0.5, 1.5))
@@ -866,12 +920,7 @@ def collect_tiktok(
                 logger.warning(f"[{account_id}] live_stats {target} 业务码重试耗尽，跳过该日期: {e}")
             except Exception as e:
                 logger.exception(f"[{account_id}] live_stats {target} 失败")
-                yield False, {
-                    "url": "",
-                    "request_body": None,
-                    "response_body": "",
-                    "data": {"error": str(e), "date": target.isoformat()},
-                }
+                yield _error_result(error=str(e), date=target.isoformat())
     finally:
         # 自建会话由本函数关闭；注入会话交回 adapter 在 finally 中关闭
         if owns_session:

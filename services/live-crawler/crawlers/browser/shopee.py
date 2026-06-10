@@ -918,6 +918,8 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
                 logger.error(f"切换后店铺 ID 仍不匹配: {new_current} != {target_shop_id}")
                 return False
 
+            # 直接更新 media_shop_id，避免外层重复调用 _fetch_login_info_via_js
+            self.media_shop_id = str(new_current)
             logger.info(f"跨境店 HTTP 切换成功: {target_shop_id}")
             return True
 
@@ -967,9 +969,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
 
             success = self._switch_to_shop_by_http(target_shop_id, region)
             if success:
-                # HTTP 切换成功后需重新获取 login info 并导航回采集页
-                if not self._fetch_login_info_via_js():
-                    return False
+                # HTTP 切换内部已更新 media_shop_id，无需重复获取
                 self._sync_remark_country_if_needed(target_shop_id)
                 logger.info(f'导航回原始采集页面: {original_url}')
                 self._open_collection_page(original_url)

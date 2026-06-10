@@ -12,11 +12,9 @@ python -m scripts.daily_report
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] daily-report exited with code %ERRORLEVEL%
-    pause
     exit /b %ERRORLEVEL%
 )
 
 echo.
 echo [SUCCESS] daily-report completed
-pause
 endlocal

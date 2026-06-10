@@ -12,11 +12,9 @@ python -m jobs.refresh_tiktok_credentials
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] refresh-tiktok-credentials exited with code %ERRORLEVEL%
-    pause
     exit /b %ERRORLEVEL%
 )
 
 echo.
 echo [SUCCESS] refresh-tiktok-credentials completed
-pause
 endlocal
