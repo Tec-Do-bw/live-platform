@@ -1,0 +1,1 @@
+{"request":{"pagination":{"size":100,"page":0},"extra_fields":["username","relative_time"],"sorting_rule":{"direction":1,"field":"timestamp"},"filter":{"room_id":"7649951805363391253","is_content_type":1,"creator_id":"7355581262502937605","country":"VN"},"time_filter":{"start_time":0,"end_time":40},"check_status":true}}
