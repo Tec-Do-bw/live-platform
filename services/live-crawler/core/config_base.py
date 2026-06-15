@@ -271,6 +271,14 @@ class BaseConfig(BaseSettings):
         "full_start_date": os.getenv("TIKTOK_HTTP_FULL_START_DATE", "").strip(),
     }
 
+    # Shopee 浏览器全量采集配置
+    SHOPEE_FULL_CONFIG: Dict[str, Any] = {
+        # 全量采集默认回溯月数（含当月），可通过 SHOPEE_FULL_WINDOW_MONTHS 覆盖
+        "full_window_months": int(os.getenv("SHOPEE_FULL_WINDOW_MONTHS", "2")),
+        # 固定全量起始日期（YYYY-MM-DD），配置后优先于 full_window_months
+        "full_start_date": os.getenv("SHOPEE_FULL_START_DATE", "").strip(),
+    }
+
     # 告警配置
     ALERT_CONFIG: Dict[str, Any] = {
         # 是否启用告警
