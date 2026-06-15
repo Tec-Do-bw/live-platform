@@ -6,10 +6,10 @@
 
 ## 📋 执行摘要
 
-**核心结论**：现有 TikTok HTTP 采集器（`services/live-crawler/crawlers/http/tiktok/collector.py`）**已覆盖 95% 核心需求**，通过轻量扩展即可实现直播大屏查询能力。
+**核心结论**：现有 TikTok HTTP 采集器（`services/live-crawler/crawlers/http/tiktok/collector.py`）**已覆盖核心数据需求**，通过轻量扩展即可实现直播大屏查询能力。
 
 **关键发现**：
-- ✅ **7 个已抓 API** 覆盖：GMV、流量、转化、观众画像、趋势对比、**商品列表**、评论
+- ✅ **5 个业务接口**（6 对样本，含两套 `user/portrait` 参数）覆盖：GMV、流量、转化、观众画像、趋势对比、**商品列表**
 - ✅ **商品列表 API 已补充**（2026-06-11）：包含单品 GMV/销量/库存/转化率等 17 个指标
 - ✅ **架构极简**：按需拉取 + 轻量缓存，无需后台轮询
 - ⚠️ **3 个风险点**：登录态过期、room_id 归属校验、TikTok 限流（暂不实现兜底，仅文档记录）
@@ -41,16 +41,13 @@
 | API | 业务含义 | 覆盖度 | 优先级 |
 |-----|---------|-------|-------|
 | **core/stats** | GMV、销量、流量、转化、粉丝、广告 ROI + 历史趋势对比 | ✅ 完整 | **P0** |
-| **room/status** | 直播时长、状态、回放链接 | ✅ 完整 | **P0** |
 | **product/list** | 商品列表（单品 GMV/销量/库存/转化率/加购数） | ✅ 完整 | **P0** |
 | **trend/chart** | 性能趋势曲线（Viewers + GMV 的 5 分钟粒度时间序列） | ✅ 完整 | **P1** |
 | **source/new** | 流量来源分析（一级/二级来源 + 各来源 GMV/转化） | ✅ 完整 | **P1** |
 | **user/portrait**（粉丝分层） | 观众画像-粉丝维度（新粉/老粉/非粉 + 各层 GMV/订单/客单价），`stats_types=[92,93,95,81,86]` | ✅ 完整 | **P1** |
 | **user/portrait**（人群画像） | 观众画像-人群维度（性别/年龄/地区分布），`stats_types=[85,86,87,88,89]` | ✅ 完整 | **P1** |
-| **event/timeline** | 事件时间线（推品节奏） | ⚠️ 部分 | **P2** |
-| **comment** | 弹幕/评论列表 | ⚠️ API存在 | **P2** |
 
-**结论**：P0 API（`core/stats` + `room/status` + `product/list`）可支撑 MVP 上线，覆盖 **95% 核心需求**。
+**结论**：P0 API（`core/stats` + `product/list`）可支撑 MVP 上线，覆盖核心指标与商品明细。
 
 > **注意**：`user/portrait` 是同一个接口，靠 `stats_types` 参数区分两套画像维度——粉丝分层（⑥）与性别/年龄/地区人群画像（⑦），下游需分两次调用。
 
@@ -60,18 +57,16 @@
 
 | 页面区域（截图圈选） | 关键展示字段 | 对应 API | 响应字段映射 |
 |---------------------|------------|---------|------------|
-| **① Performance trends**（左上，趋势图） | Viewers + Attributed GMV 的 5 分钟粒度时间曲线 | `trend/chart`<br>`/api/v1/insights/workbench/live/detail/trend/chart` | `trend_data[]`：`stats_type=20`(Viewers) + `stats_type=3`(GMV)，每条含 `data[]`（key=时间戳/value 或 amount）；`granularity=5`(分钟) |
-| **② 核心指标卡片**（中央大红框） | Attributed GMV `8,802,156`、Attributed items sold `146`、Current viewers `8`、Ads Cost、Views、Impressions per hour、Avg. viewing duration、Follow rate、Tap-through rate、LIVE CTR | `core/stats`<br>`/api/v1/insights/workbench/live/detail/core/stats` | `gmv_local` / `sales` / `current_visitor_cnt` / `ads_cost_local` / `watch_pv` / `show_pv_per_hour` / `avg_view_duration` / `click_through_rate` / `live_ctr` |
-| **③ LIVE + Comments**（右上） | 直播画面 + 实时评论流 | 评论：`comment`<br>`/api/v1/insights/workbench/live/recap/comment`<br>画面：直播流（另走取流链路） | `comment`：`next_pagination` + 评论数组（样本为空，需活跃评论间验证） |
-| **④ Traffic source**（左中） | Channel / Attributed GMV / Impressions / Views（Search、For You feed、LIVE preview、Video profile taps 等多级来源） | `source/new`<br>`/api/v3/insights/workbench/live/detail/source/new` | `all_traffic_distribution[]`：`main_source` + `detail_source[]` + 各来源 `gmv_local` / `watch_pv` / `ctr` |
-| **⑤ Product List**（中下） | 商品表格：Product / Attributed GMV / Product Impressions / CTR / Added to cart（含 Pinned 置顶标记、商品 ID） | `product/list`<br>`/api/v1/insights/workbench/live/detail/product/list` | `segments[].stats[]`：`id` / `name` / `gmv_local` / `exposure_cnt` / `click_through_rate` / `add_shop_cart_cnt` / `is_pinned` |
-| **⑥ Follower analytics**（左下） | New followers / Existing followers / Non-followers 占比（Followers `16.87%` vs Non-followers `83.13%`） | `user/portrait`<br>`/api/v1/insights/workbench/live/detail/user/portrait`<br>**`stats_types=[92,93,95,81,86]`** | `all_fan_distribution[]`（按 `type` 10/11/12/13 区分粉丝层级）+ `follower_gmv_local_distribution[]` / `follower_sku_order_distribution[]` / `follower_main_aov_local_distribution[]` |
-| **⑦ User profile**（右下） | Gender（Male `7.89%` / Female `92.11%`）、Age、Region 用户画像 | `user/portrait`<br>`/api/v1/insights/workbench/live/detail/user/portrait`<br>**`stats_types=[85,86,87,88,89]`** | `paid_gender_distribution[]`（性别 type 20/21/22）+ `paid_age_distribution[]`（年龄 type 3/4/5）+ `paid_state_distribution[]`（地区 key=省份/value=占比） |
+| **① Performance trends**（左上，趋势图） | Viewers + Attributed GMV 的 5 分钟粒度时间曲线 | `08: trend/chart`<br>`/api/v1/insights/workbench/live/detail/trend/chart` | `trend_data[]`：`stats_type=20`(Viewers) + `stats_type=3`(GMV)，每条含 `data[]`（key=时间戳/value 或 amount）；`granularity=5`(分钟) |
+| **② 核心指标卡片**（中央大红框） | Attributed GMV `8,802,156`、Attributed items sold `146`、Current viewers `8`、Ads Cost、Views、Impressions per hour、Avg. viewing duration、Follow rate、Tap-through rate、LIVE CTR | `06: core/stats`<br>`/api/v1/insights/workbench/live/detail/core/stats` | `gmv_local` / `sales` / `current_visitor_cnt` / `ads_cost_local` / `watch_pv` / `show_pv_per_hour` / `avg_view_duration` / `click_through_rate` / `live_ctr` |
+| **③ Traffic source**（左中） | Channel / Attributed GMV / Impressions / Views（Search、For You feed、LIVE preview、Video profile taps 等多级来源） | `03: source/new`<br>`/api/v3/insights/workbench/live/detail/source/new` | `data.stats.all_traffic_distribution[]`：`main_source` + `detail_source[]` + 各来源 `gmv_local` / `watch_pv` / `ctr` |
+| **④ Product List**（中下） | 商品表格：Product / Attributed GMV / Product Impressions / CTR / Added to cart（含 Pinned 置顶标记、商品 ID） | `05: product/list`<br>`/api/v1/insights/workbench/live/detail/product/list` | `segments[].stats[]`：`id` / `name` / `gmv_local` / `exposure_cnt` / `click_through_rate` / `add_shop_cart_cnt` / `is_pinned` |
+| **⑤ Follower analytics**（左下） | New followers / Existing followers / Non-followers 占比（Followers `16.87%` vs Non-followers `83.13%`） | `04: user/portrait`<br>`/api/v1/insights/workbench/live/detail/user/portrait`<br>**`stats_types=[92,93,95,81,86]`** | `all_fan_distribution[]`（按 `type` 10/11/12/13 区分粉丝层级）+ `follower_gmv_local_distribution[]` / `follower_sku_order_distribution[]` / `follower_main_aov_local_distribution[]` |
+| **⑥ User profile**（右下） | Gender（Male `7.89%` / Female `92.11%`）、Age、Region 用户画像 | `04b: user/portrait`<br>`/api/v1/insights/workbench/live/detail/user/portrait`<br>**`stats_types=[85,86,87,88,89]`** | `paid_gender_distribution[]`（性别 type 20/21/22）+ `paid_age_distribution[]`（年龄 type 3/4/5）+ `paid_state_distribution[]`（地区 key=省份/value=占比） |
 
 > **补数说明**：
-> - **⑥ Follower analytics** 与 **⑦ User profile** 共用 `user/portrait` 接口，靠 `stats_types` 区分：⑥用 `[92,93,95,81,86]` 返回粉丝分层，⑦用 `[85,86,87,88,89]` 返回性别/年龄/地区。下游需**分两次调用**，样本分别见 `raw/04-user-portrait.*`（⑥）和 `raw/04b-user-portrait.*`（⑦）。
-> - **① Performance trends** 对应 `trend/chart` 接口（样本已落盘 `raw/08-trend-chart.*`，请求体 `stats_types=[20,3]`，响应为 22 个 5 分钟粒度数据点）。
-> - **顶部 Duration**（`4 hr, 56 min, 40 sec`）来自 `room/status` 的 `duration` 字段。
+> - **⑤ Follower analytics** 与 **⑥ User profile** 共用 `user/portrait` 接口，靠 `stats_types` 区分：⑤用 `[92,93,95,81,86]` 返回粉丝分层（API 编号 04），⑥用 `[85,86,87,88,89]` 返回性别/年龄/地区（API 编号 04b）。下游需**分两次调用**，样本分别见 `raw/04-user-portrait.*` 和 `raw/04b-user-portrait.*`。
+> - **① Performance trends** 对应 `trend/chart` 接口（API 编号 08，样本已落盘 `raw/08-trend-chart.*`，请求体 `stats_types=[20,3]`，响应为 22 个 5 分钟粒度数据点）。
 
 ---
 
@@ -98,7 +93,7 @@ sequenceDiagram
     LC->>TK: curl_cffi 请求（带 cookie）
     TK-->>LC: 返回 JSON
     LC-->>LP: 返回采集结果
-    LP->>LP: 聚合 5 个 API 数据
+    LP->>LP: 聚合 P0/P1 API 数据
     LP-->>PD: 返回大屏 JSON
 ```
 
@@ -106,7 +101,7 @@ sequenceDiagram
 
 | 组件 | 路径 | 职责 |
 |------|------|------|
-| **DashboardCollector** | `live-platform/services/dashboard_collector.py` | 编排 5 个 TikTok API 调用，聚合成大屏数据包 |
+| **DashboardCollector** | `live-platform/services/dashboard_collector.py` | 编排 P0/P1 TikTok API 调用，聚合成大屏数据包 |
 | **API Routes** | `live-platform/api/tiktok_dashboard.py` | 对外暴露查询接口 |
 | **轻量缓存** | Redis (可选) | 缓存 3-5min，避免短时间重复请求同一 room_id |
 | **开播检测** | `live-platform/orchestrator/scheduler.py` | 现有能力，维护 `room.is_live` 字段 |
@@ -165,7 +160,7 @@ GET /api/tiktok/dashboard/rooms
 GET /api/tiktok/dashboard/detail?room_id=7649951805363391253
 ```
 
-**响应示例**（聚合 5 个 API）：
+**响应示例**（聚合 P0/P1 API）：
 
 ```json
 {
@@ -175,11 +170,6 @@ GET /api/tiktok/dashboard/detail?room_id=7649951805363391253
     "room_id": "7649951805363391253",
     "account_id": "tiktok_vn_001",
     "is_live": true,
-    "status": {
-      "duration": 3600,
-      "ended_at": null,
-      "replay_url": null
-    },
     "core_stats": {
       "gmv_local": 12500.50,
       "sales": 245,
@@ -199,13 +189,6 @@ GET /api/tiktok/dashboard/detail?room_id=7649951805363391253
         {"type": 11, "count": 800}
       ]
     },
-    "event_timeline": [
-      {
-        "event_type": 2,
-        "start_timestamp": 1717887600,
-        "pin_product": {"id": "123", "name": "Product A"}
-      }
-    ],
     "dataSource": "live_crawler_tiktok_http"
   }
 }
@@ -219,28 +202,20 @@ GET /api/tiktok/dashboard/detail?room_id=7649951805363391253
 
 | 任务 | 估时 | 产出 |
 |------|------|------|
-| 1. 在 live-platform 新增 `DashboardCollector` 类 | 1.5d | 封装 `fetch_core_stats` + `fetch_room_status` + `fetch_product_list` 三个 API |
-| 2. 新增 API routes `/api/tiktok/dashboard/*` | 0.5d | 实现列表 + 详情两个接口 |
-| 3. room 表增量字段迁移 | 0.5d | 添加 `is_live` / `last_live_start` / `last_live_end` |
-| 4. 前端对接（派大星） | 2.5d | Vue 页面 + 图表渲染（Echarts）+ **商品列表表格** |
-| **总计** | **5d** | **MVP 可上线，覆盖 95% 需求** |
+| 1.1 在 live-platform 新增 `DashboardCollector` 类 | 1.5d | 封装 `fetch_core_stats` + `fetch_product_list` 两个 P0 API |
+| 1.2 新增 API routes `/api/tiktok/dashboard/*` | 0.5d | 实现列表 + 详情两个接口 |
+| 1.3 room 表增量字段迁移 | 0.5d | 添加 `is_live` / `last_live_start` / `last_live_end` |
+| 1.4 前端对接（派大星） | 2.5d | Vue 页面 + 图表渲染（Echarts）+ **商品列表表格** |
+| **总计** | **5d** | **MVP 可上线，覆盖核心数据需求** |
 
-### Phase 2: 优化 (P1 — 流量分析 + 观众画像)
+### Phase 2: 优化 (P1 — 趋势图 + 流量分析 + 观众画像)
 
 | 任务 | 估时 | 产出 |
 |------|------|------|
-| 5. 补充 `fetch_source` + `fetch_user_portrait` | 0.5d | 流量来源饼图 + 观众画像表格 |
-| 6. Redis 缓存层 | 0.5d | 3min TTL，减少重复请求 |
-| ~~7. 补充抓包商品列表 API~~ | ~~1d~~ | ✅ **已完成**（2026-06-11） |
+| 2.1 补充 `fetch_trend_chart` + `fetch_source` + `fetch_user_portrait` | 0.5d | 趋势图 + 流量来源饼图 + 观众画像表格 |
+| 2.2 Redis 缓存层 | 0.5d | 3min TTL，减少重复请求 |
+| ~~2.3 补充抓包商品列表 API~~ | ~~1d~~ | ✅ **已完成**（2026-06-11） |
 | **总计** | **1d** | **完整大屏能力** |
-
-### Phase 3: 扩展 (P2 — 推品节奏 + 弹幕分析)
-
-| 任务 | 估时 | 产出 |
-|------|------|------|
-| 8. `fetch_event_timeline` 集成 | 0.5d | 推品节奏时间轴 |
-| 9. 补充抓包弹幕/互动 API | 1d | 弹幕云图 + 互动明细 |
-| **总计** | **1.5d** | **高级分析能力** |
 
 ---
 
@@ -275,7 +250,7 @@ GET /api/tiktok/dashboard/detail?room_id=7649951805363391253
 
 2. **创建 DashboardCollector 类**
    - 在 `live-platform/services/dashboard_collector.py` 封装 `collect_dashboard_data(account_id, room_id)` 方法
-   - 聚合 `fetch_core_stats` + `fetch_room_status` + `fetch_product_list` 三个 API
+   - 聚合 `fetch_core_stats` + `fetch_product_list` 两个 P0 API
 
 3. **API 路由开发**
    - 在 `live-platform/api/tiktok_dashboard.py` 实现 `/rooms` 和 `/detail` 两个接口

@@ -9,7 +9,6 @@
 - 趋势图（历史对比）
 - 流量来源分析
 - 观众画像（粉丝分层）
-- 直播事件时间线（推品节奏）
 
 ---
 
@@ -19,27 +18,27 @@
 
 | API 编号 | 接口名称 | 业务含义 | 优先级 |
 |---------|---------|---------|-------|
-| **01** | room/status | 直播间状态、时长、回放链接 | P0 |
 | **06** | core/stats | **核心 API**：GMV、销量、UV/PV、转化率、ROI、市场/历史趋势对比 | P0 |
+| **05** | product/list | 商品列表（单品 GMV/销量/库存/转化率/加购数） | P0 |
+| **08** | trend/chart | 性能趋势曲线（Viewers + GMV 的 5 分钟粒度时间序列） | P1 |
 | **03** | source/new | 流量来源分析（一级/二级细分，各来源 GMV 和转化漏斗） | P1 |
-| **04** | user/portrait | 观众画像（按粉丝类型统计订单/GMV/客单价） | P1 |
-| **02** | event/timeline | 直播事件时间线（当前仅商品置顶事件） | P2 |
+| **04** | user/portrait（粉丝分层） | 观众画像（按粉丝类型统计订单/GMV/客单价） | P1 |
+| **04b** | user/portrait（人群画像） | 性别/年龄/地区分布 | P1 |
 
 ### 2.2 覆盖度评估
 
-- ✅ **已覆盖 80% 核心需求**：GMV、流量、转化、画像、趋势、来源分析均完整
-- ⚠️ **高优先级缺失**：
-  1. **商品列表 API**（单品销量/库存/转化率）— 需补充抓包
-  2. **弹幕/互动 API**（评论数/点赞数）— 需补充抓包
+- ✅ **已覆盖核心数据需求**：GMV、流量、转化、商品、画像、趋势、来源分析均完整
+- ⚠️ **剩余非核心项**：诊断类接口当前抓包返回空数据，暂不纳入 MVP
 
 ### 2.3 MVP 可行性
 
-现有 5 个 API 已可构建直播大屏 MVP：
+现有 P0/P1 API 已可构建直播大屏 MVP：
 - 顶部卡片：`06-core-stats` 的 `gmv_local`、`sales`、`watch_uv`、`click_through_rate`
-- 趋势图：`06-core-stats.stats_benchmark_data.self_cmp_data[]` 绘制历史对比
+- 性能趋势图：`08-trend-chart` 的 Viewers + GMV 5 分钟粒度时间序列
+- 历史趋势对比：`06-core-stats.stats_benchmark_data.self_cmp_data[]`
 - 流量分析：`03-source-new` 饼图/柱状图
-- 观众画像：`04-user-portrait` 粉丝分层表格
-- 回放入口：`01-room-status` 的 `replay_url`
+- 观众画像：`04-user-portrait` 粉丝分层 + `04b-user-portrait` 性别/年龄/地区
+- 商品列表：`05-product-list` 商品表格
 
 ---
 
@@ -188,7 +187,7 @@ Headers:
 
 本项目包含 **5 大核心模块**：
 
-1. **实时直播大屏 API 采集**：正在直播的房间，按需拉取 TikTok 后台 9 个 API
+1. **实时直播大屏 API 采集**：正在直播的房间，按需拉取 TikTok 后台大屏 API
 2. **回放直播大屏 API 采集**：已结束直播的房间，复用同一套 API（只是 room_id 不同）
 3. **SQLite → MySQL 迁移**：live-crawler 的 SQLite 数据库迁移到生产 MySQL
 4. **内存状态 → Redis 迁移**：live-platform 的 5 分钟监控状态从内存迁移到 Redis
@@ -206,8 +205,8 @@ Headers:
 | 1.1 | **SQLite → MySQL 迁移**<br>- 设计 MySQL 表结构（room/account_credentials/live_list 等）<br>- 编写迁移脚本（带数据校验）<br>- 生产环境迁移验证 | 后端 | 2d | 迁移脚本 + 数据对账报告 | 无 |
 | 1.2 | **内存状态 → Redis 迁移**<br>- live-platform 的 `scheduler.detect_rooms()` 状态存储改造<br>- Redis key 设计：`live:room:{room_id}:status`<br>- 兜底策略：Redis 挂掉时降级到内存 | 后端 | 1d | Redis 状态管理模块 | 无 |
 | **Phase 2: 采集器开发** | | | **3d** | | |
-| 2.1 | **TikTok 大屏采集器扩展**<br>- 在 `collector.py` 新增 5 个 `fetch_*` 方法<br>- 单元测试覆盖（mock TikTok 响应） | 爬虫开发 | 2d | `collector.py` + 单测 | Phase 1.1 |
-| 2.2 | **DashboardCollector 聚合器**<br>- 创建 `dashboard_collector.py`<br>- 并发调用 9 个 API（P0 优先）<br>- 统一错误处理 | 后端 | 1d | `DashboardCollector` 类 | Phase 2.1 |
+| 2.1 | **TikTok 大屏采集器扩展**<br>- 在 `collector.py` 补齐大屏相关 `fetch_*` 方法<br>- 单元测试覆盖（mock TikTok 响应） | 爬虫开发 | 2d | `collector.py` + 单测 | Phase 1.1 |
+| 2.2 | **DashboardCollector 聚合器**<br>- 创建 `dashboard_collector.py`<br>- 并发调用大屏 API（P0 优先）<br>- 统一错误处理 | 后端 | 1d | `DashboardCollector` 类 | Phase 2.1 |
 | **Phase 3: 后端 API 开发** | | | **2d** | | |
 | 3.1 | **API 路由开发**<br>- `GET /api/tiktok/dashboard/rooms`<br>- `GET /api/tiktok/dashboard/detail`<br>- Swagger 文档 | 后端 | 1.5d | API routes + 文档 | Phase 2.2 |
 | 3.2 | **开播检测增强**<br>- `scheduler.detect_rooms()` 状态写入 Redis<br>- 更新 MySQL `room` 表时间字段 | 后端 | 0.5d | Scheduler 增强 | Phase 1 |
@@ -217,7 +216,7 @@ Headers:
 | **Phase 5: 数仓对接** | | | **2d** | | |
 | 5.1 | **数仓表设计 + ETL 开发**<br>- 宽表/星型模型设计<br>- MySQL → 数仓同步脚本 | 数仓开发 | 2d | ETL 脚本 + 对账报告 | Phase 3 |
 | **Phase 6: 前端对接** | | | **2d** | | |
-| 6.1 | **派大星页面开发**<br>- 列表页（筛选+分页）<br>- 大屏详情页（7 区域可视化）<br>- Echarts 图表集成 | 前端 | 2d | Vue 页面 | Phase 3.1 |
+| 6.1 | **派大星页面开发**<br>- 列表页（筛选+分页）<br>- 大屏详情页（核心区域可视化）<br>- Echarts 图表集成 | 前端 | 2d | Vue 页面 | Phase 3.1 |
 | **Phase 7: 联调 + 上线** | | | **1d** | | |
 | 7.1 | **端到端联调**<br>- 全链路测试<br>- 数据准确性验证 | 全员 | 0.5d | 联调报告 | Phase 6 |
 | 7.2 | **灰度发布 + 监控配置**<br>- 灰度 1-2 个运营<br>- 飞书告警配置 | 运维 + 后端 | 0.5d | 发布记录 | Phase 7.1 |
@@ -229,10 +228,10 @@ Headers:
 | 里程碑 | 时间节点 | 交付标准 |
 |--------|---------|---------|
 | **M1: 基础设施就绪** | Day 3 | SQLite 迁移完成 + Redis 状态管理上线 |
-| **M2: 采集器可用** | Day 6 | 9 个 API 可抓取 + 单测通过 |
+| **M2: 采集器可用** | Day 6 | 大屏 API 可抓取 + 单测通过 |
 | **M3: 后端 API 可用** | Day 8 | `/rooms` 和 `/detail` 通过 Postman 测试 |
 | **M4: 稳定性达标** | Day 10 | 压测通过（10 QPS）+ bug 清零 |
-| **M5: 前端可用** | Day 12 | 派大星页面可渲染 7 区域数据 |
+| **M5: 前端可用** | Day 12 | 派大星页面可渲染核心区域数据 |
 | **M6: 上线稳定** | Day 15 | 灰度 3 天无 P0 bug + 监控正常 |
 
 ---
@@ -280,15 +279,8 @@ Headers:
 |------|------|------|---------|
 | TikTok API 限流 | 查询失败，用户无法查看大屏 | 中 | 监控 API 失败率，超 10% 告警飞书；Phase 3 增加防抖 |
 | 凭据失效 | 无法采集数据 | 高 | 返回明确错误码 4002，前端引导重新登录 |
-| 响应慢（> 3s） | 用户体验差 | 中 | 设置 10s 超时；异步并发调用 3 个 API |
+| 响应慢（> 3s） | 用户体验差 | 中 | 设置 10s 超时；异步并发调用核心 API |
 | 并发高（> 10 QPS） | 服务器压力大 | 低 | Nginx rate limit 限流；前端防抖 |
-
-### 5.3 数据缺失风险
-
-- **商品明细缺失**：当前 API 无单品销量/库存数据，需补充抓包验证是否有 `/product/sales` 接口
-- **弹幕互动缺失**：无评论/点赞明细，若用户需要需补充抓包 `/comment/list` 或 WebSocket 连接
-
----
 
 ## 6. 下一步行动
 

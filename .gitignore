@@ -72,3 +72,5 @@ _tmp_*/
 # === Playwright CLI 持久化会话 ===
 .playwright-cli/
 .claude/scratch/
+# brainstorming visual companion 临时产物
+.superpowers/
