@@ -2,14 +2,15 @@
 
 ## 1. API 样本分析表
 
+> **本批样本采集上下文**：collection_id=`k19f2q44`（越南团队 TikTok 账号 `bagsmart_official.vn`），room_id=`7651420995556182804`，region=VN，creator_id=`7158775580024210437`。采集方式：`requests` + socks5 越南代理 + 完整登录 Cookie（`sessionid`/`sid_tt` 等），无额外签名 header。响应金额统一 VND（`amount` 为最小单位字符串 + `amount_formatted`）。样本抓取时间 2026-06-15，实测请求脚本见 scratches/`TK-越南团队实时直播测试-k19f2q44`，配对响应见 `raw/`（**03 source/new 为 2026-06-11 旧批，本次未重采**）。
+
 | API 编号 | 接口名称 | URL 路径 | 请求参数 | 响应核心字段 | 业务含义 | 对应页面区域 |
 |---------|---------|---------|---------|------------|---------|------------|
 | **03** | source/new | `/api/v3/insights/workbench/live/detail/source/new` | `room_id`<br>`is_content_type`<br>`stats_types=[100]`<br>`version=3` | `stats.all_traffic_distribution[]` (流量来源分布)<br>- `main_source` (一级来源)<br>- `detail_source[]` (二级来源)<br>- 包含：`watch_pv` `ctr` `co` `gmv_usd` `gmv_local` `enter_room_rate` `show_gpm_usd` `show_gpm_local` | 流量来源分析，支持二级细分。包含各来源 GMV、转化率、进房率、千次曝光 GMV | **④ Traffic source**（左中，Channel/Attributed GMV/Impressions/Views 多级来源表） |
-| **04** | user/portrait（粉丝分层） | `/api/v1/insights/workbench/live/detail/user/portrait` | `room_id`<br>`is_content_type`<br>**`stats_types=[92,93,95,81,86]`** | `stats.all_fan_distribution[]` (粉丝分布，type 10/11/12/13)<br>`stats.paid_fan_distribution[]` (付费粉丝分布)<br>`stats.follower_gmv_local_distribution[]` (粉丝 GMV 分布)<br>`stats.follower_sku_order_distribution[]` (粉丝订单分布)<br>`stats.follower_main_aov_local_distribution[]` (粉丝客单价分布) | 观众画像-**粉丝维度**，按粉丝层级统计人数、订单、GMV、客单价。**三类画像（Viewer/Customer/Impressions）完整 ID 映射见 [§1.2](#12-userportrait-完整指标-id-映射三类画像一次全返回)，已验证一次请求传全部 14 个 ID 可一并返回** | **⑥ Follower analytics**（左下，新粉/老粉/非粉占比 + 各层 GMV/订单/客单价）<br>样本：`raw/04-user-portrait.*` |
-| **04b** | user/portrait（人群画像） | `/api/v1/insights/workbench/live/detail/user/portrait` | `room_id`<br>`is_content_type`<br>**`stats_types=[85,86,87,88,89]`** | `stats.paid_gender_distribution[]` (性别分布，type 20=男/21=女/22=未知)<br>`stats.paid_age_distribution[]` (年龄分布，type 3/4/5)<br>`stats.paid_state_distribution[]` (地区分布，key=省份/value=占比)<br>`stats.paid_fan_distribution[]` (付费粉丝分布) | 观众画像-**人群维度**，按性别/年龄/地区统计付费用户分布 | **⑦ User profile**（右下，Gender/Age/Region 用户画像）<br>样本：`raw/04b-user-portrait.*` |
-| **05** | product/list | `/api/v1/insights/workbench/live/detail/product/list` | `room_id`<br>`is_content_type`<br>`sorting_type` (排序：1=GMV降序)<br>`stats_types` (17个商品指标ID) | **商品列表**（每个商品包含）：<br>- `id` / `name` / `cover_url` (商品ID/名称/封面)<br>- `gmv_local` (单品 GMV)<br>- `sales` (销量)<br>- `exposure_cnt` (曝光数)<br>- `click_through_rate` (点击率)<br>- `click_order_rate` (点击下单率)<br>- `main_aov_local` (客单价)<br>- `inventory_left_cnt` (剩余库存)<br>- `add_shop_cart_cnt` (加购数)<br>- `is_pinned` (是否置顶)<br>- `is_live` (是否在售)<br>**汇总指标**：<br>- `sold_product` (售出商品种类数) | **商品维度详细数据**，支持按 GMV/销量/点击率等排序，包含单品完整转化漏斗。**全量 stats_types 映射见 [§1.3](#13-productlist-完整指标-id-映射全量一次返回)，已验证一次传 24 个去重 ID 返回全部商品指标** | **⑤ Product List**（中下，Product/Attributed GMV/Product Impressions/CTR/Added to cart 表格） |
-| **06** | core/stats | `/api/v1/insights/workbench/live/detail/core/stats` | `room_id`<br>`is_content_type`<br>`creator_id`<br>`country`<br>`stats_types` (网页 35 个可选 + 4 个固定 KPI + 3 个内部辅助位) | **核心指标**：<br>- `gmv_local` (总 GMV)<br>- `sales` (销量)<br>- `current_visitor_cnt` (在线人数)<br>- `click_through_rate` (点击率)<br>- `click_order_rate` (点击下单率)<br>- `main_aov_local` (客单价)<br>- `watch_uv` / `watch_pv` (观看 UV/PV)<br>- `avg_view_duration` (平均观看时长)<br>- `accumulated_new_follower_cnt` (新增粉丝)<br>- `product_click_rate` (商品点击率)<br>- `show_pv_per_hour` / `gmv_local_per_hour` (时均曝光/GMV)<br>**benchmark 对比**：<br>- `market_cmp_data[]` (市场对比)<br>- `self_cmp_data[]` (历史对比) | **最核心 API**，包含大屏所有关键指标：GMV、销量、流量、转化、粉丝、广告 ROI。提供市场/历史趋势对比。**完整 `stats_types` ID → 指标名映射见 [§1.1](#11-corestats-完整指标-id-映射api-06-深入)，已验证 API 不受网页 16 个勾选上限约束** | **② 核心指标卡片**（中央大红框，Attributed GMV/items sold/Current viewers/Ads Cost/Views/Impressions per hour/Avg viewing duration/Follow rate/Tap-through rate/LIVE CTR） |
-| **08** | trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | `room_id`<br>`is_content_type`<br>`stats_types=[20,3]` (20=Viewers, 3=GMV) | `trend_data[]`（每条对应一个 `stats_type`）：<br>- `stats_type=20`：`data[]` 中 `key`=时间戳 / `value`=在线人数<br>- `stats_type=3`：`data[]` 中 `key`=时间戳 / `amount`=GMV 金额对象<br>`granularity` (5=5分钟粒度)<br>`timezone_offset` / `timezone` | 性能趋势曲线，按 5 分钟粒度聚合在线人数与 GMV。样本含 22 个时间点。**全部 27 个可选指标 ID 见 [§1.4](#14-trendchart-全部可选指标-id-列表独立-id-体系)；网页每次只能选 2 个，但已验证 API 可一次传全部合法 ID 返回多条趋势序列。⚠️ trend/chart 用独立 ID 体系，勿与 core/stats 的 ID 混用** | **① Performance trends**（左上，Viewers + Attributed GMV 双线趋势图）<br>样本：`raw/08-trend-chart.*` |
+| **04all** | user/portrait（三类画像合并） | `/api/v1/insights/workbench/live/detail/user/portrait` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>**`stats_types=[80,81,82,83,90, 85,86,87,88, 350,351,352,353]`**（13 个，一次返回三类画像） | `data.stats` 含 13 个分布字段：<br>**Viewer**（全体观众）：`all_gender_distribution` `all_fan_distribution` `all_age_distribution` `all_state_distribution` `country_distribution`<br>**Customer**（付费）：`paid_gender_distribution` `paid_fan_distribution` `paid_age_distribution` `paid_state_distribution`<br>**Impressions**（曝光）：`impressions_gender_distribution` `impressions_country_distribution` `impressions_age_distribution` `impressions_state_distribution`<br>性别 type 20男/21女/22未知；年龄 type 3/4/5；地区/国家 key=名称 value=占比 | 观众画像。**实测一次请求传 13 个 ID 即返回三类画像全部分布字段**，绕过网页分 Tab 限制。完整映射见 [§1.2](#12-userportrait-完整指标-id-映射三类画像一次全返回) | **⑥ Follower analytics**（左下，新粉/老粉/非粉 + GMV/订单/客单价）<br>**⑦ User profile**（右下，Gender/Age/Region）<br>样本：`raw/04all-user-portrait.*` |
+| **05** | product/list | `/api/v1/insights/workbench/live/detail/product/list` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>`sorting_type=1`（GMV 降序）<br>**`stats_types=[4,5,6,7,10,15,17,18,21,30,35,41,48,51,55,64,120,301,345]`**（19 个） | 响应路径 `data.segments[0].stats[]`，每个商品对象（实测 22 个商品）含：<br>- `id` / `name` / `cover_url` / `is_pinned`（恒定）<br>- `gmv_local`（单品 GMV，金额对象）<br>- `sales`（销量）<br>- `exposure_cnt`（曝光数）<br>- `click_through_rate`（CTR）<br>- `total_click_cnt`（点击数）<br>- `click_order_rate`（CTOR）<br>- `paid_order_cnt` / `paid_main_order_cnt`（订单/SKU 订单）<br>- `paid_user_cnt`（客户数）<br>- `main_aov_local`（客单价）<br>- `watch_gpm_local`（Watch GPM）<br>- `inventory_left_cnt`（剩余库存）<br>- `add_shop_cart_cnt`（加购）<br>- `payment_success_rate`（支付成功率）<br>- `is_live`（是否在售）/ `platform_type` / `sellable_country` / `sellable_countries` / `source`<br>**汇总**：`data.sold_product`（售出商品种类数，实测 `13`） | **商品维度详细数据**，按 GMV 降序，含单品完整转化漏斗。**全量 stats_types→字段映射见 [§1.3](#13-productlist-完整指标-id-映射全量一次返回)，已实测单 ID 逐个锁定** | **⑤ Product List**（中下，Product/Attributed GMV/Product Impressions/CTR/Added to cart 表格）<br>样本：`raw/05-product-list.*` |
+| **06** | core/stats | `/api/v1/insights/workbench/live/detail/core/stats` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>`room_filter.creator_id`<br>`room_filter.country=VN`<br>**`stats_types`**（本批实测传 55 个：43 正 + 12 负）：<br>正=35 网页可选 + 5 固定 KPI（3/2/5/18/17）+ 3 广告辅助（290/291/292）<br>负=行业基准对比 `[-3,-2,-7,-344,-23,-20,-18,-39,-10,-11,-70,-71]` | `data.stats` 一次返回 41 个字段（实测）：<br>- `gmv_local`（GMV，金额对象，`17761420`）<br>- `sales`（71）/ `current_visitor_cnt`（6）<br>- `paid_order_cnt`（71）/ `main_order_cnt`（47）/ `paid_user_cnt`（36）<br>- `click_through_rate`（LIVE CTR）/ `click_order_rate` / `click_order_rate_main`（CTOR）/ `sku_order_rate`<br>- `main_aov_local` / `sku_aov_local`<br>- `watch_uv`（2826）/ `watch_pv`（4232）/ `watch_pv_one_min_plus`（334）<br>- `client_show_cnt` / `show_pv_per_hour` / `product_view_cnt` / `product_reach_cnt` / `product_click_through_rate`<br>- `avg_view_duration` / `avg_watching_time` / `enter_room_rate` / `enter_room_rate_live_preview`<br>- `live_show_gpm_local` / `watch_gpm_local` / `gmv_local_per_hour`<br>- `payment_success_rate` / `est_gmv_local` / `with_subsidy_gmv_local`<br>- `accumulated_comment_cnt` / `accumulated_sharing_cnt` / `accumulated_new_follower_cnt` / `likes` / `live_comment_rate` / `live_follow_rate` / `live_like_rate` / `live_share_rate`<br>- `ads_cost_local` / `ads_gmv_max_roi` / `is_ads_roi2` / `ads_roi2_effective_time`<br>**benchmark 对比**：`data.stats_benchmark_data.market_cmp_data[]`（本批实回 `{stats_type:315,cmp:"-0.800944"}`） | **最核心 API**，含大屏所有关键指标。**完整 55 个 stats_types ID → 字段名映射见 [§1.1](#11-corestats-完整指标-id-映射api-06-深入)，已逐个抓包实测确认；API 不受网页 16 勾选上限约束** | **② 核心指标卡片**（中央，Attributed GMV/items sold/Current viewers/Ads Cost/Views/Impressions per hour/Avg viewing duration/Follow rate/Tap-through rate/LIVE CTR）<br>样本：`raw/06-core-stats.*` |
+| **08** | trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>**`stats_types`**（本批实测传 27 个全集）：`[3,52,82,41,344, 20,11,50,14,84,51,92, 23,13,12,16,312,313,314,315, 401,15,91,343,350,81,323]` | `data.trend_data[]`（每条对应一个 `stats_type`，本批返回 27 条）：<br>- 货币类（如 `stats_type=3` GMV、`401` AOV、`91` Watch GPM、`81` Show GPM）：`data[]` 中 `key`=时间戳 / `amount`=金额对象<br>- 计数/比率类（如 `20` Viewers、`11` Views、`50` Product Impressions、`16` Likes）：`data[]` 中 `key`=时间戳 / `value`=数值字符串<br>`granularity=15`（15 分钟粒度，服务端按直播时长自动决定，**不在请求体内**）<br>`timezone_offset=25200` / `timezone="Asia/Ho Chi Minh"`<br>本批每条序列含 50 个时间点 | 性能趋势曲线，按 15 分钟粒度聚合多指标时间序列。**全部 27 个可选指标 ID 见 [§1.4](#14-trendchart-全部可选指标-id-列表独立-id-体系)；网页每次只能选 2 个，但已验证 API 可一次传全部 27 个返回多条序列。⚠️ trend/chart 用独立 ID 体系，勿与 core/stats 的 ID 混用** | **① Performance trends**（左上，Viewers + Attributed GMV 双线趋势图）<br>样本：`raw/08-trend-chart.*` |
 
 ---
 
@@ -224,7 +225,7 @@ POST /api/v1/insights/workbench/live/detail/user/portrait
 
 ### 另一套维度：粉丝 GMV 贡献（单 ID 实测确认）
 
-旧样本 `raw/04-user-portrait.*` 用的是另一组 ID，实测确认对应「粉丝分层的 GMV/订单/客单价贡献」维度，与上表人口画像**不同**：
+除上表三类人口画像外，`user/portrait` 还有另一组 ID（早期样本曾用 `[92,93,95,81,86]`），实测确认对应「粉丝分层的 GMV/订单/客单价贡献」维度，与人口画像**不同**：
 
 | stats_type ID | 响应字段名 | 含义 |
 |---|---|---|
@@ -428,24 +429,27 @@ TREND_CHART_FULL = [
 | 大屏模块 | 覆盖情况 | 覆盖 API |
 |---------|---------|---------|
 | ✅ 核心指标卡片（GMV/观众/订单/转化率） | **完整** | `06-core-stats` |
-| ✅ 性能趋势图（Viewers + GMV 时间曲线） | **完整** | `08-trend-chart`（5 分钟粒度时间序列）✅ **已补充** |
+| ✅ 性能趋势图（多指标时间曲线） | **完整** | `08-trend-chart`（15 分钟粒度，本批一次拉 27 个指标） |
 | ✅ 历史趋势对比（市场/自身对比） | **完整** | `06-core-stats` 的 `stats_benchmark_data` |
-| ✅ 流量来源分析 | **完整** | `03-source-new` |
-| ✅ 观众画像-粉丝分层 | **完整** | `04-user-portrait`（`stats_types=[92,93,95,81,86]`） |
-| ✅ 观众画像-人群（性别/年龄/地区） | **完整** | `04b-user-portrait`（`stats_types=[85,86,87,88,89]`）✅ **已补充** |
+| ✅ 流量来源分析 | **完整** | `03-source-new`（2026-06-11 旧批，本次未重采） |
+| ✅ 观众画像-粉丝分层 | **完整** | `04all-user-portrait`（Viewer 组 `80,81,82,83,90`） |
+| ✅ 观众画像-人群（性别/年龄/地区） | **完整** | `04all-user-portrait`（Customer 组 `85,86,87,88` + Impressions 组 `350-353`） |
 | ✅ 商品列表与明细 | **完整** | `05-product-list` |
 
 ---
 
 ## 3. 已补充 API + 待验证清单
 
-### ✅ 已补充（2026-06-11 抓包）
+### ✅ 本批重采（2026-06-15，collection_id=k19f2q44 越南团队）
 
 | API | 路径 | 状态 |
 |-----|------|------|
-| 商品列表 | `/api/v1/insights/workbench/live/detail/product/list` | ✅ **已完整抓取**，包含单品 GMV/销量/库存/转化率等 17 个指标 |
-| 性能趋势图 | `/api/v1/insights/workbench/live/detail/trend/chart` | ✅ **已完整抓取**，`stats_types=[20,3]` 返回 Viewers + GMV 的 5 分钟粒度时间序列 |
-| 人群画像 | `/api/v1/insights/workbench/live/detail/user/portrait`（`stats_types=[85,86,87,88,89]`） | ✅ **已完整抓取**，性别/年龄/地区分布（与粉丝分层共用接口，靠 stats_types 区分） |
+| 核心指标 | `/api/v1/insights/workbench/live/detail/core/stats` | ✅ **真实请求验证**，一次传 55 个 stats_types（43 正+12 负）返回 41 个字段 + benchmark |
+| 商品列表 | `/api/v1/insights/workbench/live/detail/product/list` | ✅ **真实请求验证**，19 个 stats_types 返回 22 个商品 + `sold_product` 汇总 |
+| 性能趋势图 | `/api/v1/insights/workbench/live/detail/trend/chart` | ✅ **真实请求验证**，一次传 27 个指标返回 27 条 15 分钟粒度序列 |
+| 观众画像（三类合并） | `/api/v1/insights/workbench/live/detail/user/portrait` | ✅ **真实请求验证**，13 个 ID 一次返回 Viewer/Customer/Impressions 三类全部分布 |
+
+> ⚠️ `03-source-new` 为 2026-06-11 旧批样本，本次未重采；其字段以旧样本为准。
 
 ---
 
@@ -455,24 +459,22 @@ TREND_CHART_FULL = [
 |-------|-----|---------|
 | **P0** | `06-core-stats` | 立即实现，覆盖核心指标卡片 + 历史/市场对比 |
 | **P0** | `05-product-list` | ✅ **已抓包**，商品列表是核心诉求，包含单品完整转化漏斗 |
-| **P1** | `08-trend-chart` | ✅ **已抓包**，性能趋势曲线（Viewers + GMV 5 分钟粒度） |
-| **P1** | `03-source-new` | 流量归因分析，辅助运营优化 |
-| **P1** | `04-user-portrait` | 粉丝分层画像（`stats_types=[92,93,95,81,86]`） |
-| **P1** | `04b-user-portrait` | ✅ **已抓包**，人群画像-性别/年龄/地区（`stats_types=[85,86,87,88,89]`） |
+| **P1** | `08-trend-chart` | ✅ **已抓包**，性能趋势曲线（一次传 27 个指标，15 分钟粒度） |
+| **P1** | `03-source-new` | 流量归因分析，辅助运营优化（2026-06-11 旧批） |
+| **P1** | `04all-user-portrait` | ✅ **已抓包**，三类画像（Viewer/Customer/Impressions）一次 13 个 ID 全返回 |
 
 ---
 
 ## 5. MVP 可验证范围
 
-现有 **6 对 API 样本**（覆盖 5 个业务接口，含 2 套 user/portrait 维度）已可构建直播大屏 MVP：
+现有 **5 对 API 样本**（覆盖 5 个业务接口，user/portrait 三类画像已合并为一次请求）已可构建直播大屏 MVP：
 
 - **顶部卡片**：`06-core-stats` 的 `gmv_local`、`sales`、`watch_uv`、`click_through_rate`
-- **性能趋势图**：`08-trend-chart` 的 Viewers + GMV 5 分钟粒度时间序列 ✅ **新增**
-- **历史趋势对比**：`06-core-stats.stats_benchmark_data.self_cmp_data[]`
-- **流量分析**：`03-source-new` 饼图/柱状图
-- **观众画像-粉丝分层**：`04-user-portrait` 新粉/老粉/非粉 + 各层 GMV/订单/客单价
-- **观众画像-人群**：`04b-user-portrait` 性别/年龄/地区分布 ✅ **新增**
-- **商品列表**：`05-product-list` 商品表格（GMV/销量/库存/点击率/加购数）
+- **性能趋势图**：`08-trend-chart` 一次 27 个指标的 15 分钟粒度时间序列
+- **历史趋势对比**：`06-core-stats.stats_benchmark_data.market_cmp_data[]`
+- **流量分析**：`03-source-new` 饼图/柱状图（2026-06-11 旧批）
+- **观众画像**：`04all-user-portrait` 一次返回 Viewer/Customer/Impressions 三类（性别/年龄/地区/国家 + 粉丝层级）
+- **商品列表**：`05-product-list` 商品表格（GMV/销量/库存/点击率/加购数）+ `sold_product` 汇总
 
 **覆盖范围**：核心指标、趋势、流量、观众画像与商品明细。
 
@@ -482,9 +484,10 @@ TREND_CHART_FULL = [
 
 | 编号 | 文件名 | 对应区域 |
 |------|--------|---------|
-| 03 | `raw/03-source-new.*` | ④ Traffic source |
-| 04 | `raw/04-user-portrait.*` | ⑥ Follower analytics（粉丝分层，`stats_types=[92,93,95,81,86]`） |
-| 04b | `raw/04b-user-portrait.*` | ⑦ User profile（人群画像，`stats_types=[85,86,87,88,89]`） |
+| 03 | `raw/03-source-new.*` | ④ Traffic source（2026-06-11 旧批，未重采） |
+| 04all | `raw/04all-user-portrait.*` | ⑥ Follower analytics + ⑦ User profile（三类画像合并，`stats_types=[80,81,82,83,90,85,86,87,88,350,351,352,353]`） |
 | 05 | `raw/05-product-list.*` | ⑤ Product List |
 | 06 | `raw/06-core-stats.*` | ② 核心指标卡片 |
 | 08 | `raw/08-trend-chart.*` | ① Performance trends |
+
+> 本批（04all/05/06/08）采集上下文：collection_id=`k19f2q44` 越南团队，room_id=`7651420995556182804`，请求脚本见 scratches/`TK-越南团队实时直播测试-k19f2q44`。
