@@ -10,11 +10,11 @@
 后端直播大屏需要两类数据:
 
 1. **账号是否开播 + room_id** —— 房间号每场直播都变,大屏必须先拿到当前 room_id。
-2. **6 种大屏业务数据** —— 核心指标、趋势、流量、画像、商品等(对应上游 6 个 TikTok API)。
+2. **5 个大屏业务接口** —— 核心指标、趋势、流量、画像、商品等(对应上游 5 对 API 样本)。
 
 本层是**下游数据接口 API 层**:对后端屏蔽 Redis / Holo / TikTok 上游的内部实现细节,后端只依赖本文档的接口契约。
 
-**设计原则:爬虫只返回原始数据,不在本层做业务解析。** 6 种大屏数据的原始 TikTok 响应以 JSON 字符串原样透传,字段解析由后端 / 数仓完成。
+**设计原则:爬虫只返回原始数据,不在本层做业务解析。** 5 个大屏业务接口的原始 TikTok 响应以 JSON 字符串原样透传,字段解析由后端 / 数仓完成。
 
 ### 1.1 后端调用链
 
@@ -31,7 +31,7 @@
 | 接口 | 归属服务 | 数据源 | 领域 |
 |------|----------|--------|------|
 | 开播状态批量查询 | **live-monitor** | Redis(种子 ← Holo) | 直播状态 |
-| 大屏数据(6 种) | **live-crawler** | TikTok 大屏 API | 数据采集 |
+| 大屏数据(5 个业务接口) | **live-crawler** | TikTok 大屏 API | 数据采集 |
 
 ---
 
@@ -106,7 +106,7 @@ POST /api/v1/tiktok/live-status/batch
 POST /api/v1/tiktok/dashboard/data
 ```
 
-单一统一端点,用 `dataType` 区分 6 种大屏数据。
+单一统一端点,用 `dataType` 区分 5 个大屏业务接口。
 
 ### 3.2 入参
 
@@ -116,7 +116,7 @@ POST /api/v1/tiktok/dashboard/data
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `dataType` | string | 是 | 6 种之一(见 3.3) |
+| `dataType` | string | 是 | 5 种之一(见 3.3) |
 | `roomId` | string | 是 | 来自接口一 |
 | `collectionId` | string | 是 | 采集任务标识,本层据此定位账号会话(内部映射到 collector 的 `socketUserId`) |
 
@@ -126,14 +126,14 @@ POST /api/v1/tiktok/dashboard/data
 
 | dataType | 上游 API | URL 路径 | 页面区域 | 内部固定参数 |
 |----------|----------|----------|----------|--------------|
-| `core_stats` | 06 core/stats | `/api/v1/insights/workbench/live/detail/core/stats` | ② 核心指标卡片 | `stats_types`(33 个指标 ID)、`creator_id`、`country` |
-| `trend_chart` | 08 trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | ① 性能趋势 | `stats_types=[20,3]` |
-| `source_new` | 03 source/new | `/api/v3/insights/workbench/live/detail/source/new` | ④ 流量来源 | `stats_types=[100]`、`version=3` |
-| `fan_distribution` | 04 user/portrait | `/api/v1/insights/workbench/live/detail/user/portrait` | ⑥ 粉丝分层 | `stats_types=[92,93,95,81,86]` |
-| `user_profile` | 04b user/portrait | `/api/v1/insights/workbench/live/detail/user/portrait` | ⑦ 人群画像 | `stats_types=[85,86,87,88,89]` |
-| `product_list` | 05 product/list | `/api/v1/insights/workbench/live/detail/product/list` | ⑤ 商品列表 | `sorting_type=1`、`stats_types`(17 个商品指标 ID) |
+| `core_stats` | 06 core/stats | `/api/v1/insights/workbench/live/detail/core/stats` | ② 核心指标卡片 | `room_filter.room_id`、`is_content_type=1`、`creator_id`、`country`、`stats_types`(55 个:43 个正向指标 + 12 个负数行业基准对比) |
+| `trend_chart` | 08 trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | ① 性能趋势 | `room_filter.room_id`、`is_content_type=1`、`TREND_CHART_FULL`(27 个合法 ID,独立 ID 体系) |
+| `source_new` | 03 source/new | `/api/v3/insights/workbench/live/detail/source/new` | ④ 流量来源 | `room_id`、`is_content_type`、`stats_types=[100]`、`version=3`(2026-06-11 旧批样本,本次未重采) |
+| `user_portrait` | 04all user/portrait | `/api/v1/insights/workbench/live/detail/user/portrait` | ⑥ Follower analytics + ⑦ User profile | `room_filter.room_id`、`is_content_type=1`、`stats_types=[80,81,82,83,90,85,86,87,88,350,351,352,353]` |
+| `product_list` | 05 product/list | `/api/v1/insights/workbench/live/detail/product/list` | ⑤ 商品列表 | `room_filter.room_id`、`is_content_type=1`、`sorting_type=1`、`stats_types`(19 个有效 ID:`[4,5,6,7,10,15,17,18,21,30,35,41,48,51,55,64,120,301,345]`) |
 
-> `fan_distribution` 与 `user_profile` 共用同一 URL,靠 `stats_types` 区分 —— 这是用 `dataType` 而非 URL 做判别字段的根本原因。
+> `user_portrait` 对齐上游 `04all-user-portrait` 样本,一次请求返回 Viewer / Customer / Impressions 三类画像,覆盖 Follower analytics 与 User profile 两个页面区域。
+> `trend_chart` 使用独立 `stats_type` ID 体系,实现时必须使用 `API-inventory.md` §1.4 的 `TREND_CHART_FULL`,不能套用 `core_stats` 的指标 ID。
 
 ### 3.4 出参信封
 
@@ -168,7 +168,7 @@ POST /api/v1/tiktok/dashboard/data
 | `sign` | string | 数据签名(`Settings.DATA_SERVER_CONFIG.api_sign`) |
 | `userType` | float | 固定 6.0 |
 | `dataSource` | string | `live_crawler_tiktok_http`(`live_crawler_{platform}_{method}` 约定) |
-| `dataType` | string | **新增**,判别字段,标识 6 种数据之一 |
+| `dataType` | string | **新增**,判别字段,标识 5 种数据之一 |
 | `roomId` | string | **新增**,回显 |
 | `updateTime` | int | 消息时间戳(毫秒) |
 | `socketUserId` | string | 账号会话标识;本层用入参 `collectionId` 内部映射填充 |
@@ -217,15 +217,16 @@ POST /api/v1/tiktok/dashboard/data
 
 - **Redis key 结构**:`collection_id` → 直播状态(`isLive`/`roomId`/`flvUrl`)的存储结构,以及写入链路(当前 live-monitor 状态在内存 `all_Live_Room_dict`,Redis 写入链路尚未落地)。
 - **Holo 种子映射**:种子表到 `collection_id` 的映射关系。
-- **collector 补齐**:目前 `collector.py` 仅实现 `fetch_core_stats`(06)与 `fetch_trend_chart`(08),另外 4 种(`source_new`/`fan_distribution`/`user_profile`/`product_list`)的 `fetch_*` 函数待补齐。
+- **collector 补齐**:目前 `collector.py` 仅实现 `fetch_core_stats`(06)与 `fetch_trend_chart`(08),另外 3 种(`source_new`/`user_portrait`/`product_list`)的 `fetch_*` 函数待补齐。
 - **creator_id / country 解析来源**:`core_stats` 所需的 `creator_id`、`country` 由本层内部解析的具体数据来源。
+- **trend/chart 指标 ID**:`trend_chart` 必须使用独立 ID 表 `TREND_CHART_FULL`,不能复用 `core_stats` 的 `stats_types`。
 - **dataSource 常量**:现 `constants.py` 为 `DataSource.TIKTOK = "live_crawler_tiktok"`,实现时按约定改为 / 新增 `_http` 后缀变体。
 
 ---
 
 ## 5. 参考
 
-- 上游 API 调研:[`docs/research/tiktok-live-dashboard-apis/API-inventory.md`](../research/tiktok-live-dashboard-apis/API-inventory.md)
+- 上游 API 调研:[`docs/research/tiktok-live-dashboard-apis/API-inventory.md`](../research/tiktok-live-dashboard-apis/API-inventory.md)(见 §1.1-§1.4 的完整 `stats_types` 与字段映射)
 - 信封原型:`services/live-crawler/crawlers/http/tiktok/collector.py` `_format_message`
 - live-monitor 业务码与响应规范:[`services/live-monitor/docs/specs/live-room-api.md`](../../services/live-monitor/docs/specs/live-room-api.md)
 - dataSource 字段约定:`services/live-crawler/crawlers/constants.py`
