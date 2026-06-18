@@ -63,6 +63,12 @@ async def _platform_response(platform: str, request: LiveRoomRequest, access_tok
     )
 
 
+@router.get("/check_status")
+async def check_status() -> dict:
+    # 平台健康检查接口:返回固定内容,HTTP 200 即视为存活
+    return {"code": 200, "status": "ok"}
+
+
 @router.get("/health")
 async def health() -> dict:
     return {
@@ -97,6 +103,7 @@ async def docs_config() -> dict:
     return {
         "code": 200,
         "data": {
+            "check_status": "/check_status",
             "health": "/health",
             "tiktok": "/liveRoom/portInfo",
             "shopee": "/liveRoom/shopeeInfo",
