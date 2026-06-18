@@ -28,12 +28,13 @@ async def segment_ready(request: SegmentReadyRequest, background_tasks: Backgrou
     if not room_id:
         return {"code": 400, "message": "room_id/path is required"}
 
-    await state_manager.on_segment_received(room_id)
+    state = await state_manager.on_segment_received(room_id)
     task = SegmentTask(
-        room_id=room_id,
+        room_id=state.live_room_id or room_id,
         mediamtx_path=request.path,
         file_path=Path(request.file_path),
         duration=request.duration,
+        platform=state.platform,  # P2-5: 填入 platform 供 Kafka dataSource 使用
     )
     background_tasks.add_task(upload_coordinator.enqueue, task)
     return {"code": 200, "message": "accepted"}

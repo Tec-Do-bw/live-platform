@@ -12,6 +12,13 @@ services:
     volumes:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
       - /data/recordings:/data/recordings
+    # 健康探针：调用 mediamtx 自身 API（host 网络，用 127.0.0.1:9997）
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9997/v3/paths/list"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     ulimits:
       nofile:
         soft: 65536
@@ -36,17 +43,17 @@ services:
     network_mode: "host"
     restart: unless-stopped
     depends_on:
-      - mediamtx
-    env_file:
-      - .env
-    environment:
-      LIVE_PLATFORM_PORT: "8080"
-      MEDIAMTX_API_BASE_URL: "http://127.0.0.1:9997"
-      MEDIAMTX_RTMP_BASE_URL: "rtmp://127.0.0.1:1935/live"
-      LIVE_PLATFORM_SQLITE_PATH: "/data/live-platform/db/live-platform.sqlite3"
+      mediamtx:
+        condition: service_healthy  # P2-6: 依赖 mediamtx 健康后再启动
+    # 健康探针：与 Dockerfile HEALTHCHECK 一致
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - /data/recordings:/data/recordings
-      - /data/live-platform/db:/data/live-platform/db
       - /data/live-platform/logs:/app/logs
     ulimits:
       nofile:

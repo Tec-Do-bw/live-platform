@@ -1,0 +1,1289 @@
+diff --git a/services/live-platform/Dockerfile b/services/live-platform/Dockerfile
+index 1af636e..98d8eff 100644
+--- a/services/live-platform/Dockerfile
++++ b/services/live-platform/Dockerfile
+@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
+ 
+ # FFmpeg 负责 HTTP-FLV 到 RTMP 的协议转换，必须随镜像一起冻结，避免宿主机版本漂移
+ RUN apt-get update \
+-    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
++    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates nodejs npm \
+     && rm -rf /var/lib/apt/lists/*
+ 
+ WORKDIR /app
+diff --git a/services/live-platform/README.md b/services/live-platform/README.md
+index 4201961..9c972cb 100644
+--- a/services/live-platform/README.md
++++ b/services/live-platform/README.md
+@@ -12,6 +12,10 @@ services/live-platform/
+ ├── .dockerignore
+ ├── config/
+ │   └── mediamtx.yml                # MediaMTX 配置（bind mount 进容器）
++├── docs/
++│   ├── architecture-flow.md        # 整体架构流程图
++│   ├── deployment-guide.md         # dev 部署指南
++│   └── verification-checklist.md   # 部署后检验清单
+ ├── api/
+ │   ├── internal.py                 # MediaMTX 内部回调接口
+ │   └── routes.py                   # 对外兼容接口
+@@ -26,8 +30,10 @@ services/live-platform/
+ │   ├── scheduler.py                # 房间检测调度
+ │   └── state_machine.py            # 房间状态机
+ ├── shared/
+-│   ├── config.py                   # 统一配置
+-│   ├── db.py                       # 房间仓储
++│   ├── apollo_config.py            # 固定 Apollo dev 配置读取
++│   ├── config.py                   # Apollo-only 配置校验
++│   ├── redis_store.py              # Redis 房间清单与状态仓储
++│   ├── db.py                       # Redis 仓储兼容导出
+ │   ├── logger.py                   # 日志配置
+ │   └── models.py                   # 状态与任务模型
+ ├── upload/
+@@ -40,16 +46,21 @@ services/live-platform/
+ 
+ ## 启动
+ 
++配套文档：
++
++- [整体架构流程图](docs/architecture-flow.md)
++- [dev 部署指南](docs/deployment-guide.md)
++- [部署后检验清单](docs/verification-checklist.md)
++
+ ### 推荐：Docker Compose（生产与联调）
+ 
+ 依据 ADR `docs/specs/2026-05-10-mediamtx-deployment-adr.md`，Phase 1 统一使用 Docker Compose + `network_mode: host` + bind mount：
+ 
+ ```bash
+ # 宿主机首次准备目录
+-sudo mkdir -p /data/recordings /data/live-platform/db /data/live-platform/logs
++sudo mkdir -p /data/recordings /data/live-platform/logs
+ 
+ cd services/live-platform
+-cp .env.example .env   # 按需填写 OSS/Kafka/token 等
+ docker compose up -d
+ docker compose logs -f live-platform
+ ```
+@@ -62,19 +73,50 @@ pip install -r requirements.txt
+ python main.py
+ ```
+ 
+-## 核心环境变量
+-
+-| 变量 | 默认值 | 说明 |
+-|------|--------|------|
+-| `LIVE_PLATFORM_PORT` | `8080` | API 端口 |
+-| `LIVE_DETECT_INTERVAL_SECONDS` | `60` | 房间检测间隔 |
+-| `LIVE_PLATFORM_ACCESS_TOKEN` | `AFDD0B4AD2EC172C586E2150770FBF9E` | 兼容接口鉴权 token |
+-| `LIVE_PLATFORM_SQLITE_PATH` | `data/live-platform.sqlite3` | 本地房间表 SQLite 路径 |
+-| `MEDIAMTX_API_BASE_URL` | `http://127.0.0.1:9997` | MediaMTX API |
+-| `MEDIAMTX_RTMP_BASE_URL` | `rtmp://127.0.0.1:1935/live` | FFmpeg 推给 MediaMTX 的 RTMP 前缀 |
+-| `SEGMENT_TIMEOUT_SECONDS` | `30` | 切片回调健康检查超时 |
+-| `OSS_*` | 空 | OSS 上传配置 |
+-| `KAFKA_BOOTSTRAP_SERVERS` | 空 | Kafka broker 列表，逗号分隔 |
++## Apollo 配置
++
++服务只从 Apollo 读取业务配置，不读取环境变量、不使用业务默认值。Apollo bootstrap 固定在代码中：
++
++| 项 | 值 |
++|----|----|
++| URL | `http://dev-apollo.tec-develop.com` |
++| App ID | `live-spider` |
++| Cluster | `dev` |
++| Namespace | `application` |
++
++必填 Apollo key：
++
++| key | 说明 |
++|-----|------|
++| `livePlatformHost` / `livePlatformPort` | API 监听地址与端口 |
++| `livePlatformDetectIntervalSeconds` | 房间检测间隔 |
++| `livePlatformAccessToken` | 兼容接口鉴权 token |
++| `mediaMtxApiBaseUrl` / `mediaMtxRtmpBaseUrl` / `mediaMtxRecordRoot` | MediaMTX API、RTMP 前缀、录制根目录 |
++| `segmentTimeoutSeconds` | 切片回调健康检查超时 |
++| `redisHost` / `redisPort` / `redisPassword` / `redisDb` | Redis 连接 |
++| `endpoint` / `bucket_name` / `access_key_id` / `access_key_secret` | OSS 配置，沿用 live-stream 旧 key |
++| `ossPrefix` / `ossSignedUrlTtlSeconds` | OSS 对象前缀与签名 URL TTL |
++| `kafkaPro` | Kafka broker 列表，支持 `['host1:9092']` 字符串列表 |
++| `kafkaAddress` | `kafkaPro` 缺失时的兼容 key |
++| `topic_name` | Kafka topic |
++| `cutliveNumber` | 单实例最大活跃录制并发 |
++| `uploadWorkerCount` | 上传 worker 数 |
++| `livePlatformLogDir` | 日志目录 |
++
++## Redis 结构
++
++房间种子由外部服务提前写入：
++
++| Redis key | 类型 | 字段 |
++|-----------|------|------|
++| `live:monitor:collections` | Set | 成员为 `collectionId` |
++| `live:collection:{collectionId}:config` | Hash | `collectionId`、`platform`、`roomUrl`、`enabled` |
++
++状态由 `live-platform` 写入：
++
++| Redis key | 类型 | 主要字段 |
++|-----------|------|----------|
++| `live:collection:{collectionId}:status` | Hash | `collectionId`、`isLive`、`roomId`、`flvUrl`、`platform`、`roomUrl`、`status`、`mediamtxPath`、`updatedAt` |
+ 
+ ## 常用命令
+ 
+diff --git a/services/live-platform/api/internal.py b/services/live-platform/api/internal.py
+index 3c00843..addc567 100644
+--- a/services/live-platform/api/internal.py
++++ b/services/live-platform/api/internal.py
+@@ -28,12 +28,13 @@ async def segment_ready(request: SegmentReadyRequest, background_tasks: Backgrou
+     if not room_id:
+         return {"code": 400, "message": "room_id/path is required"}
+ 
+-    await state_manager.on_segment_received(room_id)
++    state = await state_manager.on_segment_received(room_id)
+     task = SegmentTask(
+-        room_id=room_id,
++        room_id=state.live_room_id or room_id,
+         mediamtx_path=request.path,
+         file_path=Path(request.file_path),
+         duration=request.duration,
++        platform=state.platform,  # P2-5: 填入 platform 供 Kafka dataSource 使用
+     )
+     background_tasks.add_task(upload_coordinator.enqueue, task)
+     return {"code": 200, "message": "accepted"}
+diff --git a/services/live-platform/api/routes.py b/services/live-platform/api/routes.py
+index bf839f8..9e3c2ad 100644
+--- a/services/live-platform/api/routes.py
++++ b/services/live-platform/api/routes.py
+@@ -1,7 +1,5 @@
+ from __future__ import annotations
+ 
+-import sys
+-from pathlib import Path
+ from typing import Optional
+ 
+ from fastapi import APIRouter, Header
+@@ -12,11 +10,6 @@ from adapters import get_stream_info
+ from orchestrator.state_machine import state_manager
+ from shared.config import settings
+ 
+-# 复用 live-monitor 的翻译层
+-_LEGACY_DIR = str(Path(__file__).resolve().parents[2] / "live-monitor")
+-if _LEGACY_DIR not in sys.path:
+-    sys.path.insert(0, _LEGACY_DIR)
+-
+ from utils.api_response import (
+     classify_tiktok_result,
+     classify_shopee_result,
+diff --git a/services/live-platform/docker-compose.yml b/services/live-platform/docker-compose.yml
+index 44c36d1..eb53673 100644
+--- a/services/live-platform/docker-compose.yml
++++ b/services/live-platform/docker-compose.yml
+@@ -12,6 +12,13 @@ services:
+     volumes:
+       - ./config/mediamtx.yml:/mediamtx.yml:ro
+       - /data/recordings:/data/recordings
++    # 健康探针：调用 mediamtx 自身 API（host 网络，用 127.0.0.1:9997）
++    healthcheck:
++      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9997/v3/paths/list"]
++      interval: 15s
++      timeout: 5s
++      retries: 3
++      start_period: 20s
+     ulimits:
+       nofile:
+         soft: 65536
+@@ -36,17 +43,17 @@ services:
+     network_mode: "host"
+     restart: unless-stopped
+     depends_on:
+-      - mediamtx
+-    env_file:
+-      - .env
+-    environment:
+-      LIVE_PLATFORM_PORT: "8080"
+-      MEDIAMTX_API_BASE_URL: "http://127.0.0.1:9997"
+-      MEDIAMTX_RTMP_BASE_URL: "rtmp://127.0.0.1:1935/live"
+-      LIVE_PLATFORM_SQLITE_PATH: "/data/live-platform/db/live-platform.sqlite3"
++      mediamtx:
++        condition: service_healthy  # P2-6: 依赖 mediamtx 健康后再启动
++    # 健康探针：与 Dockerfile HEALTHCHECK 一致
++    healthcheck:
++      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
++      interval: 30s
++      timeout: 5s
++      retries: 3
++      start_period: 20s
+     volumes:
+       - /data/recordings:/data/recordings
+-      - /data/live-platform/db:/data/live-platform/db
+       - /data/live-platform/logs:/app/logs
+     ulimits:
+       nofile:
+diff --git a/services/live-platform/main.py b/services/live-platform/main.py
+index 6b1f02e..fddd6c9 100644
+--- a/services/live-platform/main.py
++++ b/services/live-platform/main.py
+@@ -7,9 +7,11 @@ import uvicorn
+ from apscheduler.schedulers.asyncio import AsyncIOScheduler
+ from fastapi import FastAPI
+ 
++from adapters import get_stream_url
+ from api.internal import internal_router
+ from api.routes import router
+ from orchestrator.scheduler import detect_rooms
++from orchestrator.state_machine import state_manager
+ from shared.config import settings
+ from shared.logger import configure_logging, get_logger
+ from upload.coordinator import upload_coordinator
+@@ -19,10 +21,16 @@ logger = get_logger(__name__)
+ 
+ @asynccontextmanager
+ async def lifespan(app: FastAPI):
++    # P0-2: Apollo 配置预加载到线程,避免首次访问 settings 时在 event loop 同步阻塞
++    await asyncio.to_thread(settings.load)
++
++    # P1-4: 注入 stream_resolver 使断流重连能重新获取流地址
++    state_manager.stream_resolver = get_stream_url
++
+     scheduler = AsyncIOScheduler()
+     scheduler.add_job(detect_rooms, "interval", seconds=settings.server.detect_interval_seconds)
+     scheduler.start()
+-    await upload_coordinator.start()
++    await upload_coordinator.start(worker_count=settings.upload.worker_count)
+     logger.info("live-platform 已启动")
+     try:
+         yield
+diff --git a/services/live-platform/orchestrator/scheduler.py b/services/live-platform/orchestrator/scheduler.py
+index d2bf3da..c634eaf 100644
+--- a/services/live-platform/orchestrator/scheduler.py
++++ b/services/live-platform/orchestrator/scheduler.py
+@@ -1,11 +1,13 @@
+ from __future__ import annotations
+ 
+-from adapters import get_stream_url
++from typing import Any
++
++from adapters import get_stream_info
+ from orchestrator.state_machine import StateManager, state_manager
+ from shared.config import settings
+-from shared.db import RoomRepository
++from shared.redis_store import RoomRepository
+ from shared.logger import get_logger
+-from shared.models import Status
++from shared.models import MonitoredRoom, Status
+ 
+ logger = get_logger(__name__)
+ 
+@@ -15,22 +17,65 @@ async def detect_rooms(
+     manager: StateManager | None = None,
+ ) -> int:
+     """扫描待监控房间，检测开播并推进状态机。"""
+-    repo = repository or RoomRepository(settings.database.sqlite_path)
++    repo = repository or RoomRepository()
+     manager = manager or state_manager
+     rooms = await repo.list_monitored_rooms()
+     started_count = 0
+-
+     await manager.run_health_check()
+     await manager.retry_reconnecting()
++    active_recordings = _count_active_recordings(manager.snapshot())
++    max_active_recordings = _max_active_recordings()
+ 
+     for room in rooms:
+         state = await manager.ensure_room(room)
+-        if state.status != Status.IDLE:
+-            continue
+-        stream_info = await get_stream_url(room.platform, room.room_url)
+-        if stream_info:
+-            await manager.on_live_detected(room, stream_info)
++        stream_info = await get_stream_info(room.platform, room.room_url)
++        is_live = _is_live(stream_info)
++        recording_started = False
++
++        if is_live and state.status == Status.IDLE and active_recordings < max_active_recordings:
++            state = await manager.on_live_detected(room, str(stream_info["flv_url"]), stream_info)
+             started_count += 1
++            active_recordings += 1
++            recording_started = True
++        elif not is_live and state.status in {Status.RECORDING, Status.STARTING, Status.RECONNECTING}:
++            state = await manager.on_stream_ended(room.collection_id)
+ 
+-    logger.info("房间检测完成 | total=%s started=%s", len(rooms), started_count)
++        await _write_status(repo, room, stream_info, state, is_live, recording_started)
++
++    logger.info(f"房间检测完成 | total={len(rooms)} started={started_count}")
+     return started_count
++
++
++def _is_live(stream_info: dict[str, Any] | None) -> bool:
++    if not stream_info:
++        return False
++    flv_url = stream_info.get("flv_url")
++    return bool(flv_url) and flv_url != "error"
++
++
++def _count_active_recordings(states: dict[str, Any]) -> int:
++    return sum(1 for state in states.values() if state.status in {Status.STARTING, Status.RECORDING, Status.RECONNECTING})
++
++
++def _max_active_recordings() -> int:
++    return int(settings.server.max_active_recordings)
++
++
++async def _write_status(
++    repository: RoomRepository,
++    room: MonitoredRoom,
++    stream_info: dict[str, Any] | None,
++    state: Any,
++    is_live: bool,
++    recording_started: bool,
++) -> None:
++    writer = getattr(repository, "write_status", None)
++    if writer is None:
++        return
++    await writer(
++        room,
++        stream_info=stream_info,
++        state=state,
++        is_live=is_live,
++        recording_started=recording_started,
++    )
+diff --git a/services/live-platform/orchestrator/state_machine.py b/services/live-platform/orchestrator/state_machine.py
+index 64450c7..3683e0c 100644
+--- a/services/live-platform/orchestrator/state_machine.py
++++ b/services/live-platform/orchestrator/state_machine.py
+@@ -27,33 +27,48 @@ class StateManager:
+         timeout_seconds: int | None = None,
+         cooldown_seconds: int = 60,
+     ):
+-        self.mediamtx_client = mediamtx_client or MediaMTXClient()
+-        self.relay_controller = relay_controller or FFmpegRelayController()
++        self._mediamtx_client = mediamtx_client
++        self._relay_controller = relay_controller
+         self.stream_resolver = stream_resolver
+-        self.timeout_seconds = timeout_seconds or settings.mediamtx.segment_timeout_seconds
++        self.timeout_seconds = timeout_seconds
+         self.cooldown_seconds = cooldown_seconds
+         self._states: dict[str, RoomState] = {}
+         self._lock = asyncio.Lock()
+ 
++    @property
++    def mediamtx_client(self) -> MediaMTXClient:
++        if self._mediamtx_client is None:
++            self._mediamtx_client = MediaMTXClient()
++        return self._mediamtx_client
++
++    @property
++    def relay_controller(self) -> FFmpegRelayController:
++        if self._relay_controller is None:
++            self._relay_controller = FFmpegRelayController()
++        return self._relay_controller
++
+     def snapshot(self) -> dict[str, RoomState]:
+         return dict(self._states)
+ 
+     async def ensure_room(self, room: MonitoredRoom) -> RoomState:
+         async with self._lock:
+-            state = self._states.get(room.room_id)
++            state = self._states.get(room.collection_id)
+             if state is None:
+                 state = RoomState(
+-                    room_id=room.room_id,
++                    collection_id=room.collection_id,
+                     platform=room.platform,
+                     room_url=room.room_url,
+                     last_active=time(),
+                 )
+-                self._states[room.room_id] = state
++                self._states[room.collection_id] = state
++            else:
++                state.platform = room.platform
++                state.room_url = room.room_url
+             return state
+ 
+-    async def get(self, room_id: str) -> RoomState | None:
++    async def get(self, collection_id: str) -> RoomState | None:
+         async with self._lock:
+-            return self._states.get(room_id)
++            return self._states.get(collection_id)
+ 
+     async def get_by_room_or_path(self, key: str) -> RoomState | None:
+         async with self._lock:
+@@ -61,7 +76,7 @@ class StateManager:
+             if state is not None:
+                 return state
+             for candidate in self._states.values():
+-                if candidate.mediamtx_path == key:
++                if candidate.mediamtx_path == key or candidate.live_room_id == key:
+                     return candidate
+             return None
+ 
+@@ -73,6 +88,7 @@ class StateManager:
+ 
+         state.status = Status.STARTING
+         state.flv_url = flv_url
++        state.live_room_id = str((metadata or {}).get("roomId") or (metadata or {}).get("room_id") or state.live_room_id)
+         state.mediamtx_path = self._build_path(room)
+         state.started_at = time()
+         state.error_message = ""
+@@ -85,71 +101,76 @@ class StateManager:
+                 mediamtx_path=state.mediamtx_path,
+             )
+         except Exception as exc:
+-            logger.exception("启动录制失败 | room_id=%s", room.room_id)
++            logger.exception(f"启动录制失败 | collection_id={room.collection_id}")
+             state.status = Status.FAILED
+             state.error_message = str(exc)
+             await self._cleanup_state(state)
+             return state
+ 
+-        return await self.on_recording_started(room.room_id)
++        return await self.on_recording_started(room.collection_id)
+ 
+-    async def on_recording_started(self, room_id: str) -> RoomState:
+-        state = await self._require_state(room_id)
++    async def on_recording_started(self, collection_id: str) -> RoomState:
++        state = await self._require_state(collection_id)
+         state.status = Status.RECORDING
+         state.retry_count = 0
+         state.mark_active()
+-        logger.info("录制已开始 | room_id=%s", room_id)
++        logger.info(f"录制已开始 | collection_id={state.collection_id}")
+         return state
+ 
+-    async def on_segment_received(self, room_id: str) -> RoomState:
+-        state = await self._require_state(room_id)
++    async def on_segment_received(self, collection_id: str) -> RoomState:
++        state = await self._require_state(collection_id)
+         state.mark_active()
+         if state.status in {Status.STARTING, Status.RECONNECTING}:
+             state.status = Status.RECORDING
+-        logger.info("收到切片回调 | room_id=%s", room_id)
++        logger.info(f"收到切片回调 | collection_id={state.collection_id}")
+         return state
+ 
+-    async def on_stream_timeout(self, room_id: str) -> RoomState:
+-        state = await self._require_state(room_id)
++    async def on_stream_timeout(self, collection_id: str) -> RoomState:
++        state = await self._require_state(collection_id)
+         if state.status != Status.RECORDING:
+             return state
+         state.status = Status.RECONNECTING
+         state.retry_count += 1
+-        logger.warning("录制切片超时，进入重连 | room_id=%s retry=%s", room_id, state.retry_count)
++        logger.warning(f"录制切片超时，进入重连 | collection_id={state.collection_id} retry={state.retry_count}")
+         await self.relay_controller.stop_ffmpeg_relay(state.ffmpeg_pid)
+         state.ffmpeg_pid = None
+         return state
+ 
+-    async def on_reconnect_success(self, room_id: str, flv_url: str) -> RoomState:
+-        state = await self._require_state(room_id)
++    async def on_reconnect_success(self, collection_id: str, flv_url: str) -> RoomState:
++        state = await self._require_state(collection_id)
+         if state.status != Status.RECONNECTING:
+             return state
+-        room = MonitoredRoom(room_id=state.room_id, platform=state.platform, room_url=state.room_url)
++        room = MonitoredRoom(
++            collection_id=state.collection_id,
++            platform=state.platform,
++            room_url=state.room_url,
++        )
+         return await self.on_live_detected(room, flv_url, state.metadata)
+ 
+-    async def on_reconnect_failed(self, room_id: str, message: str = "") -> RoomState:
+-        state = await self._require_state(room_id)
++    async def on_reconnect_failed(self, collection_id: str, message: str = "") -> RoomState:
++        state = await self._require_state(collection_id)
+         state.status = Status.FAILED
+         state.error_message = message
+         await self._cleanup_state(state)
+         return state
+ 
+-    async def on_stream_ended(self, room_id: str) -> RoomState:
+-        state = await self._require_state(room_id)
++    async def on_stream_ended(self, collection_id: str) -> RoomState:
++        state = await self._require_state(collection_id)
+         await self._cleanup_state(state)
+         state.status = Status.IDLE
+         state.flv_url = None
+         state.retry_count = 0
+         state.error_message = ""
+-        logger.info("录制已结束 | room_id=%s", room_id)
++        logger.info(f"录制已结束 | collection_id={state.collection_id}")
+         return state
+ 
+     async def run_health_check(self) -> list[RoomState]:
+         """检查所有录制中的房间，返回发生状态变化的房间。"""
+         changed: list[RoomState] = []
+-        for room_id, state in list(self.snapshot().items()):
+-            if not state.is_healthy(self.timeout_seconds):
+-                changed.append(await self.on_stream_timeout(room_id))
++        for collection_id, state in list(self.snapshot().items()):
++            timeout_seconds = self.timeout_seconds or settings.mediamtx.segment_timeout_seconds
++            if not state.is_healthy(timeout_seconds):
++                changed.append(await self.on_stream_timeout(collection_id))
+         return changed
+ 
+     async def retry_reconnecting(self) -> list[RoomState]:
+@@ -162,11 +183,11 @@ class StateManager:
+             if state.status != Status.RECONNECTING:
+                 continue
+             if state.retry_count > state.max_retries:
+-                changed.append(await self.on_reconnect_failed(state.room_id, "超过最大重试次数"))
++                changed.append(await self.on_reconnect_failed(state.collection_id, "超过最大重试次数"))
+                 continue
+             flv_url = await self.stream_resolver(state.platform, state.room_url)
+             if flv_url:
+-                changed.append(await self.on_reconnect_success(state.room_id, flv_url))
++                changed.append(await self.on_reconnect_success(state.collection_id, flv_url))
+         return changed
+ 
+     async def _cleanup_state(self, state: RoomState) -> None:
+@@ -175,17 +196,17 @@ class StateManager:
+         if state.mediamtx_path:
+             await self.mediamtx_client.remove_path(state.mediamtx_path)
+ 
+-    async def _require_state(self, room_id: str) -> RoomState:
+-        state = await self.get_by_room_or_path(room_id)
++    async def _require_state(self, collection_id: str) -> RoomState:
++        state = await self.get_by_room_or_path(collection_id)
+         if state is None:
+-            raise KeyError(f"房间状态不存在: {room_id}")
++            raise KeyError(f"房间状态不存在: {collection_id}")
+         return state
+ 
+     @staticmethod
+     def _build_path(room: MonitoredRoom) -> str:
+         safe_platform = "".join(ch for ch in room.platform.lower() if ch.isalnum() or ch in {"-", "_"})
+-        safe_room_id = "".join(ch for ch in room.room_id if ch.isalnum() or ch in {"-", "_"})
+-        return f"{safe_platform}-{safe_room_id}"
++        safe_collection_id = "".join(ch for ch in room.collection_id if ch.isalnum() or ch in {"-", "_"})
++        return f"{safe_platform}-{safe_collection_id}"
+ 
+ 
+ state_manager = StateManager()
+diff --git a/services/live-platform/requirements.txt b/services/live-platform/requirements.txt
+index fa9b30b..4170b36 100644
+--- a/services/live-platform/requirements.txt
++++ b/services/live-platform/requirements.txt
+@@ -10,3 +10,8 @@ oss2>=2.18.4
+ kafka-python>=2.0.2
+ tldextract>=5.1.2
+ PyExecJS>=1.5.1
++redis>=5.0.0
++loguru>=0.7.2
++DBUtils>=3.0.3
++PyMySQL>=1.1.0
++never_primp==2.4.2
+diff --git a/services/live-platform/shared/config.py b/services/live-platform/shared/config.py
+index 2cf3007..97c6df4 100644
+--- a/services/live-platform/shared/config.py
++++ b/services/live-platform/shared/config.py
+@@ -1,93 +1,163 @@
+ from __future__ import annotations
+ 
+-import os
++import ast
+ from dataclasses import dataclass
+ from pathlib import Path
++from typing import Any
+ 
++from shared.apollo_config import fetch_apollo_config
+ 
+-def _env(name: str, default: str) -> str:
+-    return os.environ.get(name, default)
++
++class ConfigError(RuntimeError):
++    """Apollo 配置缺失或格式错误。"""
++
++
++def _raw_value(apollo_config: dict[str, Any], name: str, *aliases: str) -> str:
++    for key in (name, *aliases):
++        value = apollo_config.get(key)
++        if value is not None and str(value).strip() != "":
++            return str(value).strip()
++    key_list = ", ".join((name, *aliases))
++    raise ConfigError(f"Apollo 缺少必填配置: {key_list}")
++
++
++def _config_int(apollo_config: dict[str, Any], name: str, *aliases: str) -> int:
++    raw = _raw_value(apollo_config, name, *aliases)
++    try:
++        return int(raw)
++    except ValueError as exc:
++        raise ConfigError(f"Apollo 配置必须是整数: {name}") from exc
++
++
++def _kafka_servers(apollo_config: dict[str, Any]) -> str:
++    raw = _raw_value(apollo_config, "kafkaPro", "kafkaAddress")
++    try:
++        parsed = ast.literal_eval(raw)
++    except (ValueError, SyntaxError):
++        return raw
++    if isinstance(parsed, (list, tuple)):
++        servers = [str(server).strip() for server in parsed if str(server).strip()]
++        if servers:
++            return ",".join(servers)
++        raise ConfigError("Apollo 配置 kafkaPro/kafkaAddress 为空列表")
++    return str(parsed)
+ 
+ 
+ @dataclass(frozen=True)
+ class ServerConfig:
+-    host: str = "0.0.0.0"
+-    port: int = 8080
+-    detect_interval_seconds: int = 60
+-    access_token: str = "AFDD0B4AD2EC172C586E2150770FBF9E"
++    host: str
++    port: int
++    detect_interval_seconds: int
++    access_token: str
++    max_active_recordings: int
+ 
+ 
+ @dataclass(frozen=True)
+ class MediaMTXConfig:
+-    api_base_url: str = "http://127.0.0.1:9997"
+-    rtmp_base_url: str = "rtmp://127.0.0.1:1935/live"
++    api_base_url: str = ""
++    rtmp_base_url: str = ""
+     record_root: Path = Path("/data/recordings")
+     segment_timeout_seconds: int = 30
+ 
+ 
+ @dataclass(frozen=True)
+-class DatabaseConfig:
+-    sqlite_path: Path = Path("data/live-platform.sqlite3")
++class RedisConfig:
++    host: str
++    port: int
++    password: str
++    db: int
+ 
+ 
+ @dataclass(frozen=True)
+ class OSSConfig:
+-    endpoint: str = ""
+-    bucket_name: str = ""
+-    access_key_id: str = ""
+-    access_key_secret: str = ""
+-    prefix: str = "realtime-video/"
+-    signed_url_ttl_seconds: int = 86400 * 180
++    endpoint: str
++    bucket_name: str
++    access_key_id: str
++    access_key_secret: str
++    prefix: str
++    signed_url_ttl_seconds: int
+ 
+ 
+ @dataclass(frozen=True)
+ class KafkaConfig:
+-    bootstrap_servers: str = ""
+-    topic_name: str = "liveTs"
++    bootstrap_servers: str
++    topic_name: str
++
++
++@dataclass(frozen=True)
++class UploadConfig:
++    worker_count: int
+ 
+ 
+ @dataclass(frozen=True)
+ class Settings:
+     server: ServerConfig
+     mediamtx: MediaMTXConfig
+-    database: DatabaseConfig
++    redis: RedisConfig
+     oss: OSSConfig
+     kafka: KafkaConfig
++    upload: UploadConfig
+     log_dir: Path
+ 
+ 
+-def load_settings() -> Settings:
+-    """从环境变量加载运行配置。"""
++def load_settings(apollo_config: dict[str, Any] | None = None) -> Settings:
++    """只从 Apollo 配置加载运行参数。"""
++    config = fetch_apollo_config() if apollo_config is None else apollo_config
+     return Settings(
+         server=ServerConfig(
+-            host=_env("LIVE_PLATFORM_HOST", "0.0.0.0"),
+-            port=int(_env("LIVE_PLATFORM_PORT", "8080")),
+-            detect_interval_seconds=int(_env("LIVE_DETECT_INTERVAL_SECONDS", "60")),
+-            access_token=_env("LIVE_PLATFORM_ACCESS_TOKEN", "AFDD0B4AD2EC172C586E2150770FBF9E"),
++            host=_raw_value(config, "livePlatformHost"),
++            port=_config_int(config, "livePlatformPort"),
++            detect_interval_seconds=_config_int(config, "livePlatformDetectIntervalSeconds"),
++            access_token=_raw_value(config, "livePlatformAccessToken"),
++            max_active_recordings=_config_int(config, "cutliveNumber"),
+         ),
+         mediamtx=MediaMTXConfig(
+-            api_base_url=_env("MEDIAMTX_API_BASE_URL", "http://127.0.0.1:9997").rstrip("/"),
+-            rtmp_base_url=_env("MEDIAMTX_RTMP_BASE_URL", "rtmp://127.0.0.1:1935/live").rstrip("/"),
+-            record_root=Path(_env("MEDIAMTX_RECORD_ROOT", "/data/recordings")),
+-            segment_timeout_seconds=int(_env("SEGMENT_TIMEOUT_SECONDS", "30")),
++            api_base_url=_raw_value(config, "mediaMtxApiBaseUrl").rstrip("/"),
++            rtmp_base_url=_raw_value(config, "mediaMtxRtmpBaseUrl").rstrip("/"),
++            record_root=Path(_raw_value(config, "mediaMtxRecordRoot")),
++            segment_timeout_seconds=_config_int(config, "segmentTimeoutSeconds"),
+         ),
+-        database=DatabaseConfig(
+-            sqlite_path=Path(_env("LIVE_PLATFORM_SQLITE_PATH", "data/live-platform.sqlite3")),
++        redis=RedisConfig(
++            host=_raw_value(config, "redisHost"),
++            port=_config_int(config, "redisPort"),
++            password=_raw_value(config, "redisPassword"),
++            db=_config_int(config, "redisDb"),
+         ),
+         oss=OSSConfig(
+-            endpoint=_env("OSS_ENDPOINT", ""),
+-            bucket_name=_env("OSS_BUCKET_NAME", ""),
+-            access_key_id=_env("OSS_ACCESS_KEY_ID", ""),
+-            access_key_secret=_env("OSS_ACCESS_KEY_SECRET", ""),
+-            prefix=_env("OSS_PREFIX", "realtime-video/"),
+-            signed_url_ttl_seconds=int(_env("OSS_SIGNED_URL_TTL_SECONDS", str(86400 * 180))),
++            endpoint=_raw_value(config, "endpoint"),
++            bucket_name=_raw_value(config, "bucket_name"),
++            access_key_id=_raw_value(config, "access_key_id"),
++            access_key_secret=_raw_value(config, "access_key_secret"),
++            prefix=_raw_value(config, "ossPrefix"),
++            signed_url_ttl_seconds=_config_int(config, "ossSignedUrlTtlSeconds"),
+         ),
+         kafka=KafkaConfig(
+-            bootstrap_servers=_env("KAFKA_BOOTSTRAP_SERVERS", ""),
+-            topic_name=_env("KAFKA_TOPIC_NAME", "liveTs"),
++            bootstrap_servers=_kafka_servers(config),
++            topic_name=_raw_value(config, "topic_name"),
++        ),
++        upload=UploadConfig(
++            worker_count=_config_int(config, "uploadWorkerCount"),
+         ),
+-        log_dir=Path(_env("LIVE_PLATFORM_LOG_DIR", "logs")),
++        log_dir=Path(_raw_value(config, "livePlatformLogDir")),
+     )
+ 
+ 
+-settings = load_settings()
++class LazySettings:
++    """延迟加载 Apollo 配置，避免 import 阶段访问网络。"""
++
++    def __init__(self) -> None:
++        self._settings: Settings | None = None
++
++    def load(self) -> Settings:
++        if self._settings is None:
++            self._settings = load_settings()
++        return self._settings
++
++    def override(self, value: Settings | None) -> None:
++        self._settings = value
++
++    def __getattr__(self, name: str) -> Any:
++        return getattr(self.load(), name)
++
++
++settings = LazySettings()
+diff --git a/services/live-platform/shared/db.py b/services/live-platform/shared/db.py
+index 0bf7c28..a1d390a 100644
+--- a/services/live-platform/shared/db.py
++++ b/services/live-platform/shared/db.py
+@@ -1,49 +1,3 @@
+-from __future__ import annotations
++from shared.redis_store import RoomRepository
+ 
+-import sqlite3
+-from pathlib import Path
+-
+-from shared.models import MonitoredRoom
+-
+-
+-class RoomRepository:
+-    """直播间配置读取仓储。"""
+-
+-    def __init__(self, sqlite_path: Path):
+-        self.sqlite_path = sqlite_path
+-
+-    def init_schema(self) -> None:
+-        """初始化本地开发表结构。"""
+-        self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+-        with sqlite3.connect(self.sqlite_path) as conn:
+-            conn.execute(
+-                """
+-                CREATE TABLE IF NOT EXISTS live_streaming_room (
+-                    room_id TEXT PRIMARY KEY,
+-                    platform TEXT NOT NULL,
+-                    room_url TEXT NOT NULL,
+-                    local_status INTEGER NOT NULL DEFAULT 1
+-                )
+-                """
+-            )
+-
+-    async def list_monitored_rooms(self) -> list[MonitoredRoom]:
+-        """查询待监控直播间。"""
+-        self.init_schema()
+-        with sqlite3.connect(self.sqlite_path) as conn:
+-            conn.row_factory = sqlite3.Row
+-            rows = conn.execute(
+-                """
+-                SELECT room_id, platform, room_url
+-                FROM live_streaming_room
+-                WHERE local_status = 1
+-                """
+-            ).fetchall()
+-        return [
+-            MonitoredRoom(
+-                room_id=str(row["room_id"]),
+-                platform=str(row["platform"]).lower(),
+-                room_url=str(row["room_url"]),
+-            )
+-            for row in rows
+-        ]
++__all__ = ["RoomRepository"]
+diff --git a/services/live-platform/shared/models.py b/services/live-platform/shared/models.py
+index 6788899..a848f7b 100644
+--- a/services/live-platform/shared/models.py
++++ b/services/live-platform/shared/models.py
+@@ -21,9 +21,10 @@ class Status(str, Enum):
+ class RoomState:
+     """单个直播间的运行态。"""
+ 
+-    room_id: str
++    collection_id: str
+     platform: str
+     room_url: str
++    live_room_id: str = ""
+     status: Status = Status.IDLE
+     flv_url: str | None = None
+     mediamtx_path: str | None = None
+@@ -35,6 +36,11 @@ class RoomState:
+     error_message: str = ""
+     metadata: dict = field(default_factory=dict)
+ 
++    @property
++    def room_id(self) -> str:
++        """兼容旧调用方，返回实际直播间 ID。"""
++        return self.live_room_id
++
+     def is_healthy(self, timeout_seconds: int = 30, now: float | None = None) -> bool:
+         """基于切片回调时间判断录制是否健康。"""
+         if self.status != Status.RECORDING:
+@@ -47,14 +53,30 @@ class RoomState:
+         self.last_active = now if now is not None else time()
+ 
+ 
+-@dataclass(frozen=True)
++@dataclass(frozen=True, init=False)
+ class MonitoredRoom:
+     """待监控直播间配置。"""
+ 
+-    room_id: str
++    collection_id: str
+     platform: str
+     room_url: str
+ 
++    def __init__(
++        self,
++        collection_id: str | None = None,
++        platform: str = "",
++        room_url: str = "",
++        room_id: str | None = None,
++    ):
++        object.__setattr__(self, "collection_id", collection_id or room_id or "")
++        object.__setattr__(self, "platform", platform)
++        object.__setattr__(self, "room_url", room_url)
++
++    @property
++    def room_id(self) -> str:
++        """兼容旧调用方，返回 collection_id。"""
++        return self.collection_id
++
+ 
+ @dataclass(frozen=True)
+ class SegmentTask:
+@@ -64,4 +86,5 @@ class SegmentTask:
+     file_path: Path
+     mediamtx_path: str | None = None
+     duration: float | None = None
++    platform: str = ""  # P2-5: 用于拼接 Kafka dataSource 字段
+     created_at: float = field(default_factory=time)
+diff --git a/services/live-platform/tests/test_api.py b/services/live-platform/tests/test_api.py
+index 3d0e6b4..a16ea56 100644
+--- a/services/live-platform/tests/test_api.py
++++ b/services/live-platform/tests/test_api.py
+@@ -1,13 +1,27 @@
+ from __future__ import annotations
+ 
++from contextlib import asynccontextmanager
++
+ from fastapi.testclient import TestClient
+ 
+ from main import create_app
+ from shared.config import settings
++from tests.test_config import full_settings
+ 
+ 
+-def test_health_endpoint():
++def _app_without_lifespan():
+     app = create_app()
++
++    @asynccontextmanager
++    async def noop_lifespan(_app):
++        yield
++
++    app.router.lifespan_context = noop_lifespan
++    return app
++
++
++def test_health_endpoint():
++    app = _app_without_lifespan()
+     with TestClient(app) as client:
+         response = client.get("/health")
+ 
+@@ -20,7 +34,8 @@ def test_live_room_requires_token(monkeypatch):
+         return {"flv_url": "https://example.com/live.flv", "roomId": "123", "filePath": "demo"}
+ 
+     monkeypatch.setattr("api.routes.get_stream_info", fake_get_stream_info)
+-    app = create_app()
++    settings.override(full_settings(livePlatformAccessToken="token"))
++    app = _app_without_lifespan()
+     with TestClient(app) as client:
+         response = client.post("/liveRoom/portInfo", json={"mateUrl": "https://example.com/live"})
+ 
+@@ -32,11 +47,12 @@ def test_live_room_compatible_response(monkeypatch):
+         return {"flv_url": "https://example.com/live.flv", "roomId": "123", "filePath": "demo"}
+ 
+     monkeypatch.setattr("api.routes.get_stream_info", fake_get_stream_info)
+-    app = create_app()
++    settings.override(full_settings(livePlatformAccessToken="token"))
++    app = _app_without_lifespan()
+     with TestClient(app) as client:
+         response = client.post(
+             "/liveRoom/portInfo",
+-            headers={"access-token": settings.server.access_token},
++            headers={"access-token": "token"},
+             json={"mateUrl": "https://example.com/live"},
+         )
+ 
+diff --git a/services/live-platform/tests/test_integration.py b/services/live-platform/tests/test_integration.py
+index 0d5158d..b0898d6 100644
+--- a/services/live-platform/tests/test_integration.py
++++ b/services/live-platform/tests/test_integration.py
+@@ -1,7 +1,5 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
+-
+ import pytest
+ 
+ from orchestrator.state_machine import StateManager
+@@ -17,10 +15,10 @@ async def test_recording_to_upload_chain(tmp_path):
+         mediamtx_client=FakeMediaMTXClient(),
+         relay_controller=FakeRelayController(),
+     )
+-    room = MonitoredRoom(room_id="123", platform="tiktok", room_url="https://example.com/live")
++    room = MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/live")
+ 
+-    state = await manager.on_live_detected(room, "https://example.com/live.flv")
+-    await manager.on_segment_received("tiktok-123")
++    state = await manager.on_live_detected(room, "https://example.com/live.flv", {"roomId": "123"})
++    await manager.on_segment_received("tiktok-c1")
+ 
+     file_path = tmp_path / "segment.mp4"
+     file_path.write_bytes(b"video")
+diff --git a/services/live-platform/tests/test_scheduler.py b/services/live-platform/tests/test_scheduler.py
+index 85fb47d..5e2fcfb 100644
+--- a/services/live-platform/tests/test_scheduler.py
++++ b/services/live-platform/tests/test_scheduler.py
+@@ -9,43 +9,93 @@ from tests.test_state_machine import FakeMediaMTXClient, FakeRelayController
+ 
+ 
+ class FakeRepository:
++    def __init__(self, rooms: list[MonitoredRoom] | None = None):
++        self.rooms = rooms or [
++            MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/live")
++        ]
++        self.status_writes = []
++
+     async def list_monitored_rooms(self):
+-        return [MonitoredRoom(room_id="123", platform="tiktok", room_url="https://example.com/live")]
++        return self.rooms
++
++    async def write_status(self, room, *, stream_info, state, is_live, recording_started):
++        self.status_writes.append(
++            {
++                "collection_id": room.collection_id,
++                "stream_info": stream_info,
++                "status": state.status,
++                "is_live": is_live,
++                "recording_started": recording_started,
++            }
++        )
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_scheduler_starts_idle_room(monkeypatch):
+-    async def fake_get_stream_url(platform: str, room_url: str):
+-        return "https://example.com/live.flv"
++    async def fake_get_stream_info(platform: str, room_url: str):
++        return {"flv_url": "https://example.com/live.flv", "roomId": "actual-123"}
+ 
+-    monkeypatch.setattr("orchestrator.scheduler.get_stream_url", fake_get_stream_url)
++    monkeypatch.setattr("orchestrator.scheduler.get_stream_info", fake_get_stream_info)
++    monkeypatch.setattr("orchestrator.scheduler._max_active_recordings", lambda: 4)
+     manager = StateManager(
+         mediamtx_client=FakeMediaMTXClient(),
+         relay_controller=FakeRelayController(),
+     )
++    repo = FakeRepository()
+ 
+-    started_count = await detect_rooms(repository=FakeRepository(), manager=manager)
+-    state = await manager.get("123")
++    started_count = await detect_rooms(repository=repo, manager=manager)
++    state = await manager.get("c1")
+ 
+     assert started_count == 1
+     assert state is not None
+     assert state.status == Status.RECORDING
++    assert state.collection_id == "c1"
++    assert state.live_room_id == "actual-123"
++    assert repo.status_writes[0]["is_live"] is True
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_scheduler_ignores_offline_room(monkeypatch):
+-    async def fake_get_stream_url(platform: str, room_url: str):
+-        return None
++    async def fake_get_stream_info(platform: str, room_url: str):
++        return {"flv_url": "error"}
+ 
+-    monkeypatch.setattr("orchestrator.scheduler.get_stream_url", fake_get_stream_url)
++    monkeypatch.setattr("orchestrator.scheduler.get_stream_info", fake_get_stream_info)
++    monkeypatch.setattr("orchestrator.scheduler._max_active_recordings", lambda: 4)
+     manager = StateManager(
+         mediamtx_client=FakeMediaMTXClient(),
+         relay_controller=FakeRelayController(),
+     )
++    repo = FakeRepository()
+ 
+-    started_count = await detect_rooms(repository=FakeRepository(), manager=manager)
+-    state = await manager.get("123")
++    started_count = await detect_rooms(repository=repo, manager=manager)
++    state = await manager.get("c1")
+ 
+     assert started_count == 0
+     assert state is not None
+     assert state.status == Status.IDLE
++    assert repo.status_writes[0]["is_live"] is False
++
++
++@pytest.mark.asyncio
++async def test_scheduler_limits_recording_start_but_writes_all_statuses(monkeypatch):
++    rooms = [
++        MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/1"),
++        MonitoredRoom(collection_id="c2", platform="tiktok", room_url="https://example.com/2"),
++    ]
++    repo = FakeRepository(rooms)
++
++    async def fake_get_stream_info(platform: str, room_url: str):
++        return {"flv_url": f"{room_url}.flv"}
++
++    monkeypatch.setattr("orchestrator.scheduler.get_stream_info", fake_get_stream_info)
++    monkeypatch.setattr("orchestrator.scheduler._max_active_recordings", lambda: 1)
++    relay = FakeRelayController()
++    manager = StateManager(mediamtx_client=FakeMediaMTXClient(), relay_controller=relay)
++
++    started_count = await detect_rooms(repository=repo, manager=manager)
++
++    assert started_count == 1
++    assert len(relay.started) == 1
++    assert [write["collection_id"] for write in repo.status_writes] == ["c1", "c2"]
++    assert [write["is_live"] for write in repo.status_writes] == [True, True]
++    assert [write["recording_started"] for write in repo.status_writes] == [True, False]
+diff --git a/services/live-platform/tests/test_state_machine.py b/services/live-platform/tests/test_state_machine.py
+index b6b103e..3858529 100644
+--- a/services/live-platform/tests/test_state_machine.py
++++ b/services/live-platform/tests/test_state_machine.py
+@@ -1,7 +1,5 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
+-
+ import pytest
+ 
+ from orchestrator.state_machine import StateManager
+@@ -42,25 +40,28 @@ async def test_live_detected_starts_recording():
+     mediamtx = FakeMediaMTXClient()
+     relay = FakeRelayController()
+     manager = StateManager(mediamtx_client=mediamtx, relay_controller=relay)
+-    room = MonitoredRoom(room_id="123", platform="tiktok", room_url="https://example.com/live")
++    room = MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/live")
+ 
+-    state = await manager.on_live_detected(room, "https://example.com/live.flv")
++    state = await manager.on_live_detected(room, "https://example.com/live.flv", {"roomId": "123"})
+ 
+     assert state.status == Status.RECORDING
++    assert state.collection_id == "c1"
++    assert state.live_room_id == "123"
+     assert state.ffmpeg_pid == 101
+-    assert mediamtx.added == ["tiktok-123"]
+-    assert relay.started == [("https://example.com/live.flv", "tiktok-123")]
++    assert mediamtx.added == ["tiktok-c1"]
++    assert relay.started == [("https://example.com/live.flv", "tiktok-c1")]
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_segment_callback_updates_last_active_by_path():
+     manager = StateManager(mediamtx_client=FakeMediaMTXClient(), relay_controller=FakeRelayController())
+-    room = MonitoredRoom(room_id="123", platform="tiktok", room_url="https://example.com/live")
+-    await manager.on_live_detected(room, "https://example.com/live.flv")
++    room = MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/live")
++    await manager.on_live_detected(room, "https://example.com/live.flv", {"roomId": "123"})
+ 
+-    state = await manager.on_segment_received("tiktok-123")
++    state = await manager.on_segment_received("tiktok-c1")
+ 
+     assert state.room_id == "123"
++    assert state.collection_id == "c1"
+     assert state.status == Status.RECORDING
+     assert state.last_active > 0
+ 
+@@ -73,8 +74,8 @@ async def test_health_check_moves_timeout_room_to_reconnecting():
+         relay_controller=relay,
+         timeout_seconds=1,
+     )
+-    room = MonitoredRoom(room_id="123", platform="tiktok", room_url="https://example.com/live")
+-    state = await manager.on_live_detected(room, "https://example.com/live.flv")
++    room = MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/live")
++    state = await manager.on_live_detected(room, "https://example.com/live.flv", {"roomId": "123"})
+     state.last_active = 0
+ 
+     changed = await manager.run_health_check()
+@@ -89,12 +90,12 @@ async def test_stream_ended_cleans_resources():
+     mediamtx = FakeMediaMTXClient()
+     relay = FakeRelayController()
+     manager = StateManager(mediamtx_client=mediamtx, relay_controller=relay)
+-    room = MonitoredRoom(room_id="123", platform="tiktok", room_url="https://example.com/live")
+-    await manager.on_live_detected(room, "https://example.com/live.flv")
++    room = MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/live")
++    await manager.on_live_detected(room, "https://example.com/live.flv", {"roomId": "123"})
+ 
+-    state = await manager.on_stream_ended("123")
++    state = await manager.on_stream_ended("c1")
+ 
+     assert state.status == Status.IDLE
+     assert state.ffmpeg_pid is None
+     assert relay.stopped == [101]
+-    assert mediamtx.removed == ["tiktok-123"]
++    assert mediamtx.removed == ["tiktok-c1"]
+diff --git a/services/live-platform/upload/coordinator.py b/services/live-platform/upload/coordinator.py
+index 824ff3a..b169db8 100644
+--- a/services/live-platform/upload/coordinator.py
++++ b/services/live-platform/upload/coordinator.py
+@@ -30,6 +30,7 @@ class UploadCoordinator:
+             file_path=task.file_path,
+             duration=task.duration,
+             video_url=video_url,
++            platform=task.platform,  # P2-5: 透传 platform 供 Kafka 拼 dataSource
+         )
+ 
+     async def start(self, worker_count: int = 2) -> None:
+diff --git a/services/live-platform/upload/kafka_worker.py b/services/live-platform/upload/kafka_worker.py
+index ed633c7..acc7192 100644
+--- a/services/live-platform/upload/kafka_worker.py
++++ b/services/live-platform/upload/kafka_worker.py
+@@ -13,17 +13,18 @@ class KafkaWorker:
+     """Kafka 元数据推送 worker。"""
+ 
+     def __init__(self, config: KafkaConfig | None = None, producer=None):
+-        self.config = config or settings.kafka
++        self.config = config
+         self._producer = producer
+ 
+     def _get_producer(self):
+         if self._producer is not None:
+             return self._producer
+-        if not self.config.bootstrap_servers:
++        config = self.config or settings.kafka
++        if not config.bootstrap_servers:
+             raise RuntimeError("Kafka 配置不完整")
+         from kafka import KafkaProducer
+ 
+-        servers = [server.strip() for server in self.config.bootstrap_servers.split(",") if server.strip()]
++        servers = [server.strip() for server in config.bootstrap_servers.split(",") if server.strip()]
+         self._producer = KafkaProducer(
+             bootstrap_servers=servers,
+             value_serializer=lambda value: json.dumps(value, ensure_ascii=False).encode("utf-8"),
+@@ -36,6 +37,7 @@ class KafkaWorker:
+         file_path: Path,
+         duration: float | None,
+         video_url: str,
++        platform: str = "",  # P2-5: 用于拼接 dataSource 字段
+         retry_count: int = 3,
+     ) -> dict:
+         """推送切片元数据到 Kafka。"""
+@@ -44,12 +46,14 @@ class KafkaWorker:
+             "local_file_name": file_path.name,
+             "duration": duration,
+             "videoUrl": video_url,
++            "dataSource": f"live_crawler_{platform}" if platform else "",  # P2-5: 约定格式
+         }
+         last_error: Exception | None = None
+         for attempt in range(1, retry_count + 1):
+             try:
+                 producer = self._get_producer()
+-                producer.send(self.config.topic_name, value=payload)
++                config = self.config or settings.kafka
++                producer.send(config.topic_name, value=payload)
+                 producer.flush()
+                 return payload
+             except Exception as exc:
+diff --git a/services/live-platform/upload/oss_worker.py b/services/live-platform/upload/oss_worker.py
+index 1389fd7..e93abd9 100644
+--- a/services/live-platform/upload/oss_worker.py
++++ b/services/live-platform/upload/oss_worker.py
+@@ -13,25 +13,26 @@ class OSSWorker:
+     """OSS 上传 worker。"""
+ 
+     def __init__(self, config: OSSConfig | None = None, bucket=None):
+-        self.config = config or settings.oss
++        self.config = config
+         self._bucket = bucket
+ 
+     def _get_bucket(self):
+         if self._bucket is not None:
+             return self._bucket
++        config = self.config or settings.oss
+         if not all(
+             [
+-                self.config.endpoint,
+-                self.config.bucket_name,
+-                self.config.access_key_id,
+-                self.config.access_key_secret,
++                config.endpoint,
++                config.bucket_name,
++                config.access_key_id,
++                config.access_key_secret,
+             ]
+         ):
+             raise RuntimeError("OSS 配置不完整")
+         import oss2
+ 
+-        auth = oss2.Auth(self.config.access_key_id, self.config.access_key_secret)
+-        self._bucket = oss2.Bucket(auth, self.config.endpoint, self.config.bucket_name)
++        auth = oss2.Auth(config.access_key_id, config.access_key_secret)
++        self._bucket = oss2.Bucket(auth, config.endpoint, config.bucket_name)
+         return self._bucket
+ 
+     async def upload_segment(self, file_path: Path, retry_count: int = 3) -> str:
+@@ -48,9 +49,10 @@ class OSSWorker:
+ 
+     def _upload_sync(self, file_path: Path) -> str:
+         bucket = self._get_bucket()
+-        object_name = f"{self.config.prefix}{file_path.name}"
++        config = self.config or settings.oss
++        object_name = f"{config.prefix}{file_path.name}"
+         bucket.put_object_from_file(object_name, str(file_path))
+-        url = bucket.sign_url("GET", object_name, self.config.signed_url_ttl_seconds)
++        url = bucket.sign_url("GET", object_name, config.signed_url_ttl_seconds)
+         try:
+             file_path.unlink()
+         except FileNotFoundError:

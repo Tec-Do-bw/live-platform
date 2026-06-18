@@ -1,93 +1,163 @@
 from __future__ import annotations
 
-import os
+import ast
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from shared.apollo_config import fetch_apollo_config
 
 
-def _env(name: str, default: str) -> str:
-    return os.environ.get(name, default)
+class ConfigError(RuntimeError):
+    """Apollo 配置缺失或格式错误。"""
+
+
+def _raw_value(apollo_config: dict[str, Any], name: str, *aliases: str) -> str:
+    for key in (name, *aliases):
+        value = apollo_config.get(key)
+        if value is not None and str(value).strip() != "":
+            return str(value).strip()
+    key_list = ", ".join((name, *aliases))
+    raise ConfigError(f"Apollo 缺少必填配置: {key_list}")
+
+
+def _config_int(apollo_config: dict[str, Any], name: str, *aliases: str) -> int:
+    raw = _raw_value(apollo_config, name, *aliases)
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ConfigError(f"Apollo 配置必须是整数: {name}") from exc
+
+
+def _kafka_servers(apollo_config: dict[str, Any]) -> str:
+    raw = _raw_value(apollo_config, "kafkaPro", "kafkaAddress")
+    try:
+        parsed = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        return raw
+    if isinstance(parsed, (list, tuple)):
+        servers = [str(server).strip() for server in parsed if str(server).strip()]
+        if servers:
+            return ",".join(servers)
+        raise ConfigError("Apollo 配置 kafkaPro/kafkaAddress 为空列表")
+    return str(parsed)
 
 
 @dataclass(frozen=True)
 class ServerConfig:
-    host: str = "0.0.0.0"
-    port: int = 8080
-    detect_interval_seconds: int = 60
-    access_token: str = "AFDD0B4AD2EC172C586E2150770FBF9E"
+    host: str
+    port: int
+    detect_interval_seconds: int
+    access_token: str
+    max_active_recordings: int
 
 
 @dataclass(frozen=True)
 class MediaMTXConfig:
-    api_base_url: str = "http://127.0.0.1:9997"
-    rtmp_base_url: str = "rtmp://127.0.0.1:1935/live"
+    api_base_url: str = ""
+    rtmp_base_url: str = ""
     record_root: Path = Path("/data/recordings")
     segment_timeout_seconds: int = 30
 
 
 @dataclass(frozen=True)
-class DatabaseConfig:
-    sqlite_path: Path = Path("data/live-platform.sqlite3")
+class RedisConfig:
+    host: str
+    port: int
+    password: str
+    db: int
 
 
 @dataclass(frozen=True)
 class OSSConfig:
-    endpoint: str = ""
-    bucket_name: str = ""
-    access_key_id: str = ""
-    access_key_secret: str = ""
-    prefix: str = "realtime-video/"
-    signed_url_ttl_seconds: int = 86400 * 180
+    endpoint: str
+    bucket_name: str
+    access_key_id: str
+    access_key_secret: str
+    prefix: str
+    signed_url_ttl_seconds: int
 
 
 @dataclass(frozen=True)
 class KafkaConfig:
-    bootstrap_servers: str = ""
-    topic_name: str = "liveTs"
+    bootstrap_servers: str
+    topic_name: str
+
+
+@dataclass(frozen=True)
+class UploadConfig:
+    worker_count: int
 
 
 @dataclass(frozen=True)
 class Settings:
     server: ServerConfig
     mediamtx: MediaMTXConfig
-    database: DatabaseConfig
+    redis: RedisConfig
     oss: OSSConfig
     kafka: KafkaConfig
+    upload: UploadConfig
     log_dir: Path
 
 
-def load_settings() -> Settings:
-    """从环境变量加载运行配置。"""
+def load_settings(apollo_config: dict[str, Any] | None = None) -> Settings:
+    """只从 Apollo 配置加载运行参数。"""
+    config = fetch_apollo_config() if apollo_config is None else apollo_config
     return Settings(
         server=ServerConfig(
-            host=_env("LIVE_PLATFORM_HOST", "0.0.0.0"),
-            port=int(_env("LIVE_PLATFORM_PORT", "8080")),
-            detect_interval_seconds=int(_env("LIVE_DETECT_INTERVAL_SECONDS", "60")),
-            access_token=_env("LIVE_PLATFORM_ACCESS_TOKEN", "AFDD0B4AD2EC172C586E2150770FBF9E"),
+            host=_raw_value(config, "livePlatformHost"),
+            port=_config_int(config, "livePlatformPort"),
+            detect_interval_seconds=_config_int(config, "livePlatformDetectIntervalSeconds"),
+            access_token=_raw_value(config, "livePlatformAccessToken"),
+            max_active_recordings=_config_int(config, "cutliveNumber"),
         ),
         mediamtx=MediaMTXConfig(
-            api_base_url=_env("MEDIAMTX_API_BASE_URL", "http://127.0.0.1:9997").rstrip("/"),
-            rtmp_base_url=_env("MEDIAMTX_RTMP_BASE_URL", "rtmp://127.0.0.1:1935/live").rstrip("/"),
-            record_root=Path(_env("MEDIAMTX_RECORD_ROOT", "/data/recordings")),
-            segment_timeout_seconds=int(_env("SEGMENT_TIMEOUT_SECONDS", "30")),
+            api_base_url=_raw_value(config, "mediaMtxApiBaseUrl").rstrip("/"),
+            rtmp_base_url=_raw_value(config, "mediaMtxRtmpBaseUrl").rstrip("/"),
+            record_root=Path(_raw_value(config, "mediaMtxRecordRoot")),
+            segment_timeout_seconds=_config_int(config, "segmentTimeoutSeconds"),
         ),
-        database=DatabaseConfig(
-            sqlite_path=Path(_env("LIVE_PLATFORM_SQLITE_PATH", "data/live-platform.sqlite3")),
+        redis=RedisConfig(
+            host=_raw_value(config, "redisHost"),
+            port=_config_int(config, "redisPort"),
+            password=_raw_value(config, "redisPassword"),
+            db=_config_int(config, "redisDb"),
         ),
         oss=OSSConfig(
-            endpoint=_env("OSS_ENDPOINT", ""),
-            bucket_name=_env("OSS_BUCKET_NAME", ""),
-            access_key_id=_env("OSS_ACCESS_KEY_ID", ""),
-            access_key_secret=_env("OSS_ACCESS_KEY_SECRET", ""),
-            prefix=_env("OSS_PREFIX", "realtime-video/"),
-            signed_url_ttl_seconds=int(_env("OSS_SIGNED_URL_TTL_SECONDS", str(86400 * 180))),
+            endpoint=_raw_value(config, "endpoint"),
+            bucket_name=_raw_value(config, "bucket_name"),
+            access_key_id=_raw_value(config, "access_key_id"),
+            access_key_secret=_raw_value(config, "access_key_secret"),
+            prefix=_raw_value(config, "ossPrefix"),
+            signed_url_ttl_seconds=_config_int(config, "ossSignedUrlTtlSeconds"),
         ),
         kafka=KafkaConfig(
-            bootstrap_servers=_env("KAFKA_BOOTSTRAP_SERVERS", ""),
-            topic_name=_env("KAFKA_TOPIC_NAME", "liveTs"),
+            bootstrap_servers=_kafka_servers(config),
+            topic_name=_raw_value(config, "topic_name"),
         ),
-        log_dir=Path(_env("LIVE_PLATFORM_LOG_DIR", "logs")),
+        upload=UploadConfig(
+            worker_count=_config_int(config, "uploadWorkerCount"),
+        ),
+        log_dir=Path(_raw_value(config, "livePlatformLogDir")),
     )
 
 
-settings = load_settings()
+class LazySettings:
+    """延迟加载 Apollo 配置，避免 import 阶段访问网络。"""
+
+    def __init__(self) -> None:
+        self._settings: Settings | None = None
+
+    def load(self) -> Settings:
+        if self._settings is None:
+            self._settings = load_settings()
+        return self._settings
+
+    def override(self, value: Settings | None) -> None:
+        self._settings = value
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.load(), name)
+
+
+settings = LazySettings()

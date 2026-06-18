@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi.testclient import TestClient
 
 from main import create_app
 from shared.config import settings
+from tests.test_config import full_settings
+
+
+def _app_without_lifespan():
+    app = create_app()
+
+    @asynccontextmanager
+    async def noop_lifespan(_app):
+        yield
+
+    app.router.lifespan_context = noop_lifespan
+    return app
 
 
 def test_health_endpoint():
-    app = create_app()
+    app = _app_without_lifespan()
     with TestClient(app) as client:
         response = client.get("/health")
 
@@ -20,7 +34,8 @@ def test_live_room_requires_token(monkeypatch):
         return {"flv_url": "https://example.com/live.flv", "roomId": "123", "filePath": "demo"}
 
     monkeypatch.setattr("api.routes.get_stream_info", fake_get_stream_info)
-    app = create_app()
+    settings.override(full_settings(livePlatformAccessToken="token"))
+    app = _app_without_lifespan()
     with TestClient(app) as client:
         response = client.post("/liveRoom/portInfo", json={"mateUrl": "https://example.com/live"})
 
@@ -32,11 +47,12 @@ def test_live_room_compatible_response(monkeypatch):
         return {"flv_url": "https://example.com/live.flv", "roomId": "123", "filePath": "demo"}
 
     monkeypatch.setattr("api.routes.get_stream_info", fake_get_stream_info)
-    app = create_app()
+    settings.override(full_settings(livePlatformAccessToken="token"))
+    app = _app_without_lifespan()
     with TestClient(app) as client:
         response = client.post(
             "/liveRoom/portInfo",
-            headers={"access-token": settings.server.access_token},
+            headers={"access-token": "token"},
             json={"mateUrl": "https://example.com/live"},
         )
 

@@ -30,6 +30,7 @@ class UploadCoordinator:
             file_path=task.file_path,
             duration=task.duration,
             video_url=video_url,
+            platform=task.platform,  # P2-5: 透传 platform 供 Kafka 拼 dataSource
         )
 
     async def start(self, worker_count: int = 2) -> None:
@@ -49,9 +50,9 @@ class UploadCoordinator:
             task = await self.queue.get()
             try:
                 await self.process_one(task)
-                logger.info("切片处理完成 | room_id=%s file=%s worker=%s", task.room_id, task.file_path, index)
+                logger.info(f"切片处理完成 | room_id={task.room_id} file={task.file_path} worker={index}")
             except Exception:
-                logger.exception("切片处理失败 | room_id=%s file=%s", task.room_id, task.file_path)
+                logger.exception(f"切片处理失败 | room_id={task.room_id} file={task.file_path}")
             finally:
                 self.queue.task_done()
 

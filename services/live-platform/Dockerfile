@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # FFmpeg 负责 HTTP-FLV 到 RTMP 的协议转换，必须随镜像一起冻结，避免宿主机版本漂移
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
+    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

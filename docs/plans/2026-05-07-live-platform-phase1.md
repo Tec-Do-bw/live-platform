@@ -166,7 +166,7 @@ pathDefaults:
   recordSegmentDuration: 10s
   recordPath: /data/recordings/%path/%Y-%m-%d_%H-%M-%S-%f
   runOnRecordSegmentComplete: >
-    curl -X POST http://localhost:8080/internal/segment-ready
+    curl -  POST http://localhost:8080/internal/segment-ready
     -H "Content-Type: application/json"
     -d '{"path":"$MTX_PATH","file":"$MTX_SEGMENT_PATH","duration":"$MTX_SEGMENT_DURATION"}'
 ```
@@ -251,68 +251,68 @@ async def start_ffmpeg_relay(flv_url: str, mediamtx_path: str) -> int:
 
 ## 5. Phase 1:搭建骨架(1 天)✅ 代码完成
 
-- [x] **1.1 主入口 `main.py`**:APScheduler + FastAPI + uvicorn,`detect_rooms` 60s 间隔,挂载 `routes` 与 `internal_router`(`/internal` 前缀)
-- [x] **1.2 配置模块 `shared/config.py`**:MediaMTX / 数据库 / OSS / Kafka 配置
-- [x] **1.3 数据模型 `shared/models.py`**:`Status` 枚举、`RoomState` dataclass、`SegmentTask` dataclass
-- [x] **1.4 日志模块 `shared/logger.py`**:loguru,文件 + stdout 双输出
+- [ ] **1.1 主入口 `main.py`**:APScheduler + FastAPI + uvicorn,`detect_rooms` 60s 间隔,挂载 `routes` 与 `internal_router`(`/internal` 前缀)
+- [ ] **1.2 配置模块 `shared/config.py`**:MediaMTX / 数据库 / OSS / Kafka 配置
+- [ ] **1.3 数据模型 `shared/models.py`**:`Status` 枚举、`RoomState` dataclass、`SegmentTask` dataclass
+- [ ] **1.4 日志模块 `shared/logger.py`**:loguru,文件 + stdout 双输出
 
 ---
 
 ## 6. Phase 2:房间状态机(2 天)✅ 代码完成
 
-- [x] **2.1 状态机核心 `orchestrator/state_machine.py`**:`RoomState` + `StateManager` + 状态转换方法(`on_live_detected`、`on_recording_started`、`on_segment_received`、`on_stream_timeout`、`on_reconnect_success`、`on_reconnect_failed`、`on_stream_ended`)
-- [x] **2.2 健康检查**:`StateManager` 定期检查 `last_active` 超时,自动进入 `reconnecting`
-- [x] **2.3 单元测试 `tests/test_state_machine.py`**:状态转换、超时检测、重试逻辑
+- [ ] **2.1 状态机核心 `orchestrator/state_machine.py`**:`RoomState` + `StateManager` + 状态转换方法(`on_live_detected`、`on_recording_started`、`on_segment_received`、`on_stream_timeout`、`on_reconnect_success`、`on_reconnect_failed`、`on_stream_ended`)
+- [ ] **2.2 健康检查**:`StateManager` 定期检查 `last_active` 超时,自动进入 `reconnecting`
+- [ ] **2.3 单元测试 `tests/test_state_machine.py`**:状态转换、超时检测、重试逻辑
 
 ---
 
 ## 7. Phase 3:调度器与取流适配(2 天)✅ 代码完成
 
-- [x] **3.1 调度器 `orchestrator/scheduler.py`**:`detect_rooms()` 查询 DB → 遍历房间 → 对 `idle` 调用适配器 → 推进状态机
-- [x] **3.2 取流适配器**:从 `live-monitor` 迁移
-  - [x] `adapters/tiktok.py` ← `TiktokTool.getLiveStreamInfo()`
-  - [x] `adapters/shopee.py` ← `ShopeeTool.getLiveStreamInfo()`
-  - [x] `adapters/lazada.py` ← `LazadaTool.getLiveStreamInfo()`
-- [x] **3.3 测试**:`tests/test_scheduler.py` + `tests/test_adapters.py`
+- [ ] **3.1 调度器 `orchestrator/scheduler.py`**:`detect_rooms()` 查询 DB → 遍历房间 → 对 `idle` 调用适配器 → 推进状态机
+- [ ] **3.2 取流适配器**:从 `live-monitor` 迁移
+  - [ ] `adapters/tiktok.py` ← `TiktokTool.getLiveStreamInfo()`
+  - [ ] `adapters/shopee.py` ← `ShopeeTool.getLiveStreamInfo()`
+  - [ ] `adapters/lazada.py` ← `LazadaTool.getLiveStreamInfo()`
+- [ ] **3.3 测试**:`tests/test_scheduler.py` + `tests/test_adapters.py`
 
 ---
 
 ## 8. Phase 4:FFmpeg 协议转换(1 天)✅ 代码完成
 
-- [x] **4.1 `ffmpeg/relay.py`**:`start_ffmpeg_relay(flv_url, mediamtx_path)` / `stop_ffmpeg_relay(pid)` / `is_ffmpeg_alive(pid)`,asyncio 子进程
-- [x] **4.2 集成状态机**:`on_live_detected` 启动 relay,`on_stream_timeout/ended` 杀进程
-- [x] **4.3 测试 `tests/test_ffmpeg_relay.py`**:启动、进程管理
+- [ ] **4.1 `ffmpeg/relay.py`**:`start_ffmpeg_relay(flv_url, mediamtx_path)` / `stop_ffmpeg_relay(pid)` / `is_ffmpeg_alive(pid)`,asyncio 子进程
+- [ ] **4.2 集成状态机**:`on_live_detected` 启动 relay,`on_stream_timeout/ended` 杀进程
+- [ ] **4.3 测试 `tests/test_ffmpeg_relay.py`**:启动、进程管理
 
 ---
 
 ## 9. Phase 5:MediaMTX 客户端(1 天)✅ 代码完成
 
-- [x] **5.1 `orchestrator/mediamtx_client.py`**:`add_path(room_id, rtmp_source)` / `remove_path(room_id)` / `list_active_paths()` / `get_path_info(room_id)`,httpx 异步客户端
-- [x] **5.2 集成状态机**:`on_live_detected` → `add_path`,`on_stream_ended` → `remove_path`
-- [x] **5.3 测试 `tests/test_mediamtx_client.py`**:API 调用、错误处理
+- [ ] **5.1 `orchestrator/mediamtx_client.py`**:`add_path(room_id, rtmp_source)` / `remove_path(room_id)` / `list_active_paths()` / `get_path_info(room_id)`,httpx 异步客户端
+- [ ] **5.2 集成状态机**:`on_live_detected` → `add_path`,`on_stream_ended` → `remove_path`
+- [ ] **5.3 测试 `tests/test_mediamtx_client.py`**:API 调用、错误处理
 
 ---
 
 ## 10. Phase 6:上传与 Kafka worker(2 天)✅ 代码完成
 
-- [x] **6.1 OSS 上传 worker `upload/oss_worker.py`**:从 `live-stream` 迁移 `AiyunOBSHelper`,异步上传队列、失败重试、上传成功后删本地文件
-- [x] **6.2 Kafka 推送 worker `upload/kafka_worker.py`**:迁移 `KafkaHelper`,失败重试
-- [x] **6.3 上传编排 `upload/coordinator.py`**:队列 + worker 池 + 上传 → Kafka 串行
-- [x] **6.4 测试 `tests/test_upload.py`**:OSS、Kafka、编排
+- [ ] **6.1 OSS 上传 worker `upload/oss_worker.py`**:从 `live-stream` 迁移 `AiyunOBSHelper`,异步上传队列、失败重试、上传成功后删本地文件
+- [ ] **6.2 Kafka 推送 worker `upload/kafka_worker.py`**:迁移 `KafkaHelper`,失败重试
+- [ ] **6.3 上传编排 `upload/coordinator.py`**:队列 + worker 池 + 上传 → Kafka 串行
+- [ ] **6.4 测试 `tests/test_upload.py`**:OSS、Kafka、编排
 
 ---
 
 ## 11. Phase 7:API 与内部接口(1 天)✅ 代码完成
 
-- [x] **7.1 对外 API `api/routes.py`**:`GET /health`、`POST /liveRoom/{portInfo,shopeeInfo,lazadaInfo}`、`GET /docs/{doc,getConfig}`
-- [x] **7.2 内部接口 `api/internal.py`**:`POST /internal/segment-ready`,接收 MediaMTX 切片回调 → 更新 `last_active` + 推上传队列
-- [x] **7.3 测试 `tests/test_api.py`**
+- [ ] **7.1 对外 API `api/routes.py`**:`GET /health`、`POST /liveRoom/{portInfo,shopeeInfo,lazadaInfo}`、`GET /docs/{doc,getConfig}`
+- [ ] **7.2 内部接口 `api/internal.py`**:`POST /internal/segment-ready`,接收 MediaMTX 切片回调 → 更新 `last_active` + 推上传队列
+- [ ] **7.3 测试 `tests/test_api.py`**
 
 ---
 
 ## 12. Phase 8:集成测试(2 天)✅ 本地通过 / ⏳ 真实环境待验证
 
-- [x] **8.1 端到端 `tests/test_integration.py`**:调度器 → FFmpeg relay → MediaMTX 录制 → 切片回调 → OSS → Kafka → 主播下播清理
+- [ ] **8.1 端到端 `tests/test_integration.py`**:调度器 → FFmpeg relay → MediaMTX 录制 → 切片回调 → OSS → Kafka → 主播下播清理
 - [ ] **8.2 断流重连**:杀 FFmpeg → 验证状态机 `reconnecting` → 重启 → 录制恢复(真实环境)
 - [ ] **8.3 异常场景**:MediaMTX 挂掉、OSS / Kafka 失败、DB 连接失败,验证飞书告警
 

@@ -17,12 +17,21 @@ class FakeKafkaWorker:
     def __init__(self):
         self.payloads: list[dict] = []
 
-    async def send_segment_metadata(self, room_id: str, file_path: Path, duration: float | None, video_url: str, retry_count: int = 3) -> dict:
+    async def send_segment_metadata(
+        self,
+        room_id: str,
+        file_path: Path,
+        duration: float | None,
+        video_url: str,
+        platform: str = "",
+        retry_count: int = 3,
+    ) -> dict:
         payload = {
             "room_id": room_id,
             "file_name": file_path.name,
             "duration": duration,
             "videoUrl": video_url,
+            "platform": platform,
         }
         self.payloads.append(payload)
         return payload
@@ -35,7 +44,10 @@ async def test_upload_coordinator_runs_oss_then_kafka(tmp_path):
     file_path = tmp_path / "segment.mp4"
     file_path.write_bytes(b"video")
 
-    payload = await coordinator.process_one(SegmentTask(room_id="123", file_path=file_path, duration=10))
+    payload = await coordinator.process_one(
+        SegmentTask(room_id="123", file_path=file_path, duration=10, platform="tiktok")
+    )
 
     assert payload["videoUrl"] == "https://oss.example.com/segment.mp4"
+    assert payload["platform"] == "tiktok"
     assert kafka.payloads == [payload]

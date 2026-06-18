@@ -27,33 +27,48 @@ class StateManager:
         timeout_seconds: int | None = None,
         cooldown_seconds: int = 60,
     ):
-        self.mediamtx_client = mediamtx_client or MediaMTXClient()
-        self.relay_controller = relay_controller or FFmpegRelayController()
+        self._mediamtx_client = mediamtx_client
+        self._relay_controller = relay_controller
         self.stream_resolver = stream_resolver
-        self.timeout_seconds = timeout_seconds or settings.mediamtx.segment_timeout_seconds
+        self.timeout_seconds = timeout_seconds
         self.cooldown_seconds = cooldown_seconds
         self._states: dict[str, RoomState] = {}
         self._lock = asyncio.Lock()
+
+    @property
+    def mediamtx_client(self) -> MediaMTXClient:
+        if self._mediamtx_client is None:
+            self._mediamtx_client = MediaMTXClient()
+        return self._mediamtx_client
+
+    @property
+    def relay_controller(self) -> FFmpegRelayController:
+        if self._relay_controller is None:
+            self._relay_controller = FFmpegRelayController()
+        return self._relay_controller
 
     def snapshot(self) -> dict[str, RoomState]:
         return dict(self._states)
 
     async def ensure_room(self, room: MonitoredRoom) -> RoomState:
         async with self._lock:
-            state = self._states.get(room.room_id)
+            state = self._states.get(room.collection_id)
             if state is None:
                 state = RoomState(
-                    room_id=room.room_id,
+                    collection_id=room.collection_id,
                     platform=room.platform,
                     room_url=room.room_url,
                     last_active=time(),
                 )
-                self._states[room.room_id] = state
+                self._states[room.collection_id] = state
+            else:
+                state.platform = room.platform
+                state.room_url = room.room_url
             return state
 
-    async def get(self, room_id: str) -> RoomState | None:
+    async def get(self, collection_id: str) -> RoomState | None:
         async with self._lock:
-            return self._states.get(room_id)
+            return self._states.get(collection_id)
 
     async def get_by_room_or_path(self, key: str) -> RoomState | None:
         async with self._lock:
@@ -61,7 +76,7 @@ class StateManager:
             if state is not None:
                 return state
             for candidate in self._states.values():
-                if candidate.mediamtx_path == key:
+                if candidate.mediamtx_path == key or candidate.live_room_id == key:
                     return candidate
             return None
 
@@ -73,6 +88,7 @@ class StateManager:
 
         state.status = Status.STARTING
         state.flv_url = flv_url
+        state.live_room_id = str((metadata or {}).get("roomId") or (metadata or {}).get("room_id") or state.live_room_id)
         state.mediamtx_path = self._build_path(room)
         state.started_at = time()
         state.error_message = ""
@@ -85,71 +101,78 @@ class StateManager:
                 mediamtx_path=state.mediamtx_path,
             )
         except Exception as exc:
-            logger.exception("启动录制失败 | room_id=%s", room.room_id)
+            logger.exception(f"启动录制失败 | collection_id={room.collection_id}")
             state.status = Status.FAILED
             state.error_message = str(exc)
             await self._cleanup_state(state)
             return state
 
-        return await self.on_recording_started(room.room_id)
+        return await self.on_recording_started(room.collection_id)
 
-    async def on_recording_started(self, room_id: str) -> RoomState:
-        state = await self._require_state(room_id)
+    async def on_recording_started(self, collection_id: str) -> RoomState:
+        state = await self._require_state(collection_id)
         state.status = Status.RECORDING
         state.retry_count = 0
         state.mark_active()
-        logger.info("录制已开始 | room_id=%s", room_id)
+        logger.info(f"录制已开始 | collection_id={state.collection_id}")
         return state
 
-    async def on_segment_received(self, room_id: str) -> RoomState:
-        state = await self._require_state(room_id)
+    async def on_segment_received(self, collection_id: str) -> RoomState:
+        state = await self._require_state(collection_id)
         state.mark_active()
-        if state.status in {Status.STARTING, Status.RECONNECTING}:
+        if state.status == Status.STARTING:
             state.status = Status.RECORDING
-        logger.info("收到切片回调 | room_id=%s", room_id)
+        logger.info(f"收到切片回调 | collection_id={state.collection_id}")
         return state
 
-    async def on_stream_timeout(self, room_id: str) -> RoomState:
-        state = await self._require_state(room_id)
+    async def on_stream_timeout(self, collection_id: str) -> RoomState:
+        state = await self._require_state(collection_id)
         if state.status != Status.RECORDING:
             return state
         state.status = Status.RECONNECTING
         state.retry_count += 1
-        logger.warning("录制切片超时，进入重连 | room_id=%s retry=%s", room_id, state.retry_count)
+        logger.warning(f"录制切片超时，进入重连 | collection_id={state.collection_id} retry={state.retry_count}")
         await self.relay_controller.stop_ffmpeg_relay(state.ffmpeg_pid)
         state.ffmpeg_pid = None
+        if state.mediamtx_path:
+            await self.mediamtx_client.remove_path(state.mediamtx_path)
         return state
 
-    async def on_reconnect_success(self, room_id: str, flv_url: str) -> RoomState:
-        state = await self._require_state(room_id)
+    async def on_reconnect_success(self, collection_id: str, flv_url: str) -> RoomState:
+        state = await self._require_state(collection_id)
         if state.status != Status.RECONNECTING:
             return state
-        room = MonitoredRoom(room_id=state.room_id, platform=state.platform, room_url=state.room_url)
+        room = MonitoredRoom(
+            collection_id=state.collection_id,
+            platform=state.platform,
+            room_url=state.room_url,
+        )
         return await self.on_live_detected(room, flv_url, state.metadata)
 
-    async def on_reconnect_failed(self, room_id: str, message: str = "") -> RoomState:
-        state = await self._require_state(room_id)
+    async def on_reconnect_failed(self, collection_id: str, message: str = "") -> RoomState:
+        state = await self._require_state(collection_id)
         state.status = Status.FAILED
         state.error_message = message
         await self._cleanup_state(state)
         return state
 
-    async def on_stream_ended(self, room_id: str) -> RoomState:
-        state = await self._require_state(room_id)
+    async def on_stream_ended(self, collection_id: str) -> RoomState:
+        state = await self._require_state(collection_id)
         await self._cleanup_state(state)
         state.status = Status.IDLE
         state.flv_url = None
         state.retry_count = 0
         state.error_message = ""
-        logger.info("录制已结束 | room_id=%s", room_id)
+        logger.info(f"录制已结束 | collection_id={state.collection_id}")
         return state
 
     async def run_health_check(self) -> list[RoomState]:
         """检查所有录制中的房间，返回发生状态变化的房间。"""
         changed: list[RoomState] = []
-        for room_id, state in list(self.snapshot().items()):
-            if not state.is_healthy(self.timeout_seconds):
-                changed.append(await self.on_stream_timeout(room_id))
+        for collection_id, state in list(self.snapshot().items()):
+            timeout_seconds = self.timeout_seconds or settings.mediamtx.segment_timeout_seconds
+            if not state.is_healthy(timeout_seconds):
+                changed.append(await self.on_stream_timeout(collection_id))
         return changed
 
     async def retry_reconnecting(self) -> list[RoomState]:
@@ -162,11 +185,11 @@ class StateManager:
             if state.status != Status.RECONNECTING:
                 continue
             if state.retry_count > state.max_retries:
-                changed.append(await self.on_reconnect_failed(state.room_id, "超过最大重试次数"))
+                changed.append(await self.on_reconnect_failed(state.collection_id, "超过最大重试次数"))
                 continue
             flv_url = await self.stream_resolver(state.platform, state.room_url)
             if flv_url:
-                changed.append(await self.on_reconnect_success(state.room_id, flv_url))
+                changed.append(await self.on_reconnect_success(state.collection_id, flv_url))
         return changed
 
     async def _cleanup_state(self, state: RoomState) -> None:
@@ -175,17 +198,17 @@ class StateManager:
         if state.mediamtx_path:
             await self.mediamtx_client.remove_path(state.mediamtx_path)
 
-    async def _require_state(self, room_id: str) -> RoomState:
-        state = await self.get_by_room_or_path(room_id)
+    async def _require_state(self, collection_id: str) -> RoomState:
+        state = await self.get_by_room_or_path(collection_id)
         if state is None:
-            raise KeyError(f"房间状态不存在: {room_id}")
+            raise KeyError(f"房间状态不存在: {collection_id}")
         return state
 
     @staticmethod
     def _build_path(room: MonitoredRoom) -> str:
         safe_platform = "".join(ch for ch in room.platform.lower() if ch.isalnum() or ch in {"-", "_"})
-        safe_room_id = "".join(ch for ch in room.room_id if ch.isalnum() or ch in {"-", "_"})
-        return f"{safe_platform}-{safe_room_id}"
+        safe_collection_id = "".join(ch for ch in room.collection_id if ch.isalnum() or ch in {"-", "_"})
+        return f"{safe_platform}-{safe_collection_id}"
 
 
 state_manager = StateManager()

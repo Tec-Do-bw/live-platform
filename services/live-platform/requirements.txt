@@ -10,3 +10,8 @@ oss2>=2.18.4
 kafka-python>=2.0.2
 tldextract>=5.1.2
 PyExecJS>=1.5.1
+redis>=5.0.0
+loguru>=0.7.2
+DBUtils>=3.0.3
+PyMySQL>=1.1.0
+never_primp==2.4.2

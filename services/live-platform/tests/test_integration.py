@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from orchestrator.state_machine import StateManager
@@ -17,10 +15,10 @@ async def test_recording_to_upload_chain(tmp_path):
         mediamtx_client=FakeMediaMTXClient(),
         relay_controller=FakeRelayController(),
     )
-    room = MonitoredRoom(room_id="123", platform="tiktok", room_url="https://example.com/live")
+    room = MonitoredRoom(collection_id="c1", platform="tiktok", room_url="https://example.com/live")
 
-    state = await manager.on_live_detected(room, "https://example.com/live.flv")
-    await manager.on_segment_received("tiktok-123")
+    state = await manager.on_live_detected(room, "https://example.com/live.flv", {"roomId": "123"})
+    await manager.on_segment_received("tiktok-c1")
 
     file_path = tmp_path / "segment.mp4"
     file_path.write_bytes(b"video")

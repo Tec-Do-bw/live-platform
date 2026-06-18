@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Header
@@ -11,11 +9,6 @@ from pydantic import BaseModel
 from adapters import get_stream_info
 from orchestrator.state_machine import state_manager
 from shared.config import settings
-
-# 复用 live-monitor 的翻译层
-_LEGACY_DIR = str(Path(__file__).resolve().parents[2] / "live-monitor")
-if _LEGACY_DIR not in sys.path:
-    sys.path.insert(0, _LEGACY_DIR)
 
 from utils.api_response import (
     classify_tiktok_result,

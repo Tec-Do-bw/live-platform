@@ -21,9 +21,10 @@ class Status(str, Enum):
 class RoomState:
     """单个直播间的运行态。"""
 
-    room_id: str
+    collection_id: str
     platform: str
     room_url: str
+    live_room_id: str = ""
     status: Status = Status.IDLE
     flv_url: str | None = None
     mediamtx_path: str | None = None
@@ -34,6 +35,11 @@ class RoomState:
     started_at: float = 0
     error_message: str = ""
     metadata: dict = field(default_factory=dict)
+
+    @property
+    def room_id(self) -> str:
+        """兼容旧调用方，返回实际直播间 ID。"""
+        return self.live_room_id
 
     def is_healthy(self, timeout_seconds: int = 30, now: float | None = None) -> bool:
         """基于切片回调时间判断录制是否健康。"""
@@ -47,13 +53,29 @@ class RoomState:
         self.last_active = now if now is not None else time()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class MonitoredRoom:
     """待监控直播间配置。"""
 
-    room_id: str
+    collection_id: str
     platform: str
     room_url: str
+
+    def __init__(
+        self,
+        collection_id: str | None = None,
+        platform: str = "",
+        room_url: str = "",
+        room_id: str | None = None,
+    ):
+        object.__setattr__(self, "collection_id", collection_id or room_id or "")
+        object.__setattr__(self, "platform", platform)
+        object.__setattr__(self, "room_url", room_url)
+
+    @property
+    def room_id(self) -> str:
+        """兼容旧调用方，返回 collection_id。"""
+        return self.collection_id
 
 
 @dataclass(frozen=True)
@@ -64,4 +86,5 @@ class SegmentTask:
     file_path: Path
     mediamtx_path: str | None = None
     duration: float | None = None
+    platform: str = ""  # P2-5: 用于拼接 Kafka dataSource 字段
     created_at: float = field(default_factory=time)
