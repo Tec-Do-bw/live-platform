@@ -7,6 +7,67 @@
 
 遵循 `CLAUDE.md` 中的工作流、代码规范、文档维护规则与已知坑。
 
+## Git 工作流与远程仓库策略
+
+本项目的提交、发布、同步、PR 统一基于 `$git-workflow` skill，不直接把裸 `git commit` / `git push origin` 作为默认工作流。
+
+### 远程仓库命名
+
+- `origin`：GitHub，地址为 `https://github.com/Tec-Do-bw/live-platform.git`
+- `gitlab`：公司 GitLab，地址为 `https://git.tec-do.com/live/live-platform`
+
+`origin` 必须保持为 GitHub，因为 `$git-workflow publish` / `$git-workflow sync` / `$git-workflow pr` 默认围绕 `origin` 工作。
+
+### 机器策略
+
+- 家里 Mac：只配置并使用 `origin`，只推送 GitHub。
+- 公司 Windows（LENOVO 21SJ / GZTD-03-00951）：同时维护 `origin` 与 `gitlab`，负责把 GitHub 上的提交同步到 GitLab。
+
+### 日常操作
+
+提交本地改动：
+
+```bash
+$git-workflow commit
+```
+
+发布当前分支到 GitHub：
+
+```bash
+$git-workflow publish
+```
+
+同步当前分支：
+
+```bash
+$git-workflow sync
+```
+
+创建 GitHub PR：
+
+```bash
+$git-workflow pr
+```
+
+公司 Windows 在 `$git-workflow publish` 成功后，如需同步 GitLab，再执行：
+
+```bash
+git push gitlab <current-branch>
+```
+
+首次同步当前分支到 GitLab 时使用：
+
+```bash
+git push -u gitlab <current-branch>
+```
+
+### 禁止事项
+
+- 不要把 `origin` 改成 GitLab。
+- 不要给 `origin` 配多个 push URL。
+- 家里 Mac 不需要配置 `gitlab` remote。
+- 不要修改 `$git-workflow` 让它默认双推 GitHub + GitLab；GitLab 同步只在公司 Windows 单独执行。
+
 
 <claude-mem-context>
 # Memory Context
