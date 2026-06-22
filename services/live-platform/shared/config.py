@@ -90,6 +90,17 @@ class UploadConfig:
 
 
 @dataclass(frozen=True)
+class MySQLConfig:
+    """MySQL 连接配置（对齐 live-monitor 口径）"""
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
+    sync_interval_seconds: int = 300  # 种子同步周期，默认 5 分钟（对齐 live-monitor）
+
+
+@dataclass(frozen=True)
 class Settings:
     server: ServerConfig
     mediamtx: MediaMTXConfig
@@ -97,6 +108,7 @@ class Settings:
     oss: OSSConfig
     kafka: KafkaConfig
     upload: UploadConfig
+    mysql: MySQLConfig
     log_dir: Path
 
 
@@ -137,6 +149,14 @@ def load_settings(apollo_config: dict[str, Any] | None = None) -> Settings:
         ),
         upload=UploadConfig(
             worker_count=_config_int(config, "uploadWorkerCount"),
+        ),
+        mysql=MySQLConfig(
+            host=_raw_value(config, "devSqlHost"),
+            port=_config_int(config, "devSqlPort"),
+            user=_raw_value(config, "devSqlUser"),
+            password=_raw_value(config, "devSqlPassword"),
+            database=_raw_value(config, "database"),
+            sync_interval_seconds=_config_int(config, "mysqlSyncIntervalSeconds") if config.get("mysqlSyncIntervalSeconds") else 300,
         ),
         log_dir=Path(_raw_value(config, "livePlatformLogDir")),
     )

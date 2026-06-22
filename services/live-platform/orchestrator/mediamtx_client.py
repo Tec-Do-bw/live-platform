@@ -27,19 +27,23 @@ class MediaMTXClient:
                 await client.aclose()
 
     async def add_path(self, room_id: str, rtmp_source: str | None = None) -> dict:
-        """添加或更新 MediaMTX path。"""
+        """添加或更新 MediaMTX path（幂等：先移除再添加）。"""
+        # 幂等处理：先尝试移除已存在的 path（避免 400 Bad Request）
+        await self.remove_path(room_id)
+
         payload = {"source": rtmp_source or "publisher"}
         response = await self._request("POST", f"/v3/config/paths/add/{room_id}", json=payload)
         logger.info("MediaMTX path 已添加 | room_id=%s", room_id)
         return response.json() if response.content else {}
 
     async def remove_path(self, room_id: str) -> None:
-        """移除 MediaMTX path。"""
+        """移除 MediaMTX path（幂等：404 视为成功）。"""
         try:
             await self._request("POST", f"/v3/config/paths/remove/{room_id}")
             logger.info("MediaMTX path 已移除 | room_id=%s", room_id)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
+                logger.debug("MediaMTX path 不存在，跳过移除 | room_id=%s", room_id)
                 return
             raise
 

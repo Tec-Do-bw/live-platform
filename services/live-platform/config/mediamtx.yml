@@ -24,7 +24,7 @@ pathDefaults:
   runOnRecordSegmentComplete: >
     curl -X POST http://127.0.0.1:8080/internal/segment-ready
     -H "Content-Type: application/json"
-    -d '{"path":"$MTX_PATH","filePath":"$MTX_SEGMENT_PATH","duration":"$MTX_SEGMENT_DURATION"}'
+    -d '{"path":"$MTX_PATH","filePath":"$MTX_SEGMENT_PATH","duration":$MTX_SEGMENT_DURATION}'
 
 paths:
   all_others:

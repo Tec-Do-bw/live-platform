@@ -24,14 +24,31 @@ class UploadCoordinator:
         await self.queue.put(task)
 
     async def process_one(self, task: SegmentTask) -> dict:
-        video_url = await self.oss_worker.upload_segment(task.file_path)
-        return await self.kafka_worker.send_segment_metadata(
-            room_id=task.room_id,
-            file_path=task.file_path,
-            duration=task.duration,
-            video_url=video_url,
-            platform=task.platform,  # P2-5: 透传 platform 供 Kafka 拼 dataSource
-        )
+        """处理单个切片任务：OSS 上传 → Kafka 推送（串行）"""
+        video_url = None
+        try:
+            # 1. OSS 上传（成功后本地文件被删除）
+            video_url = await self.oss_worker.upload_segment(task.file_path)
+
+            # 2. Kafka 推送（OSS 成功后才推送，避免状态漂移）
+            payload = await self.kafka_worker.send_segment_metadata(
+                room_id=task.room_id,
+                file_path=task.file_path,
+                duration=task.duration,
+                video_url=video_url,
+                platform=task.platform,  # P2-5: 透传 platform 供 Kafka 拼 dataSource
+            )
+            return payload
+
+        except Exception as e:
+            # Kafka 推送失败但 OSS 已成功 → 记录死信（后续可扩展为死信队列）
+            if video_url:
+                logger.error(
+                    f"Kafka 推送失败但 OSS 已成功（数据漂移风险） | "
+                    f"room_id={task.room_id} video_url={video_url} error={e}",
+                    exc_info=True,
+                )
+            raise
 
     async def start(self, worker_count: int = 2) -> None:
         self._stopping = False

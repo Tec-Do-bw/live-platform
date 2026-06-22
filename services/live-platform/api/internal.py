@@ -28,7 +28,19 @@ async def segment_ready(request: SegmentReadyRequest, background_tasks: Backgrou
     if not room_id:
         return {"code": 400, "message": "room_id/path is required"}
 
-    state = await state_manager.on_segment_received(room_id)
+    # 进程重启后状态机内存清空，回调找不到状态 → 降级处理（避免 500）
+    try:
+        state = await state_manager.on_segment_received(room_id)
+    except KeyError:
+        # 状态不存在时记录警告但不阻断回调（MediaMTX 会继续录制）
+        from shared.logger import get_logger
+        logger = get_logger(__name__)
+        logger.warning(
+            f"切片回调时状态不存在（可能进程重启） | room_id={room_id} file={request.file_path}"
+        )
+        # 降级：不入上传队列，避免缺 platform 等字段导致上传失败
+        return {"code": 202, "message": "accepted but state not found"}
+
     task = SegmentTask(
         room_id=state.live_room_id or room_id,
         mediamtx_path=request.path,

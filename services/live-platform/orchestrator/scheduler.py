@@ -27,20 +27,30 @@ async def detect_rooms(
     max_active_recordings = _max_active_recordings()
 
     for room in rooms:
-        state = await manager.ensure_room(room)
-        stream_info = await get_stream_info(room.platform, room.room_url)
-        is_live = _is_live(stream_info)
-        recording_started = False
+        try:
+            state = await manager.ensure_room(room)
+            stream_info = await get_stream_info(room.platform, room.room_url)
+            is_live = _is_live(stream_info)
+            recording_started = False
 
-        if is_live and state.status == Status.IDLE and active_recordings < max_active_recordings:
-            state = await manager.on_live_detected(room, str(stream_info["flv_url"]), stream_info)
-            started_count += 1
-            active_recordings += 1
-            recording_started = True
-        elif not is_live and state.status in {Status.RECORDING, Status.STARTING, Status.RECONNECTING}:
-            state = await manager.on_stream_ended(room.collection_id)
+            if is_live and state.status == Status.IDLE and active_recordings < max_active_recordings:
+                state = await manager.on_live_detected(room, str(stream_info["flv_url"]), stream_info)
+                started_count += 1
+                active_recordings += 1
+                recording_started = True
+            elif not is_live and state.status in {Status.RECORDING, Status.STARTING, Status.RECONNECTING}:
+                state = await manager.on_stream_ended(room.collection_id)
 
-        await _write_status(repo, room, stream_info, state, is_live, recording_started)
+            await _write_status(repo, room, stream_info, state, is_live, recording_started)
+
+        except Exception as e:
+            # 单个房间异常不中断整轮检测
+            logger.error(
+                f"房间检测失败（跳过） | collection_id={room.collection_id} "
+                f"platform={room.platform} error={e}",
+                exc_info=True,
+            )
+            continue
 
     logger.info(f"房间检测完成 | total={len(rooms)} started={started_count}")
     return started_count
