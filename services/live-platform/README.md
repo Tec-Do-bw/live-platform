@@ -23,6 +23,12 @@ services/live-platform/
 │   ├── lazada.py                   # Lazada 取流适配
 │   ├── shopee.py                   # Shopee 取流适配
 │   └── tiktok.py                   # TikTok 取流适配
+├── utils/
+│   ├── TiktokTool.py               # TikTok 旧取流工具本地副本
+│   ├── ShopeeTool.py               # Shopee 旧取流工具本地副本
+│   ├── LazadaTool.py               # Lazada 旧取流工具本地副本
+│   ├── api_response.py             # 兼容接口响应翻译层
+│   └── downloader/                 # TikTok HTTP 下载器与代理策略
 ├── ffmpeg/
 │   └── relay.py                    # FFmpeg relay 进程管理
 ├── orchestrator/

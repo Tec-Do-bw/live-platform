@@ -12,7 +12,7 @@ Phase 1 新服务，合并 `live-monitor` 的直播间取流能力与 `live-stre
 - 录制健康判断以 MediaMTX 切片回调更新时间为准，默认超时 30 秒。
 - FFmpeg 只负责 HTTP-FLV 到 RTMP 的协议转换，不负责切片、上传或业务状态判断。
 - OSS 上传与 Kafka 推送必须通过 `upload.coordinator.UploadCoordinator` 串行编排，避免上传成功但消息未推送的状态漂移。
-- 外部平台取流适配暂时复用 `services/live-monitor/utils/*Tool.py` 的旧逻辑，后续迁移时保持 `adapters.get_stream_info()` 的返回契约不变。
+- 外部平台取流适配通过本地 `utils/*Tool.py` 维护旧取流工具副本，迁移时保持 `adapters.get_stream_info()` 的返回契约不变。
 
 ## MediaMTX 回调约定
 

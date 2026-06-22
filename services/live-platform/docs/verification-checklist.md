@@ -106,9 +106,8 @@ redis-cli HGETALL live:collection:{collectionId}:status
 
 ```bash
 cd services/live-platform
-python -c "import utils.api_response; import sys; from pathlib import Path; sys.path.insert(0, str(Path('../live-monitor').resolve())); import importlib.util; assert importlib.util.find_spec('utils.TiktokTool'), 'namespace collision'"
-python -m pytest -q
-python -m compileall -q .
+python -m pytest -q tests/test_utils_imports.py tests/test_api.py
+python -m compileall -q adapters api orchestrator shared upload utils
 ```
 
-当前期望:命名空间包验证通过、pytest 全绿、无编译错误。
+当前期望:本地 utils 解析验证通过、pytest 全绿、无编译错误。
