@@ -30,6 +30,11 @@ def full_apollo_config(**overrides):
         "cutliveNumber": "4",
         "uploadWorkerCount": "2",
         "livePlatformLogDir": "logs",
+        "devSqlHost": "mysql",
+        "devSqlPort": "3306",
+        "devSqlUser": "live_user",
+        "devSqlPassword": "live_password",
+        "database": "live_test01",
     }
     config.update(overrides)
     return config

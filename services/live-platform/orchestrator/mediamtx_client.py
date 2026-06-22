@@ -39,7 +39,7 @@ class MediaMTXClient:
     async def remove_path(self, room_id: str) -> None:
         """移除 MediaMTX path（幂等：404 视为成功）。"""
         try:
-            await self._request("POST", f"/v3/config/paths/remove/{room_id}")
+            await self._request("DELETE", f"/v3/config/paths/delete/{room_id}")
             logger.info("MediaMTX path 已移除 | room_id=%s", room_id)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:

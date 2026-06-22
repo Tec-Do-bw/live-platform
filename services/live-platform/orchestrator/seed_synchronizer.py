@@ -52,7 +52,6 @@ class SeedSynchronizer:
                             collection_id=seed.collection_id,
                             platform=seed.platform,
                             room_url=seed.room_url,
-                            enabled=True,
                         )
                     )
                     logger.info(
@@ -107,7 +106,6 @@ class SeedSynchronizer:
                         collection_id=collection_id,
                         platform=platform.lower() if platform else "unknown",
                         room_url=room_url,
-                        enabled=True,
                     )
                 )
 
