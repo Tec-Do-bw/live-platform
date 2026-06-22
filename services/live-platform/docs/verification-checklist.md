@@ -67,8 +67,9 @@ redis-cli HGETALL live:collection:{collectionId}:status
 
 - [ ] 日志出现 `录制已开始`。
 - [ ] MediaMTX path 符合 `{platform}-{collectionId}`。
-- [ ] FFmpeg relay 进程存在。
-- [ ] `/data/recordings` 下有对应 path 的切片文件。
+- [ ] 日志出现 `启动 FFmpeg relay`，确认它只是协议转换进程。
+- [ ] MediaMTX 日志出现 `[recorder] recording ...`。
+- [ ] `/data/recordings` 下有对应 path 的切片文件，文件由 MediaMTX recorder 写入。
 - [ ] 日志出现 `收到切片回调`。
 - [ ] Redis status 中 `status=recording`。
 - [ ] Redis status 中 `mediamtxPath` 非空。
@@ -88,7 +89,7 @@ redis-cli HGETALL live:collection:{collectionId}:status
 ## 并发检查
 
 - [ ] `cutliveNumber` 对应的录制并发符合当前 dev 节点容量。
-- [ ] 当开播房间数大于 `cutliveNumber` 时，活跃 FFmpeg 录制数不超过 `cutliveNumber`。
+- [ ] 当开播房间数大于 `cutliveNumber` 时，活跃 MediaMTX recorder / FFmpeg relay 数不超过 `cutliveNumber`。
 - [ ] 容量满时，Redis status 仍持续更新。
 
 ## 常见问题定位
@@ -99,7 +100,10 @@ redis-cli HGETALL live:collection:{collectionId}:status
 | Redis 无 status | Redis seed 是否存在，`enabled` 是否为 `1` |
 | `isLive=0` 但实际开播 | `roomUrl` 是否正确，平台 Tool 是否返回 `flv_url` |
 | `isLive=1` 但不录制 | 是否达到 `cutliveNumber`，MediaMTX API 是否可访问 |
+| 出现 `启动 FFmpeg relay` | 正常现象；它只做 HTTP-FLV 到 RTMP 转推，不代表 FFmpeg 本地录制 |
 | 有录制无切片 | MediaMTX record 配置和 `/data/recordings` 权限 |
+| MediaMTX 有 `runOnRecordSegmentComplete` 但 app 无 `收到切片回调` | 在 MediaMTX 容器内检查 `curl http://127.0.0.1:8080/health`、`curl` 是否存在，以及手动 POST `/internal/segment-ready` 是否能进入 live-platform |
+| 周期性 `录制切片超时，进入重连` | 通常是 `/internal/segment-ready` 未成功刷新 `last_active`，先查 MediaMTX 回调连通性 |
 | 有切片无 OSS/Kafka | OSS/Kafka Apollo 配置和 upload worker 日志 |
 
 ## 本地回归命令
@@ -107,6 +111,7 @@ redis-cli HGETALL live:collection:{collectionId}:status
 ```bash
 cd services/live-platform
 python -m pytest -q tests/test_utils_imports.py tests/test_api.py
+python -m pytest -q tests/test_mediamtx_client.py tests/test_state_machine.py tests/test_internal.py
 python -m compileall -q adapters api orchestrator shared upload utils
 ```
 
