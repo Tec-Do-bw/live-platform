@@ -35,22 +35,34 @@ class OSSWorker:
         self._bucket = oss2.Bucket(auth, config.endpoint, config.bucket_name)
         return self._bucket
 
-    async def upload_segment(self, file_path: Path, retry_count: int = 3) -> str:
+    async def upload_segment(
+        self,
+        file_path: Path,
+        object_name: str,
+        retry_count: int = 3,
+    ) -> str:
         """上传切片文件，成功后删除本地文件。"""
         last_error: Exception | None = None
         for attempt in range(1, retry_count + 1):
             try:
-                return await asyncio.to_thread(self._upload_sync, file_path)
+                return await asyncio.to_thread(
+                    self._upload_sync,
+                    file_path,
+                    object_name,
+                )
             except Exception as exc:
                 last_error = exc
                 logger.warning(f"OSS 上传失败，准备重试 | file={file_path} attempt={attempt} error={exc}")
                 await asyncio.sleep(min(attempt, 3))
         raise RuntimeError(f"OSS 上传失败: {file_path}") from last_error
 
-    def _upload_sync(self, file_path: Path) -> str:
+    def _upload_sync(
+        self,
+        file_path: Path,
+        object_name: str,
+    ) -> str:
         bucket = self._get_bucket()
         config = self.config or settings.oss
-        object_name = f"{config.prefix}{file_path.name}"
         bucket.put_object_from_file(object_name, str(file_path))
         url = bucket.sign_url("GET", object_name, config.signed_url_ttl_seconds)
         try:

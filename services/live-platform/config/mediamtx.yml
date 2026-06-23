@@ -16,7 +16,7 @@ writeTimeout: 30s
 
 pathDefaults:
   record: yes
-  recordFormat: fmp4
+  recordFormat: mpegts
   recordPartDuration: 1s
   # 切片回调是状态机健康信号的来源，切片时长须 < 健康检查超时 30s
   recordSegmentDuration: 10s

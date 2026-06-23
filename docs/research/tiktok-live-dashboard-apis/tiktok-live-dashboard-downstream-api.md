@@ -133,7 +133,7 @@ POST /api/v1/tiktok/live-status/batch
 POST /api/v1/tiktok/dashboard/data
 ```
 
-单一统一端点,用 `dataType` 区分 5 个大屏业务接口。
+单一统一端点,用 `dataType` 区分 6 个大屏业务接口。
 
 ### 3.2 入参
 
@@ -143,24 +143,27 @@ POST /api/v1/tiktok/dashboard/data
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `dataType` | string | 是 | 5 种之一(见 3.3) |
+| `dataType` | string | 是 | 6 种之一(见 3.3) |
 | `roomId` | string | 是 | 来自接口一 |
 | `collectionId` | string | 是 | 采集任务标识,本层据此定位账号会话(内部映射到 collector 的 `socketUserId`) |
+| `timeRange` | string | 否 | 时间范围,仅 `trend_chart` 时生效,枚举:`full`(默认,Full LIVE)、`last_5m`(Last 5m)、`last_30m`(Last 30m)。本层按枚举计算上游 `start_time` 参数 |
 
-上游细节(`stats_types`、`creator_id`、`country`、排序、分页)由本层按 `dataType` **内部固定填充**,不暴露给后端。
+上游细节(`stats_types`、`creator_id`、`country`、排序、分页、`start_time`)由本层按 `dataType` **内部固定填充**,不暴露给后端。
 
 ### 3.3 dataType 枚举
 
 | dataType | 上游 API | URL 路径 | 页面区域 | 内部固定参数 |
 |----------|----------|----------|----------|--------------|
 | `core_stats` | 06 core/stats | `/api/v1/insights/workbench/live/detail/core/stats` | ② 核心指标卡片 | `room_filter.room_id`、`is_content_type=1`、`creator_id`、`country`、`stats_types`(55 个:43 个正向指标 + 12 个负数行业基准对比) |
-| `trend_chart` | 08 trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | ① 性能趋势 | `room_filter.room_id`、`is_content_type=1`、`TREND_CHART_FULL`(27 个合法 ID,独立 ID 体系) |
+| `trend_chart` | 08 trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | ① 性能趋势 | `room_filter.room_id`、`is_content_type=1`、`TREND_CHART_FULL`(27 个合法 ID,独立 ID 体系)。按入参 `timeRange` 计算 `start_time`:full→不传,last_5m→now-300,last_30m→now-1800 |
 | `source_new` | 03 source/new | `/api/v3/insights/workbench/live/detail/source/new` | ④ 流量来源 | `room_id`、`is_content_type`、`stats_types=[100]`、`version=3`(2026-06-11 旧批样本,本次未重采) |
 | `user_portrait` | 04all user/portrait | `/api/v1/insights/workbench/live/detail/user/portrait` | ⑥ Follower analytics + ⑦ User profile | `room_filter.room_id`、`is_content_type=1`、`stats_types=[80,81,82,83,90,85,86,87,88,350,351,352,353]` |
 | `product_list` | 05 product/list | `/api/v1/insights/workbench/live/detail/product/list` | ⑤ 商品列表 | `room_filter.room_id`、`is_content_type=1`、`sorting_type=1`、`stats_types`(19 个有效 ID:`[4,5,6,7,10,15,17,18,21,30,35,41,48,51,55,64,120,301,345]`) |
+| `room_info` | 09 room/info | `/api/v1/insights/workbench/live/detail/room/info` | 大屏头部 | `room_filter.room_id`、`is_content_type=1`。**无 stats_types**,返回房间与主播完整信息(主播名/头像/标题/封面/开播时间/直播状态/FLV 地址) |
 
 > `user_portrait` 对齐上游 `04all-user-portrait` 样本,一次请求返回 Viewer / Customer / Impressions 三类画像,覆盖 Follower analytics 与 User profile 两个页面区域。
-> `trend_chart` 使用独立 `stats_type` ID 体系,实现时必须使用 `API-inventory.md` §1.4 的 `TREND_CHART_FULL`,不能套用 `core_stats` 的指标 ID。
+> `trend_chart` 使用独立 `stats_type` ID 体系,实现时必须使用 `API-inventory.md` §1.4 的 `TREND_CHART_FULL`,不能套用 `core_stats` 的指标 ID。时间范围参数详见 `API-inventory.md` §1.4.1。
+> `room_info` 与 live-monitor 的 `room/status` 职责互补:后者轻量批量轮询返回 `{isLive, roomId, flvUrl}`,前者按需拉取返回富信息用于大屏头部展示。
 
 ### 3.4 出参信封
 

@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from shared.config import OSSConfig
+from upload.oss_worker import OSSWorker
+
+
+class FakeBucket:
+    def __init__(self):
+        self.put_calls: list[tuple[str, str]] = []
+        self.sign_calls: list[tuple[str, str, int]] = []
+
+    def put_object_from_file(self, object_name: str, file_path: str) -> None:
+        self.put_calls.append((object_name, file_path))
+
+    def sign_url(self, method: str, object_name: str, ttl_seconds: int) -> str:
+        self.sign_calls.append((method, object_name, ttl_seconds))
+        return f"https://oss.example.com/{object_name}"
+
+
+def test_upload_segment_uses_explicit_legacy_object_name(tmp_path):
+    file_path = tmp_path / "2026-06-23_10-25-01-092478.mp4"
+    file_path.write_bytes(b"video")
+    config = OSSConfig(
+        endpoint="https://oss.example.com",
+        bucket_name="bucket",
+        access_key_id="ak",
+        access_key_secret="sk",
+        prefix="realtime-video/",
+        signed_url_ttl_seconds=15552000,
+    )
+    bucket = FakeBucket()
+    worker = OSSWorker(config=config, bucket=bucket)
+
+    url = worker._upload_sync(
+        file_path,
+        object_name="realtime-video/corollashoes_th_1752982646_00000.ts",
+    )
+
+    assert url == "https://oss.example.com/realtime-video/corollashoes_th_1752982646_00000.ts"
+    assert bucket.put_calls == [
+        ("realtime-video/corollashoes_th_1752982646_00000.ts", str(file_path)),
+    ]
+    assert bucket.sign_calls == [
+        ("GET", "realtime-video/corollashoes_th_1752982646_00000.ts", 15552000),
+    ]
+    assert not file_path.exists()

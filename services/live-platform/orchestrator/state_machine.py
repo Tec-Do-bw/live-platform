@@ -72,13 +72,7 @@ class StateManager:
 
     async def get_by_room_or_path(self, key: str) -> RoomState | None:
         async with self._lock:
-            state = self._states.get(key)
-            if state is not None:
-                return state
-            for candidate in self._states.values():
-                if candidate.mediamtx_path == key or candidate.live_room_id == key:
-                    return candidate
-            return None
+            return self._find_state_unlocked(key)
 
     async def on_live_detected(self, room: MonitoredRoom, flv_url: str, metadata: dict | None = None) -> RoomState:
         """检测到开播后启动 MediaMTX path 与 FFmpeg relay。"""
@@ -88,11 +82,20 @@ class StateManager:
 
         state.status = Status.STARTING
         state.flv_url = flv_url
-        state.live_room_id = str((metadata or {}).get("roomId") or (metadata or {}).get("room_id") or state.live_room_id)
+        state.live_room_id = str(
+            (metadata or {}).get("roomId")
+            or (metadata or {}).get("roomID")
+            or (metadata or {}).get("room_id")
+            or state.live_room_id
+        )
         state.mediamtx_path = self._build_path(room)
         state.started_at = time()
+        state.segment_sequence = 0
+        state.last_segment_sequence = -1
         state.error_message = ""
-        state.metadata = metadata or {}
+        state.metadata = dict(metadata or {})
+        if "CreatTime" not in state.metadata:
+            state.metadata["CreatTime"] = str(int(state.started_at))
 
         try:
             await self.mediamtx_client.add_path(state.mediamtx_path)
@@ -118,12 +121,17 @@ class StateManager:
         return state
 
     async def on_segment_received(self, collection_id: str) -> RoomState:
-        state = await self._require_state(collection_id)
-        state.mark_active()
-        if state.status == Status.STARTING:
-            state.status = Status.RECORDING
-        logger.info(f"收到切片回调 | collection_id={state.collection_id}")
-        return state
+        async with self._lock:
+            state = self._find_state_unlocked(collection_id)
+            if state is None:
+                raise KeyError(f"房间状态不存在: {collection_id}")
+            state.mark_active()
+            state.last_segment_sequence = state.segment_sequence
+            state.segment_sequence += 1
+            if state.status == Status.STARTING:
+                state.status = Status.RECORDING
+            logger.info(f"收到切片回调 | collection_id={state.collection_id}")
+            return state
 
     async def on_stream_timeout(self, collection_id: str) -> RoomState:
         state = await self._require_state(collection_id)
@@ -203,6 +211,15 @@ class StateManager:
         if state is None:
             raise KeyError(f"房间状态不存在: {collection_id}")
         return state
+
+    def _find_state_unlocked(self, key: str) -> RoomState | None:
+        state = self._states.get(key)
+        if state is not None:
+            return state
+        for candidate in self._states.values():
+            if candidate.mediamtx_path == key or candidate.live_room_id == key:
+                return candidate
+        return None
 
     @staticmethod
     def _build_path(room: MonitoredRoom) -> str:

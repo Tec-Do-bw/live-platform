@@ -33,6 +33,8 @@ class RoomState:
     max_retries: int = 15
     last_active: float = 0
     started_at: float = 0
+    segment_sequence: int = 0
+    last_segment_sequence: int = -1
     error_message: str = ""
     metadata: dict = field(default_factory=dict)
 
@@ -86,5 +88,11 @@ class SegmentTask:
     file_path: Path
     mediamtx_path: str | None = None
     duration: float | None = None
-    platform: str = ""  # P2-5: 用于拼接 Kafka dataSource 字段
+    platform: str = ""
+    live_room_id: str = ""
+    legacy_file_path: str = ""
+    creat_time: str = ""
+    segment_sequence: int = 0
+    record_start_time: str = ""
+    metadata: dict = field(default_factory=dict)
     created_at: float = field(default_factory=time)
