@@ -29,6 +29,7 @@ live-stream/
 | 视频处理 | `FileHelper` | TS 文件列表读取、长视频切割（>12s）、视频元信息解析、过时文件清理 |
 | OSS 上传 | `AiyunOBSHelper` | 阿里云 OSS 上传，返回预签名 URL（180 天有效） |
 | Kafka 推送 | `KafkaHelper` | 视频元数据推送到 Kafka（topic: `liveTs`） |
+| Redis 房间源 | `RedisRoomSource` | Redis candidate/lease/recording 读取与写入 |
 | 数据编排 | `MainHelper` | 串联文件处理 → OSS 上传 → Kafka 推送，含防重复处理机制 |
 | 房间调度 | `get_room_info` / `start_get_room_scheduler` | 每 3 分钟轮询 live-monitor 获取房间、上报心跳 |
 | 配置获取 | `fetch_apollo_config` | 从 Apollo 配置中心获取 Kafka/OSS 等配置 |
@@ -55,6 +56,13 @@ live-monitor /get_roominfo
                 └── KafkaHelper.sendToKafka()              → 推送元数据
 ```
 
+当 `LIVE_STREAM_ROOM_SOURCE=redis` 时，房间来源切换为 Redis：
+
+- 读取 `live:monitor:collections` 和 `live:collection:{collectionId}:status`
+- 通过 `live:collection:{collectionId}:lease` 认领录制
+- 重连前重新读取 Redis 中的 `flvUrl`
+- 保留 `online_room_list` 作为本地缓存，但不再作为跨服务所有权来源
+
 ## 环境变量
 
 | 变量 | 用途 | 默认值 |
@@ -63,6 +71,17 @@ live-monitor /get_roominfo
 | `BACKUP_NODE_URL` | 备用节点地址 | `http://47.237.6.199:8080` |
 | `APOLLO_URL` | Apollo 配置中心地址 | 无默认值 |
 | `APOLLOID` | Apollo 应用 ID | 硬编码为 `live-spider` |
+| `LIVE_STREAM_ROOM_SOURCE` | 房间源模式（`http` / `redis`） | `http` |
+| `LIVE_STREAM_WORKER_ID` | Redis lease worker 标识 | 自动生成 |
+| `STREAM_LEASE_TTL_SECONDS` | Redis lease/recording TTL | `360` |
+
+Redis mode 依赖 `redis==7.1.0`。
+
+回滚方式：
+
+```bash
+LIVE_STREAM_ROOM_SOURCE=http
+```
 
 ## 相关文档
 
