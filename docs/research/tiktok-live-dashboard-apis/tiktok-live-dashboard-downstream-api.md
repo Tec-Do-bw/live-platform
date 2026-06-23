@@ -19,7 +19,7 @@
 ### 1.1 后端调用链
 
 ```
-①  后端 ──POST live-status/batch (collectionIds[]) ──▶ live-monitor ──读 Redis──▶ 返回 [{collectionId, isLive, roomId, flvUrl}]
+①  后端 ──POST live-status/batch (collectionIds[]) ──▶ live-monitor ──读 Redis──▶ 返回 [{collectionId, isLive, roomId, flvUrl, timezone, startTime, title}]
                                                                                           │
 ②  后端拿到 roomId + collectionId ──POST dashboard/data (dataType, roomId, collectionId)──▶ live-crawler ──▶ 信封(含原始响应)
 ```
@@ -64,9 +64,33 @@ POST /api/v1/tiktok/live-status/batch
   "code": 200,
   "message": "success",
   "data": [
-    { "collectionId": "coll_1001", "isLive": true,  "roomId": "7544720840995162887", "flvUrl": "https://pull-flv-.../stream.flv" },
-    { "collectionId": "coll_1002", "isLive": false, "roomId": "", "flvUrl": "" },
-    { "collectionId": "coll_1003", "isLive": false, "roomId": "", "flvUrl": "" }
+    {
+      "collectionId": "coll_1001",
+      "isLive": true,
+      "roomId": "7544720840995162887",
+      "flvUrl": "https://pull-flv-.../stream.flv",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "startTime": "1781485260",
+      "title": "TikTok Shop Live"
+    },
+    {
+      "collectionId": "coll_1002",
+      "isLive": false,
+      "roomId": "",
+      "flvUrl": "",
+      "timezone": "",
+      "startTime": "",
+      "title": ""
+    },
+    {
+      "collectionId": "coll_1003",
+      "isLive": false,
+      "roomId": "",
+      "flvUrl": "",
+      "timezone": "",
+      "startTime": "",
+      "title": ""
+    }
   ]
 }
 ```
@@ -77,6 +101,9 @@ POST /api/v1/tiktok/live-status/batch
 | `isLive` | bool | 是否开播,由 `flvUrl` 非空且非 `"error"` 推导 |
 | `roomId` | string | 当前直播间号;未开播为空字符串 |
 | `flvUrl` | string | 直播流地址;未开播为空字符串 |
+| `timezone` | string | 直播间时区;未开播为空字符串 |
+| `startTime` | string | 开播时间,平台原样返回;未开播为空字符串 |
+| `title` | string | 直播间标题;未开播为空字符串 |
 
 ### 2.4 约定
 
@@ -215,7 +242,7 @@ POST /api/v1/tiktok/dashboard/data
 
 以下属实现细节,不影响本接口契约,实现阶段再定:
 
-- **Redis key 结构**:`collection_id` → 直播状态(`isLive`/`roomId`/`flvUrl`)的存储结构,以及写入链路,详见 [`docs/specs/live-monitor-stream-redis-bridge.md`](../../specs/live-monitor-stream-redis-bridge.md)。
+- **Redis key 结构**:`collection_id` → 直播状态(`isLive`/`roomId`/`flvUrl`/`timezone`/`startTime`/`title`)的存储结构,以及写入链路,详见 [`docs/specs/live-monitor-stream-redis-bridge.md`](../../specs/live-monitor-stream-redis-bridge.md)。
 - **Holo 种子映射**:种子表到 `collection_id` 的映射关系。
 - **collector 补齐**:目前 `collector.py` 仅实现 `fetch_core_stats`(06)与 `fetch_trend_chart`(08),另外 3 种(`source_new`/`user_portrait`/`product_list`)的 `fetch_*` 函数待补齐。
 - **creator_id / country 解析来源**:`core_stats` 所需的 `creator_id`、`country` 由本层内部解析的具体数据来源。
