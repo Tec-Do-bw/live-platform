@@ -86,5 +86,8 @@ class SegmentTask:
     file_path: Path
     mediamtx_path: str | None = None
     duration: float | None = None
-    platform: str = ""  # P2-5: 用于拼接 Kafka dataSource 字段
+    platform: str = ""
+    live_room_id: str = ""
+    record_start_time: str = ""
+    metadata: dict = field(default_factory=dict)
     created_at: float = field(default_factory=time)

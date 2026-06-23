@@ -27,14 +27,36 @@ class MediaMTXClient:
                 await client.aclose()
 
     async def add_path(self, room_id: str, rtmp_source: str | None = None) -> dict:
-        """添加或更新 MediaMTX path（幂等：先移除再添加）。"""
-        # 幂等处理：先尝试移除已存在的 path（避免 400 Bad Request）
-        await self.remove_path(room_id)
-
+        """添加或更新 MediaMTX path。"""
+        if await self._path_config_exists(room_id):
+            await self.remove_path(room_id)
         payload = {"source": rtmp_source or "publisher"}
-        response = await self._request("POST", f"/v3/config/paths/add/{room_id}", json=payload)
+        try:
+            response = await self._request("POST", f"/v3/config/paths/add/{room_id}", json=payload)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 400:
+                raise
+            logger.debug("MediaMTX path 已存在，移除后重建 | room_id=%s", room_id)
+            await self.remove_path(room_id)
+            response = await self._request("POST", f"/v3/config/paths/add/{room_id}", json=payload)
         logger.info("MediaMTX path 已添加 | room_id=%s", room_id)
         return response.json() if response.content else {}
+
+    async def _path_config_exists(self, room_id: str) -> bool:
+        """检查动态配置中是否已有 path，避免删除不存在的 path 触发 MediaMTX error 日志。"""
+        try:
+            response = await self._request("GET", "/v3/config/paths/list")
+        except httpx.HTTPError as exc:
+            logger.warning("查询 MediaMTX path 配置失败，将直接尝试添加 | room_id=%s error=%s", room_id, exc)
+            return False
+
+        data = response.json()
+        for item in data.get("items") or []:
+            if item == room_id:
+                return True
+            if isinstance(item, dict) and item.get("name") == room_id:
+                return True
+        return False
 
     async def remove_path(self, room_id: str) -> None:
         """移除 MediaMTX path（幂等：404 视为成功）。"""

@@ -2,20 +2,20 @@
 
 ## 部署前
 
-- [ ] Zadig 使用的是最新 `services/live-platform` 镜像。
-- [ ] Redis 地址、密码、DB 与 Apollo 配置一致。
-- [ ] MediaMTX API 地址与 RTMP 地址和 Apollo 配置一致。
-- [ ] 宿主机目录已创建：
+- [x] Zadig 使用的是最新 `services/live-platform` 镜像。
+- [x] Redis 地址、密码、DB 与 Apollo 配置一致。
+- [x] MediaMTX API 地址与 RTMP 地址和 Apollo 配置一致。
+- [x] 宿主机目录已创建：
   - [ ] `/data/recordings`
   - [ ] `/data/live-platform/logs`
-- [ ] Redis 已写入至少一个测试 collection seed。
+- [x] Redis 已写入至少一个测试 collection seed。
 
 ## 启动检查
 
-- [ ] 容器启动成功。
-- [ ] 日志没有出现 `Apollo 缺少必填配置`。
-- [ ] 日志没有出现 Redis 连接异常。
-- [ ] 健康检查返回成功：
+- [x] 容器启动成功。
+- [x] 日志没有出现 `Apollo 缺少必填配置`。
+- [x] 日志没有出现 Redis 连接异常。
+- [x] 健康检查返回成功：
 
 ```bash
 curl http://127.0.0.1:8080/health
@@ -37,10 +37,10 @@ redis-cli SMEMBERS live:monitor:collections
 redis-cli HGETALL live:collection:{collectionId}:config
 ```
 
-- [ ] Set 中存在目标 `collectionId`。
-- [ ] Config Hash 中 `platform` 正确。
-- [ ] Config Hash 中 `roomUrl` 正确。
-- [ ] Config Hash 中 `enabled=1`。
+- [x] Set 中存在目标 `collectionId`。
+- [x] Config Hash 中 `platform` 正确。
+- [x] Config Hash 中 `roomUrl` 正确。
+- [x] Config Hash 中 `enabled=1`。
 
 ## 状态写入检查
 

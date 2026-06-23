@@ -145,7 +145,7 @@ def load_settings(apollo_config: dict[str, Any] | None = None) -> Settings:
         ),
         kafka=KafkaConfig(
             bootstrap_servers=_kafka_servers(config),
-            topic_name=_raw_value(config, "topic_name"),
+            topic_name=_raw_value(config, "topicName", "topic_name"),
         ),
         upload=UploadConfig(
             worker_count=_config_int(config, "uploadWorkerCount"),

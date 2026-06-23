@@ -1,12 +1,30 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 
 from shared.config import KafkaConfig, settings
 from shared.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _format_timestamp(timestamp: float | None) -> str:
+    if not timestamp:
+        return ""
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _build_segment_file_name(
+    file_path: Path,
+    platform: str = "",
+    live_room_id: str = "",
+    record_start_time: str = "",
+) -> str:
+    parts = [platform, live_room_id, record_start_time, file_path.name]
+    return "_".join(part for part in parts if part)
 
 
 class KafkaWorker:
@@ -38,16 +56,30 @@ class KafkaWorker:
         duration: float | None,
         video_url: str,
         platform: str = "",  # P2-5: 用于拼接 dataSource 字段
+        live_room_id: str = "",
+        record_start_time: str = "",
+        metadata: dict | None = None,
+        created_at: float | None = None,
         retry_count: int = 3,
     ) -> dict:
         """推送切片元数据到 Kafka。"""
-        payload = {
-            "room_id": room_id,
-            "local_file_name": file_path.name,
-            "duration": duration,
-            "videoUrl": video_url,
-            "dataSource": f"live_crawler_{platform}" if platform else "",  # P2-5: 约定格式
-        }
+        segment_file_name = _build_segment_file_name(file_path, platform, live_room_id or room_id, record_start_time)
+        end_time = created_at if created_at is not None else None
+        start_time = (created_at - duration) if (created_at is not None and duration is not None) else None
+        payload = dict(metadata or {})
+        payload.update(
+            {
+                "room_id": room_id,
+                "roomID": payload.get("roomID") or payload.get("roomId") or room_id,
+                "local_file_name": segment_file_name,
+                "duration": duration,
+                "videoUrl": video_url,
+                "dataSource": f"live_crawler_{platform}_http" if platform else "",
+                "createTime": payload.get("createTime") or _format_timestamp(created_at),
+                "videoStartTime": payload.get("videoStartTime") or _format_timestamp(start_time),
+                "videoEndTime": payload.get("videoEndTime") or _format_timestamp(end_time),
+            }
+        )
         last_error: Exception | None = None
         for attempt in range(1, retry_count + 1):
             try:
@@ -59,4 +91,5 @@ class KafkaWorker:
             except Exception as exc:
                 last_error = exc
                 logger.warning(f"Kafka 推送失败，准备重试 | room_id={room_id} attempt={attempt} error={exc}")
+                await asyncio.sleep(min(attempt, 3))
         raise RuntimeError(f"Kafka 推送失败: {room_id}") from last_error

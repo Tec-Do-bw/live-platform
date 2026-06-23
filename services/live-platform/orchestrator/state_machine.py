@@ -88,7 +88,12 @@ class StateManager:
 
         state.status = Status.STARTING
         state.flv_url = flv_url
-        state.live_room_id = str((metadata or {}).get("roomId") or (metadata or {}).get("room_id") or state.live_room_id)
+        state.live_room_id = str(
+            (metadata or {}).get("roomId")
+            or (metadata or {}).get("roomID")
+            or (metadata or {}).get("room_id")
+            or state.live_room_id
+        )
         state.mediamtx_path = self._build_path(room)
         state.started_at = time()
         state.error_message = ""

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from fastapi import BackgroundTasks
 import pytest
 
@@ -21,6 +22,8 @@ async def test_segment_ready_uses_actual_room_id_for_upload(monkeypatch, tmp_pat
             room_url="https://example.com/live",
             status=Status.RECORDING,
             mediamtx_path="tiktok-c1",
+            started_at=datetime(2026, 6, 23, 12, 0, 0).timestamp(),
+            metadata={"roomID": "actual-room-1", "roomName": "测试直播间"},
         )
 
     async def fake_enqueue(task):
@@ -41,3 +44,6 @@ async def test_segment_ready_uses_actual_room_id_for_upload(monkeypatch, tmp_pat
     assert captured[0].room_id == "actual-room-1"
     assert captured[0].mediamtx_path == "tiktok-c1"
     assert captured[0].platform == "tiktok"
+    assert captured[0].live_room_id == "actual-room-1"
+    assert captured[0].record_start_time == "20260623120000"
+    assert captured[0].metadata == {"roomID": "actual-room-1", "roomName": "测试直播间"}

@@ -28,7 +28,12 @@ class UploadCoordinator:
         video_url = None
         try:
             # 1. OSS 上传（成功后本地文件被删除）
-            video_url = await self.oss_worker.upload_segment(task.file_path)
+            video_url = await self.oss_worker.upload_segment(
+                task.file_path,
+                platform=task.platform,
+                live_room_id=task.live_room_id or task.room_id,
+                record_start_time=task.record_start_time,
+            )
 
             # 2. Kafka 推送（OSS 成功后才推送，避免状态漂移）
             payload = await self.kafka_worker.send_segment_metadata(
@@ -36,7 +41,11 @@ class UploadCoordinator:
                 file_path=task.file_path,
                 duration=task.duration,
                 video_url=video_url,
-                platform=task.platform,  # P2-5: 透传 platform 供 Kafka 拼 dataSource
+                platform=task.platform,
+                live_room_id=task.live_room_id or task.room_id,
+                record_start_time=task.record_start_time,
+                metadata=task.metadata,
+                created_at=task.created_at,
             )
             return payload
 

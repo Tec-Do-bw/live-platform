@@ -26,7 +26,7 @@ def full_apollo_config(**overrides):
         "ossPrefix": "realtime-video/",
         "ossSignedUrlTtlSeconds": "15552000",
         "kafkaPro": "['host1:9092','host2:9092']",
-        "topic_name": "liveTs",
+        "topicName": "liveTs",
         "cutliveNumber": "4",
         "uploadWorkerCount": "2",
         "livePlatformLogDir": "logs",
@@ -64,11 +64,20 @@ def test_kafka_address_alias_used_when_kafka_pro_missing():
     assert settings.kafka.bootstrap_servers == "backup1:9092"
 
 
+def test_topic_name_legacy_alias_used_when_topic_name_missing():
+    config = full_apollo_config(topic_name="legacyLiveTs")
+    del config["topicName"]
+
+    settings = load_settings(config)
+
+    assert settings.kafka.topic_name == "legacyLiveTs"
+
+
 def test_missing_apollo_key_raises_config_error():
     config = full_apollo_config()
-    del config["topic_name"]
+    del config["topicName"]
 
-    with pytest.raises(ConfigError, match="topic_name"):
+    with pytest.raises(ConfigError, match="topicName"):
         load_settings(config)
 
 
