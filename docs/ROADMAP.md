@@ -8,6 +8,7 @@
 
 - [ ] **架构精简化**(4 服务 → 2 核心 + 1 独立)→ [plans/2026-05-06-architecture-simplification.md](plans/2026-05-06-architecture-simplification.md)
 - [ ] **Phase 1: live-platform 整合**(MediaMTX 录制底座)→ [plans/2026-05-07-live-platform-phase1.md](plans/2026-05-07-live-platform-phase1.md)
+- [ ] **live-monitor/live-stream Redis 桥接**(FLV URL 状态、录制 lease、batch live-status API)→ [plans/2026-06-23-live-monitor-stream-redis-bridge.md](plans/2026-06-23-live-monitor-stream-redis-bridge.md)
 
 ## 下一步 (Next Up)
 
@@ -32,6 +33,7 @@
 - [PRD v1.0](specs/PRD-live-platform-v1.0.md) — 产品需求
 - [架构总览](specs/live-platform-architecture.md) — 系统层级与数据流
 - [DDD 限界上下文](specs/DDD-domain-model-design.md) — 4 个限界上下文及职责边界
+- [live-monitor/live-stream Redis 桥接](specs/live-monitor-stream-redis-bridge.md) — FLV URL 状态、录制 lease、batch live-status API
 - [MediaMTX 部署 ADR](specs/2026-05-10-mediamtx-deployment-adr.md) — Docker Compose + host 网络 + bind mount
 - 业务规则索引 → `.claude/rules/`(由 `paths` frontmatter 自动触发,编辑对应代码时自动加载)
 - 子项目内规格 → `services/<name>/docs/specs/`(各服务自治)

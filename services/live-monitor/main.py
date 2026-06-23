@@ -20,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import secrets
 import importlib
 from utils.api_response import (
+    ApiOutcome,
     classify_tiktok_result,
     classify_shopee_result,
     classify_lazada_result,
@@ -27,6 +28,7 @@ from utils.api_response import (
     error_response,
     ErrorReason,
 )
+from utils.redis_bridge import LiveRedisRepository, infer_platform, normalize_seed_row
 
 
 def get_requests_config():
@@ -53,8 +55,82 @@ logger = Logings().get_logger()
 # ✅ 导入数据库连接池
 from utils.db_pool import db_pool
 
+_live_redis_repository = None
+
+
+def _get_live_redis_repository():
+    global _live_redis_repository
+    if _live_redis_repository is None:
+        _live_redis_repository = LiveRedisRepository()
+    return _live_redis_repository
+
+
+def _write_redis_config(seed: dict):
+    try:
+        repo = _get_live_redis_repository()
+        repo.upsert_config(
+            collection_id=seed["collection_id"],
+            room_url=seed["room_url"],
+            platform=seed["platform"],
+            legacy_room_id=seed["legacy_room_id"],
+            source_node=NODE_ID,
+        )
+    except Exception as e:
+        logger.warning(f"Redis种子写入失败（不影响内存链路）| collection_id={seed.get('collection_id')} error={e}")
+
+
+def _disable_redis_config(room_id: str, room_info: dict):
+    room_url = room_info.get("room_url", "")
+    collection_id = room_info.get("collection_id") or room_id
+    try:
+        repo = _get_live_redis_repository()
+        repo.upsert_config(
+            collection_id=collection_id,
+            room_url=room_url,
+            platform=room_info.get("platform") or infer_platform(room_url),
+            legacy_room_id=room_id,
+            enabled=False,
+            source_node=NODE_ID,
+        )
+    except Exception as e:
+        logger.warning(f"Redis种子禁用失败（不影响内存链路）| collection_id={collection_id} error={e}")
+
+
+def _classify_room_status(room_url: str, port_info: dict | None) -> tuple[str, ApiOutcome]:
+    platform = infer_platform(room_url)
+    if port_info is None:
+        return platform, ApiOutcome(5099, None, ErrorReason.INTERNAL_ERROR, "直播状态检测失败")
+    if platform == "shopee":
+        return platform, classify_shopee_result(port_info, room_url)
+    if platform == "lazada":
+        return platform, classify_lazada_result(port_info, room_url)
+    if platform == "tiktok":
+        return platform, classify_tiktok_result(port_info, room_url)
+    return platform, ApiOutcome(5099, None, ErrorReason.INTERNAL_ERROR, f"不支持的平台: {platform}")
+
+
+def _write_redis_status(room_id: str, room_info: dict, port_info: dict | None):
+    room_url = room_info.get("room_url", "")
+    platform, outcome = _classify_room_status(room_url, port_info)
+    collection_id = room_info.get("collection_id") or room_id
+    try:
+        repo = _get_live_redis_repository()
+        repo.write_status(
+            collection_id=collection_id,
+            platform=room_info.get("platform") or platform,
+            room_url=room_url,
+            outcome=outcome,
+            port_info=outcome.port_info,
+            source_node=NODE_ID,
+        )
+    except Exception as e:
+        logger.warning(f"Redis直播状态写入失败（不影响内存链路）| collection_id={collection_id} error={e}")
+
+
 # ✅ 全局锁保护 all_Live_Room_dict，防止并发竞态条件
 room_dict_lock = threading.Lock()
+all_Live_Room_dict = {}
+database = ""
 
 # ✅ 调度器线程监控相关变量
 scheduler_thread = None  # 调度器线程引用
@@ -73,6 +149,7 @@ except ImportError:
 # 导入路由
 from routes.docs import router as docs_router
 from routes.activation import router as activation_router
+from routes.live_status import router as live_status_router
 from routes.websocket_routes import router as websocket_router, start_background_tasks, manager
 from utils.serverTool import fetch_apollo_config
 from utils.TiktokTool import TiktokTool
@@ -141,6 +218,7 @@ app.add_middleware(
 
 app.include_router(docs_router)
 app.include_router(activation_router)
+app.include_router(live_status_router)
 # app.include_router(websocket_router)
 
 
@@ -625,21 +703,39 @@ async def report_roominfo(request: Request):
 
 
 def select_Info():
-    sql = "select room_id,room_url,allocation_status from live_streaming_room where local_status = 1 "
+    sql = "select room_id,room_url,allocation_status,collection_id,platform from live_streaming_room where local_status = 1 "
+    legacy_sql = "select room_id,room_url,allocation_status from live_streaming_room where local_status = 1 "
 
     logger.info(f"开始从数据库同步直播间列表 | database={database}")
 
-    # ✅ 直接使用连接池查询
-    result = db_pool.execute_query(sql)
+    try:
+        result = db_pool.execute_query(sql)
+    except Exception as e:
+        logger.warning(f"新种子字段查询失败，回退旧字段查询 | error={e}")
+        try:
+            result = db_pool.execute_query(legacy_sql)
+        except Exception as fallback_error:
+            logger.error(f"数据库同步失败，跳过本轮内存和Redis更新 | error={fallback_error}", exc_info=True)
+            return
+
     # 处理数据库查询结果，更新all_Live_Room_dict
-    if result:
-        # ✅ 加锁保护：更新all_Live_Room_dict
-        with room_dict_lock:
-            # 获取当前result中的room_id列表
-            current_room_ids = set()
+    normalized_rows = []
+    for row in result or []:
+        try:
+            normalized_rows.append(normalize_seed_row(row))
+        except Exception as e:
+            logger.warning(f"直播间种子行解析失败，跳过 | row={row} error={e}")
+
+    # ✅ 加锁保护：更新all_Live_Room_dict
+    with room_dict_lock:
+        current_room_ids = set()
+        stale_room_items = []
+
+        if normalized_rows:
             # result = [('15eaf18d772d4113ba6ab298581d438d', 'https://ph.shp.ee/DT7Tpev', '0')]
-            for row in result:
-                room_id, room_url, allocation_status = row
+            for seed in normalized_rows:
+                room_id = seed["legacy_room_id"] or seed["collection_id"]
+                room_url = seed["room_url"]
                 current_room_ids.add(room_id)
 
                 # ✅ 如果room_id不存在于all_Live_Room_dict中，则添加
@@ -649,19 +745,36 @@ def select_Info():
                         "allocation_status": "0",
                         "status_update_time": 0,
                         "ip": "",
-                        "live_info": {}
+                        "live_info": {},
+                        "collection_id": seed["collection_id"],
+                        "platform": seed["platform"],
                     }
                     logger.debug(f"新增监控房间 | room_id={room_id} url={room_url}")
+                else:
+                    all_Live_Room_dict[room_id]["room_url"] = room_url
+                    all_Live_Room_dict[room_id]["collection_id"] = seed["collection_id"]
+                    all_Live_Room_dict[room_id]["platform"] = seed["platform"]
 
             # ✅ 删除all_Live_Room_dict中不存在于新result中的对象(已经不在监控的移除)
             keys_to_remove = []
-            for room_id in all_Live_Room_dict.keys():
+            for room_id in list(all_Live_Room_dict.keys()):
                 if room_id not in current_room_ids:
                     keys_to_remove.append(room_id)
 
             for room_id in keys_to_remove:
+                stale_room_items.append((room_id, dict(all_Live_Room_dict.get(room_id, {}))))
                 del all_Live_Room_dict[room_id]
                 logger.info(f"移除监控房间 | room_id={room_id}")
+        else:
+            stale_room_items = [(room_id, dict(room_info)) for room_id, room_info in all_Live_Room_dict.items()]
+            all_Live_Room_dict.clear()
+            if stale_room_items:
+                logger.info(f"数据库同步后无可监控房间，清空内存状态 | count={len(stale_room_items)}")
+
+    for seed in normalized_rows:
+        _write_redis_config(seed)
+    for room_id, room_info in stale_room_items:
+        _disable_redis_config(room_id, room_info)
 
     # print("更新后的all_Live_Room_dict:", all_Live_Room_dict)
     logger.info(f"数据库同步完成 | 当前监控房间数={len(all_Live_Room_dict)}")
@@ -742,6 +855,7 @@ def check_live_status(cookie_list):
     success_count = 0
     fail_count = 0
     check_results = {}  # 存储检查结果
+    status_updates = {}  # 存储需要写入Redis的状态结果
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 提交所有检查任务
@@ -762,6 +876,7 @@ def check_live_status(cookie_list):
             try:
                 # ✅ 添加180秒超时，防止单个任务阻塞整个线程池
                 returned_room_id, port_info, success = future.result(timeout=180)
+                status_updates[returned_room_id] = port_info if success else None
                 if success and port_info:
                     check_results[returned_room_id] = port_info
                     success_count += 1
@@ -769,9 +884,11 @@ def check_live_status(cookie_list):
                     fail_count += 1
             except TimeoutError:
                 logger.error(f"⚠️ 检测房间超时(60s) | room_id={room_id}")
+                status_updates[room_id] = None
                 fail_count += 1
             except Exception as e:
                 logger.error(f"处理检测结果失败 | room_id={room_id} error={e}")
+                status_updates[room_id] = None
                 fail_count += 1
     
     # ✅ 释放锁后的网络IO完成，现在加锁更新结果
@@ -779,6 +896,11 @@ def check_live_status(cookie_list):
         for room_id, port_info in check_results.items():
             if room_id in all_Live_Room_dict:
                 all_Live_Room_dict[room_id]["live_info"] = port_info
+
+    for room_id, port_info in status_updates.items():
+        room_info = all_Live_Room_dict.get(room_id)
+        if room_info:
+            _write_redis_status(room_id, room_info, port_info)
     
     # 统计当前正在采集的房间数
     collecting_count = 0

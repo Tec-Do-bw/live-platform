@@ -26,9 +26,11 @@ live-monitor/
 ├── routes/
 │   ├── websocket_routes.py    # WebSocket 端点、健康检查、Kafka 推送、节点日志同步
 │   ├── activation.py          # 激活码管理（生成/验证/撤销，Redis 存储）
+│   ├── live_status.py         # TikTok 批量开播状态 API（Redis 读取）
 │   └── docs.py                # 文档、配置、离线任务、数据需求池相关 API
 ├── utils/
 │   ├── Tools.py               # 通用工具（Kafka Producer、日志写入、API 配置生成）
+│   ├── redis_bridge.py        # live-monitor/live-stream Redis 桥接仓储
 │   ├── TiktokTool.py          # TikTok 直播间检测与流地址获取
 │   ├── ShopeeTool.py          # Shopee 直播间检测与流地址获取
 │   ├── LazadaTool.py          # Lazada 直播间检测与流地址获取
@@ -59,6 +61,7 @@ live-monitor/
 | `/getCookies` | GET | 获取 TikTok Cookie |
 | `/get_roominfo` | POST | 查询房间信息 |
 | `/report_roominfo` | POST | 上报房间状态 |
+| `/api/v1/tiktok/live-status/batch` | POST | 批量读取 TikTok 开播状态（Redis-only） |
 | `/get_all_rooms` | GET | 获取全部房间列表 |
 | `/sync_room_dict` | POST | 节点间房间数据同步 |
 | `/sync_log` | POST | 节点间日志同步 |
@@ -76,8 +79,19 @@ live-monitor/
 | `PRIORITY` | 节点优先级（越大越优先） | `100` |
 | `BACKUP_NODE_URL` | 备用节点 URL | 空 |
 | `ISTEST` | 环境标识（0=生产, 1=测试） | `1` |
+| `LIVE_STATUS_TTL_SECONDS` | Redis 直播状态 TTL | `900` |
 
 详见 `env.example`。
+
+## Redis 桥接
+
+`live-monitor` 仍保留旧 `/get_roominfo` / `/report_roominfo`，同时将种子与直播状态双写 Redis：
+
+- `live:monitor:collections`
+- `live:collection:{collectionId}:config`
+- `live:collection:{collectionId}:status`
+
+`/api/v1/tiktok/live-status/batch` 只读 Redis，不触发 TikTok 请求。完整契约见 `../../docs/specs/live-monitor-stream-redis-bridge.md`。
 
 ## 相关文档
 
