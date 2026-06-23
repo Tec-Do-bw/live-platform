@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from shared.config import OSSConfig
-from upload.oss_worker import OSSWorker, _build_object_name
+from upload.oss_worker import OSSWorker
 
 
 class FakeBucket:
@@ -19,8 +19,8 @@ class FakeBucket:
         return f"https://oss.example.com/{object_name}"
 
 
-def test_object_name_format(tmp_path):
-    file_path = tmp_path / "00001.ts"
+def test_upload_segment_uses_explicit_legacy_object_name(tmp_path):
+    file_path = tmp_path / "2026-06-23_10-25-01-092478.mp4"
     file_path.write_bytes(b"video")
     config = OSSConfig(
         endpoint="https://oss.example.com",
@@ -35,26 +35,14 @@ def test_object_name_format(tmp_path):
 
     url = worker._upload_sync(
         file_path,
-        platform="tiktok",
-        live_room_id="room123",
-        record_start_time="20260623120000",
+        object_name="realtime-video/corollashoes_th_1752982646_00000.ts",
     )
 
-    assert url == "https://oss.example.com/realtime-video/tiktok_room123_20260623120000_00001.ts"
+    assert url == "https://oss.example.com/realtime-video/corollashoes_th_1752982646_00000.ts"
     assert bucket.put_calls == [
-        ("realtime-video/tiktok_room123_20260623120000_00001.ts", str(file_path)),
+        ("realtime-video/corollashoes_th_1752982646_00000.ts", str(file_path)),
     ]
     assert bucket.sign_calls == [
-        ("GET", "realtime-video/tiktok_room123_20260623120000_00001.ts", 15552000),
+        ("GET", "realtime-video/corollashoes_th_1752982646_00000.ts", 15552000),
     ]
     assert not file_path.exists()
-
-
-def test_build_object_name_helper():
-    assert _build_object_name(
-        "realtime-video/",
-        Path("00001.ts"),
-        platform="shopee",
-        live_room_id="shop456",
-        record_start_time="20260623120000",
-    ) == "realtime-video/shopee_shop456_20260623120000_00001.ts"

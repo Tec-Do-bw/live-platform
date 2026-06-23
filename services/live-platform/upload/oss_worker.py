@@ -9,17 +9,6 @@ from shared.logger import get_logger
 logger = get_logger(__name__)
 
 
-def _build_object_name(
-    prefix: str,
-    file_path: Path,
-    platform: str = "",
-    live_room_id: str = "",
-    record_start_time: str = "",
-) -> str:
-    name_parts = [platform, live_room_id, record_start_time, file_path.name]
-    return f"{prefix}{'_'.join(part for part in name_parts if part)}"
-
-
 class OSSWorker:
     """OSS 上传 worker。"""
 
@@ -49,11 +38,8 @@ class OSSWorker:
     async def upload_segment(
         self,
         file_path: Path,
+        object_name: str,
         retry_count: int = 3,
-        *,
-        platform: str = "",
-        live_room_id: str = "",
-        record_start_time: str = "",
     ) -> str:
         """上传切片文件，成功后删除本地文件。"""
         last_error: Exception | None = None
@@ -62,9 +48,7 @@ class OSSWorker:
                 return await asyncio.to_thread(
                     self._upload_sync,
                     file_path,
-                    platform,
-                    live_room_id,
-                    record_start_time,
+                    object_name,
                 )
             except Exception as exc:
                 last_error = exc
@@ -75,13 +59,10 @@ class OSSWorker:
     def _upload_sync(
         self,
         file_path: Path,
-        platform: str = "",
-        live_room_id: str = "",
-        record_start_time: str = "",
+        object_name: str,
     ) -> str:
         bucket = self._get_bucket()
         config = self.config or settings.oss
-        object_name = _build_object_name(config.prefix, file_path, platform, live_room_id, record_start_time)
         bucket.put_object_from_file(object_name, str(file_path))
         url = bucket.sign_url("GET", object_name, config.signed_url_ttl_seconds)
         try:

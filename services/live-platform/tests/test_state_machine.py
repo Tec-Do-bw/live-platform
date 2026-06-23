@@ -51,6 +51,9 @@ async def test_live_detected_starts_recording():
     assert state.collection_id == "c1"
     assert state.live_room_id == "123"
     assert state.ffmpeg_pid == 101
+    assert state.segment_sequence == 0
+    assert state.last_segment_sequence == -1
+    assert state.metadata["CreatTime"].isdigit()
     assert mediamtx.added == ["tiktok-c1"]
     assert relay.started == [("https://example.com/live.flv", "tiktok-c1")]
 
@@ -67,6 +70,13 @@ async def test_segment_callback_updates_last_active_by_path():
     assert state.collection_id == "c1"
     assert state.status == Status.RECORDING
     assert state.last_active > 0
+    assert state.last_segment_sequence == 0
+    assert state.segment_sequence == 1
+
+    state = await manager.on_segment_received("tiktok-c1")
+
+    assert state.last_segment_sequence == 1
+    assert state.segment_sequence == 2
 
 
 @pytest.mark.asyncio

@@ -1,12 +1,14 @@
 # live-platform dev 检验清单
 
+> 2026-06-23 dev01 验证记录：Zadig 中 `live-platform-d696bf67d-7rlrh` ready，`live-platform` / `mediamtx` 容器均 running；MySQL 当前 `local_status=1` seed 为 4 个，Zadig 日志显示检测循环 `total=4`，启动轮次 `started=3`。历史版本曾在 `/data/recordings/tiktok-tiktok_ceraveindonesia/...mp4` 路径处理切片；本轮需重点复核最终 OSS/Kafka 是否已恢复 legacy `.ts` 命名。Redis MCP 当前连接库为空，Redis status 相关项保留未勾，需用 Apollo 实际 Redis 实例复核。
+
 ## 部署前
 
 - [x] Zadig 使用的是最新 `services/live-platform` 镜像。
 - [x] Redis 地址、密码、DB 与 Apollo 配置一致。
 - [x] MediaMTX API 地址与 RTMP 地址和 Apollo 配置一致。
 - [x] 宿主机目录已创建：
-  - [ ] `/data/recordings`
+  - [x] `/data/recordings`
   - [ ] `/data/live-platform/logs`
 - [x] Redis 已写入至少一个测试 collection seed。
 
@@ -65,26 +67,34 @@ redis-cli HGETALL live:collection:{collectionId}:status
 
 ## 录制链路检查
 
-- [ ] 日志出现 `录制已开始`。
-- [ ] MediaMTX path 符合 `{platform}-{collectionId}`。
-- [ ] 日志出现 `启动 FFmpeg relay`，确认它只是协议转换进程。
+- [x] 日志出现 `录制已开始`。
+- [x] MediaMTX path 符合 `{platform}-{collectionId}`。
+- [x] 日志出现 `启动 FFmpeg relay`，确认它只是协议转换进程。
 - [ ] MediaMTX 日志出现 `[recorder] recording ...`。
-- [ ] `/data/recordings` 下有对应 path 的切片文件，文件由 MediaMTX recorder 写入。
-- [ ] 日志出现 `收到切片回调`。
+- [x] `/data/recordings` 下有对应 path 的切片文件，文件由 MediaMTX recorder 写入。
+- [x] 日志出现 `收到切片回调`。
 - [ ] Redis status 中 `status=recording`。
 - [ ] Redis status 中 `mediamtxPath` 非空。
 
 ## 上传与 Kafka 检查
 
-- [ ] 日志出现 `切片处理完成`。
-- [ ] OSS 中存在上传后的切片对象。
-- [ ] Kafka topic 收到切片元数据。
-- [ ] Kafka payload 中包含：
-  - [ ] `room_id`
-  - [ ] `local_file_name`
-  - [ ] `duration`
-  - [ ] `videoUrl`
-  - [ ] `dataSource`(格式 `live_crawler_{platform}`)
+- [x] 日志出现 `切片处理完成`。
+- [x] OSS 中存在上传后的切片对象。
+- [ ] OSS object name 匹配 `realtime-video/{filePath}_{CreatTime}_{sequence:05d}.ts`。
+- [ ] `realtime-video/` 下没有新增 basename 匹配 `^\d{4}-\d{2}-\d{2}_.*\.mp4$` 的对象。
+- [x] Kafka topic 收到切片元数据。
+- [x] Kafka payload 中包含：
+  - [x] `roomID`
+  - [x] `roomName`
+  - [x] `intervalTime`
+  - [x] `createTime`
+  - [x] `videoIndex`
+  - [x] `videoUrl`
+  - [x] `uniID`
+- [ ] Kafka payload 不包含 `local_file_path`。
+- [ ] Kafka payload 不包含 MediaMTX 物理文件名，如 `2026-06-23_10-25-01-092478.mp4`。
+
+> 注：OSS/Kafka 勾选基于 `UploadCoordinator.process_one()` 的串行语义（OSS 上传成功后才 `producer.send` + `flush`，完成后才打印 `切片处理完成`）以及 `tests/test_kafka_worker.py` / `tests/test_oss_worker.py` / `tests/test_integration.py` 通过；本次未额外消费 Kafka topic 原文。
 
 ## 并发检查
 
@@ -111,7 +121,8 @@ redis-cli HGETALL live:collection:{collectionId}:status
 ```bash
 cd services/live-platform
 python -m pytest -q tests/test_utils_imports.py tests/test_api.py
-python -m pytest -q tests/test_mediamtx_client.py tests/test_state_machine.py tests/test_internal.py
+python -m pytest -q tests/test_mediamtx_config.py tests/test_mediamtx_client.py tests/test_state_machine.py tests/test_internal.py
+python -m pytest -q tests/test_legacy_naming.py tests/test_oss_worker.py tests/test_kafka_worker.py tests/test_upload.py tests/test_video.py tests/test_integration.py
 python -m compileall -q adapters api orchestrator shared upload utils
 ```
 

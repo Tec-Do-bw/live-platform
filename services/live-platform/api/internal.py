@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -12,12 +11,6 @@ from shared.models import SegmentTask
 from upload.coordinator import upload_coordinator
 
 internal_router = APIRouter()
-
-
-def _format_record_start_time(started_at: float) -> str:
-    if not started_at:
-        return ""
-    return datetime.fromtimestamp(started_at).strftime("%Y%m%d%H%M%S")
 
 
 class SegmentReadyRequest(BaseModel):
@@ -55,8 +48,13 @@ async def segment_ready(request: SegmentReadyRequest, background_tasks: Backgrou
         duration=request.duration,
         platform=state.platform,
         live_room_id=state.live_room_id or room_id,
-        record_start_time=_format_record_start_time(state.started_at),
+        legacy_file_path=str((state.metadata or {}).get("filePath") or ""),
+        creat_time=str((state.metadata or {}).get("CreatTime") or int(state.started_at)),
+        segment_sequence=state.last_segment_sequence,
+        record_start_time=str((state.metadata or {}).get("CreatTime") or int(state.started_at)),
         metadata=dict(state.metadata),
     )
+    if not task.legacy_file_path:
+        raise RuntimeError(f"缺少 legacy filePath，拒绝上传避免生成错误 OSS 名称 | room_id={room_id}")
     background_tasks.add_task(upload_coordinator.enqueue, task)
     return {"code": 200, "message": "accepted"}
