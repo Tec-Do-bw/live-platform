@@ -1,7 +1,7 @@
 # TikTok 直播大屏 下游数据接口规范
 
 > 本文档定义 live-platform 对**后端(大屏调用方)**暴露的 HTTP 接口契约。
-> 上游 API 调研见 [`docs/research/tiktok-live-dashboard-apis/API-inventory.md`](API-inventory.md)。
+> 上游 API 调研见 [`docs/research/tiktok-live-dashboard-apis/API-inventory.md`](../research/tiktok-live-dashboard-apis/API-inventory.md)。
 > 信封格式对齐 `services/live-crawler/crawlers/http/tiktok/collector.py` 的 `_format_message`。
 > 平台范围:**当前仅 TikTok**。
 
@@ -19,7 +19,7 @@
 ### 1.1 后端调用链
 
 ```
-①  后端 ──POST live-status/batch (collectionIds[]) ──▶ live-monitor ──读 Redis──▶ 返回 [{collectionId, isLive, roomId, flvUrl, timezone, startTime, title}]
+①  后端 ──POST live-status/batch (collectionIds[]) ──▶ live-monitor ──读 Redis──▶ 返回 [{collectionId, isLive, roomId, flvUrl}]
                                                                                           │
 ②  后端拿到 roomId + collectionId ──POST dashboard/data (dataType, roomId, collectionId)──▶ live-crawler ──▶ 信封(含原始响应)
 ```
@@ -64,33 +64,9 @@ POST /api/v1/tiktok/live-status/batch
   "code": 200,
   "message": "success",
   "data": [
-    {
-      "collectionId": "coll_1001",
-      "isLive": true,
-      "roomId": "7544720840995162887",
-      "flvUrl": "https://pull-flv-.../stream.flv",
-      "timezone": "Asia/Ho_Chi_Minh",
-      "startTime": "1781485260",
-      "title": "TikTok Shop Live"
-    },
-    {
-      "collectionId": "coll_1002",
-      "isLive": false,
-      "roomId": "",
-      "flvUrl": "",
-      "timezone": "",
-      "startTime": "",
-      "title": ""
-    },
-    {
-      "collectionId": "coll_1003",
-      "isLive": false,
-      "roomId": "",
-      "flvUrl": "",
-      "timezone": "",
-      "startTime": "",
-      "title": ""
-    }
+    { "collectionId": "coll_1001", "isLive": true,  "roomId": "7544720840995162887", "flvUrl": "https://pull-flv-.../stream.flv" },
+    { "collectionId": "coll_1002", "isLive": false, "roomId": "", "flvUrl": "" },
+    { "collectionId": "coll_1003", "isLive": false, "roomId": "", "flvUrl": "" }
   ]
 }
 ```
@@ -101,9 +77,6 @@ POST /api/v1/tiktok/live-status/batch
 | `isLive` | bool | 是否开播,由 `flvUrl` 非空且非 `"error"` 推导 |
 | `roomId` | string | 当前直播间号;未开播为空字符串 |
 | `flvUrl` | string | 直播流地址;未开播为空字符串 |
-| `timezone` | string | 直播间时区;未开播为空字符串 |
-| `startTime` | string | 开播时间,平台原样返回;未开播为空字符串 |
-| `title` | string | 直播间标题;未开播为空字符串 |
 
 ### 2.4 约定
 
@@ -133,7 +106,7 @@ POST /api/v1/tiktok/live-status/batch
 POST /api/v1/tiktok/dashboard/data
 ```
 
-单一统一端点,用 `dataType` 区分 5 个大屏业务接口。
+单一统一端点,用 `dataType` 区分 6 个大屏业务接口。
 
 ### 3.2 入参
 
@@ -143,24 +116,27 @@ POST /api/v1/tiktok/dashboard/data
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `dataType` | string | 是 | 5 种之一(见 3.3) |
+| `dataType` | string | 是 | 6 种之一(见 3.3) |
 | `roomId` | string | 是 | 来自接口一 |
 | `collectionId` | string | 是 | 采集任务标识,本层据此定位账号会话(内部映射到 collector 的 `socketUserId`) |
+| `timeRange` | string | 否 | 时间范围,仅 `trend_chart` 时生效,枚举:`full`(默认,Full LIVE)、`last_5m`(Last 5m)、`last_30m`(Last 30m)。本层按枚举计算上游 `start_time` 参数 |
 
-上游细节(`stats_types`、`creator_id`、`country`、排序、分页)由本层按 `dataType` **内部固定填充**,不暴露给后端。
+上游细节(`stats_types`、`creator_id`、`country`、排序、分页、`start_time`)由本层按 `dataType` **内部固定填充**,不暴露给后端。
 
 ### 3.3 dataType 枚举
 
 | dataType | 上游 API | URL 路径 | 页面区域 | 内部固定参数 |
 |----------|----------|----------|----------|--------------|
 | `core_stats` | 06 core/stats | `/api/v1/insights/workbench/live/detail/core/stats` | ② 核心指标卡片 | `room_filter.room_id`、`is_content_type=1`、`creator_id`、`country`、`stats_types`(55 个:43 个正向指标 + 12 个负数行业基准对比) |
-| `trend_chart` | 08 trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | ① 性能趋势 | `room_filter.room_id`、`is_content_type=1`、`TREND_CHART_FULL`(27 个合法 ID,独立 ID 体系) |
+| `trend_chart` | 08 trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | ① 性能趋势 | `room_filter.room_id`、`is_content_type=1`、`TREND_CHART_FULL`(27 个合法 ID,独立 ID 体系)。按入参 `timeRange` 计算 `start_time`:full→不传,last_5m→now-300,last_30m→now-1800 |
 | `source_new` | 03 source/new | `/api/v3/insights/workbench/live/detail/source/new` | ④ 流量来源 | `room_id`、`is_content_type`、`stats_types=[100]`、`version=3`(2026-06-11 旧批样本,本次未重采) |
 | `user_portrait` | 04all user/portrait | `/api/v1/insights/workbench/live/detail/user/portrait` | ⑥ Follower analytics + ⑦ User profile | `room_filter.room_id`、`is_content_type=1`、`stats_types=[80,81,82,83,90,85,86,87,88,350,351,352,353]` |
 | `product_list` | 05 product/list | `/api/v1/insights/workbench/live/detail/product/list` | ⑤ 商品列表 | `room_filter.room_id`、`is_content_type=1`、`sorting_type=1`、`stats_types`(19 个有效 ID:`[4,5,6,7,10,15,17,18,21,30,35,41,48,51,55,64,120,301,345]`) |
+| `room_info` | 09 room/info | `/api/v1/insights/workbench/live/detail/room/info` | 大屏头部 | `room_filter.room_id`、`is_content_type=1`。**无 stats_types**,返回房间与主播完整信息(主播名/头像/标题/封面/开播时间/直播状态/FLV 地址) |
 
 > `user_portrait` 对齐上游 `04all-user-portrait` 样本,一次请求返回 Viewer / Customer / Impressions 三类画像,覆盖 Follower analytics 与 User profile 两个页面区域。
-> `trend_chart` 使用独立 `stats_type` ID 体系,实现时必须使用 `API-inventory.md` §1.4 的 `TREND_CHART_FULL`,不能套用 `core_stats` 的指标 ID。
+> `trend_chart` 使用独立 `stats_type` ID 体系,实现时必须使用 `API-inventory.md` §1.4 的 `TREND_CHART_FULL`,不能套用 `core_stats` 的指标 ID。时间范围参数详见 `API-inventory.md` §1.4.1。
+> `room_info` 与 live-monitor 的 `room/status` 职责互补:后者轻量批量轮询返回 `{isLive, roomId, flvUrl}`,前者按需拉取返回富信息用于大屏头部展示。
 
 ### 3.4 出参信封
 
@@ -242,7 +218,7 @@ POST /api/v1/tiktok/dashboard/data
 
 以下属实现细节,不影响本接口契约,实现阶段再定:
 
-- **Redis key 结构**:`collection_id` → 直播状态(`isLive`/`roomId`/`flvUrl`/`timezone`/`startTime`/`title`)的存储结构,以及写入链路,详见 [`docs/specs/live-monitor-stream-redis-bridge.md`](../../specs/live-monitor-stream-redis-bridge.md)。
+- **Redis key 结构**:`collection_id` → 直播状态(`isLive`/`roomId`/`flvUrl`)的存储结构,以及写入链路(当前 live-monitor 状态在内存 `all_Live_Room_dict`,Redis 写入链路尚未落地)。
 - **Holo 种子映射**:种子表到 `collection_id` 的映射关系。
 - **collector 补齐**:目前 `collector.py` 仅实现 `fetch_core_stats`(06)与 `fetch_trend_chart`(08),另外 3 种(`source_new`/`user_portrait`/`product_list`)的 `fetch_*` 函数待补齐。
 - **creator_id / country 解析来源**:`core_stats` 所需的 `creator_id`、`country` 由本层内部解析的具体数据来源。
@@ -253,7 +229,7 @@ POST /api/v1/tiktok/dashboard/data
 
 ## 5. 参考
 
-- 上游 API 调研:[`docs/research/tiktok-live-dashboard-apis/API-inventory.md`](API-inventory.md)(见 §1.1-§1.4 的完整 `stats_types` 与字段映射)
+- 上游 API 调研:[`docs/research/tiktok-live-dashboard-apis/API-inventory.md`](../research/tiktok-live-dashboard-apis/API-inventory.md)(见 §1.1-§1.4 的完整 `stats_types` 与字段映射)
 - 信封原型:`services/live-crawler/crawlers/http/tiktok/collector.py` `_format_message`
 - live-monitor 业务码与响应规范:[`services/live-monitor/docs/specs/live-room-api.md`](../../services/live-monitor/docs/specs/live-room-api.md)
 - dataSource 字段约定:`services/live-crawler/crawlers/constants.py`

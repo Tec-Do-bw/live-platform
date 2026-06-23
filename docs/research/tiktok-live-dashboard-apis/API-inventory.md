@@ -10,7 +10,8 @@
 | **04all** | user/portrait（三类画像合并） | `/api/v1/insights/workbench/live/detail/user/portrait` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>**`stats_types=[80,81,82,83,90, 85,86,87,88, 350,351,352,353]`**（13 个，一次返回三类画像） | `data.stats` 含 13 个分布字段：<br>**Viewer**（全体观众）：`all_gender_distribution` `all_fan_distribution` `all_age_distribution` `all_state_distribution` `country_distribution`<br>**Customer**（付费）：`paid_gender_distribution` `paid_fan_distribution` `paid_age_distribution` `paid_state_distribution`<br>**Impressions**（曝光）：`impressions_gender_distribution` `impressions_country_distribution` `impressions_age_distribution` `impressions_state_distribution`<br>性别 type 20男/21女/22未知；年龄 type 3/4/5；地区/国家 key=名称 value=占比 | 观众画像。**实测一次请求传 13 个 ID 即返回三类画像全部分布字段**，绕过网页分 Tab 限制。完整映射见 [§1.2](#12-userportrait-完整指标-id-映射三类画像一次全返回) | **⑥ Follower analytics**（左下，新粉/老粉/非粉 + GMV/订单/客单价）<br>**⑦ User profile**（右下，Gender/Age/Region）<br>样本：`raw/04all-user-portrait.*` |
 | **05** | product/list | `/api/v1/insights/workbench/live/detail/product/list` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>`sorting_type=1`（GMV 降序）<br>**`stats_types=[4,5,6,7,10,15,17,18,21,30,35,41,48,51,55,64,120,301,345]`**（19 个） | 响应路径 `data.segments[0].stats[]`，每个商品对象（实测 22 个商品）含：<br>- `id` / `name` / `cover_url` / `is_pinned`（恒定）<br>- `gmv_local`（单品 GMV，金额对象）<br>- `sales`（销量）<br>- `exposure_cnt`（曝光数）<br>- `click_through_rate`（CTR）<br>- `total_click_cnt`（点击数）<br>- `click_order_rate`（CTOR）<br>- `paid_order_cnt` / `paid_main_order_cnt`（订单/SKU 订单）<br>- `paid_user_cnt`（客户数）<br>- `main_aov_local`（客单价）<br>- `watch_gpm_local`（Watch GPM）<br>- `inventory_left_cnt`（剩余库存）<br>- `add_shop_cart_cnt`（加购）<br>- `payment_success_rate`（支付成功率）<br>- `is_live`（是否在售）/ `platform_type` / `sellable_country` / `sellable_countries` / `source`<br>**汇总**：`data.sold_product`（售出商品种类数，实测 `13`） | **商品维度详细数据**，按 GMV 降序，含单品完整转化漏斗。**全量 stats_types→字段映射见 [§1.3](#13-productlist-完整指标-id-映射全量一次返回)，已实测单 ID 逐个锁定** | **⑤ Product List**（中下，Product/Attributed GMV/Product Impressions/CTR/Added to cart 表格）<br>样本：`raw/05-product-list.*` |
 | **06** | core/stats | `/api/v1/insights/workbench/live/detail/core/stats` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>`room_filter.creator_id`<br>`room_filter.country=VN`<br>**`stats_types`**（本批实测传 55 个：43 正 + 12 负）：<br>正=35 网页可选 + 5 固定 KPI（3/2/5/18/17）+ 3 广告辅助（290/291/292）<br>负=行业基准对比 `[-3,-2,-7,-344,-23,-20,-18,-39,-10,-11,-70,-71]` | `data.stats` 一次返回 41 个字段（实测）：<br>- `gmv_local`（GMV，金额对象，`17761420`）<br>- `sales`（71）/ `current_visitor_cnt`（6）<br>- `paid_order_cnt`（71）/ `main_order_cnt`（47）/ `paid_user_cnt`（36）<br>- `click_through_rate`（LIVE CTR）/ `click_order_rate` / `click_order_rate_main`（CTOR）/ `sku_order_rate`<br>- `main_aov_local` / `sku_aov_local`<br>- `watch_uv`（2826）/ `watch_pv`（4232）/ `watch_pv_one_min_plus`（334）<br>- `client_show_cnt` / `show_pv_per_hour` / `product_view_cnt` / `product_reach_cnt` / `product_click_through_rate`<br>- `avg_view_duration` / `avg_watching_time` / `enter_room_rate` / `enter_room_rate_live_preview`<br>- `live_show_gpm_local` / `watch_gpm_local` / `gmv_local_per_hour`<br>- `payment_success_rate` / `est_gmv_local` / `with_subsidy_gmv_local`<br>- `accumulated_comment_cnt` / `accumulated_sharing_cnt` / `accumulated_new_follower_cnt` / `likes` / `live_comment_rate` / `live_follow_rate` / `live_like_rate` / `live_share_rate`<br>- `ads_cost_local` / `ads_gmv_max_roi` / `is_ads_roi2` / `ads_roi2_effective_time`<br>**benchmark 对比**：`data.stats_benchmark_data.market_cmp_data[]`（本批实回 `{stats_type:315,cmp:"-0.800944"}`） | **最核心 API**，含大屏所有关键指标。**完整 55 个 stats_types ID → 字段名映射见 [§1.1](#11-corestats-完整指标-id-映射api-06-深入)，已逐个抓包实测确认；API 不受网页 16 勾选上限约束** | **② 核心指标卡片**（中央，Attributed GMV/items sold/Current viewers/Ads Cost/Views/Impressions per hour/Avg viewing duration/Follow rate/Tap-through rate/LIVE CTR）<br>样本：`raw/06-core-stats.*` |
-| **08** | trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>**`stats_types`**（本批实测传 27 个全集）：`[3,52,82,41,344, 20,11,50,14,84,51,92, 23,13,12,16,312,313,314,315, 401,15,91,343,350,81,323]` | `data.trend_data[]`（每条对应一个 `stats_type`，本批返回 27 条）：<br>- 货币类（如 `stats_type=3` GMV、`401` AOV、`91` Watch GPM、`81` Show GPM）：`data[]` 中 `key`=时间戳 / `amount`=金额对象<br>- 计数/比率类（如 `20` Viewers、`11` Views、`50` Product Impressions、`16` Likes）：`data[]` 中 `key`=时间戳 / `value`=数值字符串<br>`granularity=15`（15 分钟粒度，服务端按直播时长自动决定，**不在请求体内**）<br>`timezone_offset=25200` / `timezone="Asia/Ho Chi Minh"`<br>本批每条序列含 50 个时间点 | 性能趋势曲线，按 15 分钟粒度聚合多指标时间序列。**全部 27 个可选指标 ID 见 [§1.4](#14-trendchart-全部可选指标-id-列表独立-id-体系)；网页每次只能选 2 个，但已验证 API 可一次传全部 27 个返回多条序列。⚠️ trend/chart 用独立 ID 体系，勿与 core/stats 的 ID 混用** | **① Performance trends**（左上，Viewers + Attributed GMV 双线趋势图）<br>样本：`raw/08-trend-chart.*` |
+| **08** | trend/chart | `/api/v1/insights/workbench/live/detail/trend/chart` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>**`stats_types`**（本批实测传 27 个全集）：`[3,52,82,41,344, 20,11,50,14,84,51,92, 23,13,12,16,312,313,314,315, 401,15,91,343,350,81,323]`<br>**`start_time`**（可选）：Unix 秒时间戳，缺省返回 Full LIVE（完整直播）；传值返回指定时间点到当前的窗口数据 | `data.trend_data[]`（每条对应一个 `stats_type`，本批返回 27 条）：<br>- 货币类（如 `stats_type=3` GMV、`401` AOV、`91` Watch GPM、`81` Show GPM）：`data[]` 中 `key`=时间戳 / `amount`=金额对象<br>- 计数/比率类（如 `20` Viewers、`11` Views、`50` Product Impressions、`16` Likes）：`data[]` 中 `key`=时间戳 / `value`=数值字符串<br>`granularity=15`（15 分钟粒度，服务端按直播时长自动决定，**不在请求体内**）<br>`timezone_offset=25200` / `timezone="Asia/Ho Chi Minh"`<br>本批每条序列含 50 个时间点 | 性能趋势曲线，按 15 分钟粒度聚合多指标时间序列。**全部 27 个可选指标 ID 见 [§1.4](#14-trendchart-全部可选指标-id-列表独立-id-体系)；网页每次只能选 2 个，但已验证 API 可一次传全部 27 个返回多条序列。⚠️ trend/chart 用独立 ID 体系，勿与 core/stats 的 ID 混用。时间范围见 [§1.4.1](#141-时间范围参数)** | **① Performance trends**（左上，Viewers + Attributed GMV 双线趋势图）<br>样本：`raw/08-trend-chart.*` |
+| **09** | room/info | `/api/v1/insights/workbench/live/detail/room/info` | `room_filter.room_id`<br>`room_filter.is_content_type=1`<br>**无 stats_types** | `data` 直接返回房间与主播信息：<br>**基础信息**：`room_id` / `room_title` / `room_cover_url`<br>**主播信息**：`owner_tiktok_id` / `owner_name` / `owner_avatar_url` / `owner_handle` / `owner_region` / `owner_oec_id`<br>**时间信息**：`timezone_offset` / `created_at` / `started_at`<br>**直播状态**：`status.status`（1=进行中）/ `status.duration`（秒）/ `status.live_stream_url`（FLV 地址）<br>**其他**：`has_auction_products`（是否有拍卖商品） | 大屏头部展示所需的富信息。与 live-monitor 轻量状态查询互补：后者批量轮询返回 `{isLive, roomId, flvUrl}`，本接口按需拉取返回主播名/头像/标题/封面/开播时长等详细字段。**字段映射见 [§1.5](#15-roominfo-字段映射)** | **大屏头部**（主播信息/直播标题/封面/开播时长/在线观众数顶部展示）<br>样本：`raw/09-room-info.*` |
 
 ---
 
@@ -420,6 +421,93 @@ TREND_CHART_FULL = [
 # 一次传全集即可拿回全部 27 条趋势序列；或按需挑选子集
 ```
 
+### 1.4.1 时间范围参数
+
+trend/chart 支持通过 `start_time` 参数控制时间窗口，实现三种时间范围查询：
+
+| 时间范围 | 术语 | 请求参数 | 计算方式 | 用途 |
+|---------|------|---------|---------|------|
+| **完整直播** | Full LIVE | 不传 `start_time` | 从 `started_at` 到当前 | 查看整场直播完整趋势 |
+| **近 5 分钟** | Last 5m | `start_time = now - 300` | 当前时间减 300 秒 | 实时监控最新 5 分钟表现 |
+| **近 30 分钟** | Last 30m | `start_time = now - 1800` | 当前时间减 1800 秒 | 查看近半小时趋势变化 |
+
+**请求示例**（Last 5m）：
+```json
+{
+  "request": {
+    "room_filter": {"room_id": "7654451471329741576", "is_content_type": 1},
+    "stats_types": [20, 3],
+    "start_time": 1782211225
+  }
+}
+```
+
+**响应差异**：
+- Full LIVE 返回完整时间序列(样本 50 个点,粒度 15min)
+- Last 5m / Last 30m 返回窗口内的时间序列(点数取决于粒度和窗口大小)
+
+**实测验证**（2026-06-23）：
+- room `7654451471329741576` 开播时间 `started_at=1782190934`
+- 同一时刻发三次请求:
+  - 无 `start_time` → 返回 26 个点(Full LIVE)
+  - `start_time=1782209726` (now - 1800) → Last 30m
+  - `start_time=1782211225` (now - 300) → Last 5m
+
+---
+
+## 1.5 room/info 字段映射
+
+> 来源：2026-06-23 chrome-devtools 实时抓包，room_id=7654451471329741576，region=VN。
+
+### 请求结构
+
+```
+POST /api/v1/insights/workbench/live/detail/room/info
+```
+
+```json
+{
+  "request": {
+    "room_filter": {
+      "room_id": "7654451471329741576",
+      "is_content_type": 1
+    }
+  }
+}
+```
+
+**无 `stats_types` 参数**，响应直接返回房间与主播完整信息。
+
+### 响应字段映射
+
+| 分组 | 字段名 | 类型 | 示例值 | 说明 |
+|------|--------|------|--------|------|
+| **基础信息** | `room_id` | string | `"7654451471329741576"` | 直播间 ID |
+| | `room_title` | string | `"SĂN SALE MẶT NẠ, SERUM NHA"` | 直播标题 |
+| | `room_cover_url` | string | `"https://p16-oec-general-sign-sg.tiktokcdn.com/..."` | 直播封面 URL(480x640) |
+| **主播信息** | `owner_tiktok_id` | string | `"7355581262502937605"` | 主播 TikTok UID |
+| | `owner_name` | string | `"LUCENBASE COSMETIC.VN"` | 主播显示名称 |
+| | `owner_avatar_url` | string | `"https://p19-common-sign.tiktokcdn.com/..."` | 主播头像 URL(168x168) |
+| | `owner_handle` | string | `"lucenbaseofficial"` | 主播唯一句柄(@用户名) |
+| | `owner_region` | string | `"VN"` | 主播所属地区 |
+| | `owner_oec_id` | string | `"7495687808946833967"` | 主播商家 ID |
+| **时间信息** | `timezone_offset` | int | `25200` | 时区偏移(秒),东七区=25200 |
+| | `created_at` | int | `1782190896` | 房间创建时间(Unix 秒) |
+| | `started_at` | int | `1782190934` | 开播时间(Unix 秒) |
+| **直播状态** | `status.status` | int | `1` | 直播状态(1=进行中,0=已结束) |
+| | `status.duration` | int | `23277` | 已直播时长(秒) |
+| | `status.live_stream_url` | string | `"http://pull-flv-l11-sg01.tiktokcdn.com/..."` | FLV 直播流地址 |
+| **其他** | `has_auction_products` | bool | `false` | 是否有拍卖商品 |
+
+### 与 live-monitor 状态接口的职责区分
+
+| 接口 | 归属 | 调用频率 | 返回字段 | 用途 |
+|------|------|---------|---------|------|
+| `room/status` | live-monitor | 轮询(每 5min) | `{collectionId, isLive, roomId, flvUrl}` | 批量状态查询,判断是否开播 |
+| `room/info` | live-crawler | 按需拉取 | 完整房间与主播信息(见上表) | 大屏头部展示,提供主播名/头像/标题/封面/开播时长 |
+
+`room/info` 作为 `dashboard/data` 的第 6 个 dataType,与其他 5 个业务接口走统一信封格式。
+
 ---
 
 ## 2. 数据完整性评估
@@ -489,5 +577,8 @@ TREND_CHART_FULL = [
 | 05 | `raw/05-product-list.*` | ⑤ Product List |
 | 06 | `raw/06-core-stats.*` | ② 核心指标卡片 |
 | 08 | `raw/08-trend-chart.*` | ① Performance trends |
+| 09 | `raw/09-room-info.*` | 大屏头部（主播信息/直播标题/封面/开播时长）|
 
-> 本批（04all/05/06/08）采集上下文：collection_id=`k19f2q44` 越南团队，room_id=`7651420995556182804`，请求脚本见 scratches/`TK-越南团队实时直播测试-k19f2q44`。
+> 采集上下文：
+> - 04all/05/06/08：collection_id=`k19f2q44` 越南团队，room_id=`7651420995556182804`，请求脚本见 scratches/`TK-越南团队实时直播测试-k19f2q44`（2026-06-15）
+> - 09：room_id=`7654451471329741576`，chrome-devtools 实时抓包（2026-06-23）
