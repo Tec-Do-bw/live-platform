@@ -4,9 +4,9 @@ import os
 from core.apollo.apollo_client import ApolloClient
 
 
-apollo_id = os.environ.get('APOLLOID', 'neptune-spider')
+apollo_id = os.environ.get('APOLLOID', 'live-spider')
 config_url = os.environ.get('APOLLO_URL', 'http://dev-apollo.tec-develop.com')
-cluster = os.environ.get('DEPLOY_ENV', 'default')
+cluster = os.environ.get('DEPLOY_ENV', 'dev01')
 
 
 APOLLO = ApolloClient(
@@ -16,4 +16,4 @@ APOLLO = ApolloClient(
 )
 #
 # print(apollo_id, config_url, cluster)
-# print('KAFKA_HOSTS：',APOLLO.get_value(key='kafka', default_val=''))
+# print('redisDb：',APOLLO.get_value(key='redisDb', default_val=''))
