@@ -47,7 +47,7 @@ TikTok 原始响应字符串透传
    ── POST /api/v1/tiktok/live-status/batch
    ── body: { "collectionIds": [...] }
    ──▶ live-monitor 读 Redis 状态
-   ◀── [{ collectionId, isLive, roomId, flvUrl }]
+   ◀── [{ collectionId, isLive, roomId, flvUrl, timezone, startTime, title }]
 
 ② 后端拿到 roomId + collectionId
    ── POST /api/v1/tiktok/dashboard/data
@@ -60,7 +60,7 @@ TikTok 原始响应字符串透传
 
 | 能力 | 归属服务 | 数据源 | 面向调用方的职责 |
 |-|-|-|-|
-| 开播状态批量查询 | `live-monitor` | Redis（种子来自 Holo） | 告诉后端某批 `collectionId` 是否开播，以及当前 `roomId` |
+| 开播状态批量查询 | `live-monitor` | Redis（种子来自 Holo） | 告诉后端某批 `collectionId` 是否开播，以及当前 `roomId`、`flvUrl`、时区、开播时间和直播间标题 |
 | 大屏数据拉取 | `live-crawler` | TikTok Seller Center 大屏 API | 按 `dataType` 拉取上游响应，并包装为现有采集信封 |
 
 ---
@@ -97,7 +97,7 @@ sequenceDiagram
 
   FE->>BE: 选择账号/collectionId 列表
   BE->>LM: POST /api/v1/tiktok/live-status/batch
-  LM-->>BE: collectionId / isLive / roomId / flvUrl
+  LM-->>BE: collectionId / isLive / roomId / flvUrl / timezone / startTime / title
   BE-->>FE: 可展示直播间状态列表
 
   FE->>BE: 打开某个直播间大屏
@@ -165,13 +165,19 @@ POST /api/v1/tiktok/live-status/batch
       "collectionId": "coll_1001",
       "isLive": true,
       "roomId": "7544720840995162887",
-      "flvUrl": "https://pull-flv-.../stream.flv"
+      "flvUrl": "https://pull-flv-.../stream.flv",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "startTime": "1781485260",
+      "title": "TikTok Shop Live"
     },
     {
       "collectionId": "coll_1002",
       "isLive": false,
       "roomId": "",
-      "flvUrl": ""
+      "flvUrl": "",
+      "timezone": "",
+      "startTime": "",
+      "title": ""
     }
   ]
 }
@@ -183,6 +189,9 @@ POST /api/v1/tiktok/live-status/batch
 | `isLive` | bool | 是否开播；由 `flvUrl` 非空且非 `"error"` 推导 |
 | `roomId` | string | 当前直播间号；未开播为空字符串 |
 | `flvUrl` | string | 直播流地址；未开播为空字符串 |
+| `timezone` | string | 直播间时区；未开播为空字符串 |
+| `startTime` | string | 开播时间，平台原样返回；未开播为空字符串 |
+| `title` | string | 直播间标题；未开播为空字符串 |
 
 ## 3.4 约定与错误码
 
@@ -549,7 +558,7 @@ POST /api/v1/tiktok/dashboard/data
 
 以下是实现阶段仍需落地的细节，不影响本接口文档的契约表达：
 
-- Redis key 结构：`collection_id` 到 `isLive/roomId/flvUrl` 的存储结构和写入链路。
+- Redis key 结构：`collection_id` 到 `isLive/roomId/flvUrl/timezone/startTime/title` 的存储结构和写入链路。
 - Holo 种子映射：种子表到 `collection_id` 的映射关系。
 - collector 补齐：当前实现已存在 `fetch_core_stats` 与 `fetch_trend_chart`，`source_new`、`user_portrait`、`product_list` 的 `fetch_*` 仍需补齐。
 - `creator_id` / `country` 来源：`core_stats` 所需字段由本层内部解析，具体来源实现阶段确定。
