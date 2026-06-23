@@ -28,6 +28,7 @@ services/live-platform/
 │   ├── ShopeeTool.py               # Shopee 旧取流工具本地副本
 │   ├── LazadaTool.py               # Lazada 旧取流工具本地副本
 │   ├── api_response.py             # 兼容接口响应翻译层
+│   ├── video.py                    # 长切片兼容拆分工具
 │   └── downloader/                 # TikTok HTTP 下载器与代理策略
 ├── ffmpeg/
 │   └── relay.py                    # FFmpeg relay 进程管理
@@ -45,6 +46,7 @@ services/live-platform/
 ├── upload/
 │   ├── coordinator.py              # 上传与 Kafka 编排
 │   ├── kafka_worker.py             # Kafka 元数据推送
+│   ├── legacy_naming.py            # OSS/Kafka legacy 切片命名单一来源
 │   └── oss_worker.py               # OSS 上传 worker
 ├── tests/                          # 单元与集成测试
 └── requirements.txt
@@ -87,7 +89,7 @@ python main.py
 |----|----|
 | URL | `http://dev-apollo.tec-develop.com` |
 | App ID | `live-spider` |
-| Cluster | `dev` |
+| Cluster | `default` |
 | Namespace | `application` |
 
 必填 Apollo key：

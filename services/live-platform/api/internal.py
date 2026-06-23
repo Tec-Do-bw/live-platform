@@ -46,7 +46,15 @@ async def segment_ready(request: SegmentReadyRequest, background_tasks: Backgrou
         mediamtx_path=request.path,
         file_path=Path(request.file_path),
         duration=request.duration,
-        platform=state.platform,  # P2-5: 填入 platform 供 Kafka dataSource 使用
+        platform=state.platform,
+        live_room_id=state.live_room_id or room_id,
+        legacy_file_path=str((state.metadata or {}).get("filePath") or ""),
+        creat_time=str((state.metadata or {}).get("CreatTime") or int(state.started_at)),
+        segment_sequence=state.last_segment_sequence,
+        record_start_time=str((state.metadata or {}).get("CreatTime") or int(state.started_at)),
+        metadata=dict(state.metadata),
     )
+    if not task.legacy_file_path:
+        raise RuntimeError(f"缺少 legacy filePath，拒绝上传避免生成错误 OSS 名称 | room_id={room_id}")
     background_tasks.add_task(upload_coordinator.enqueue, task)
     return {"code": 200, "message": "accepted"}

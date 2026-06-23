@@ -1,16 +1,16 @@
 # live-platform dev 部署指南
 
-本文面向 Zadig dev 环境。Apollo dev 配置已完成，服务启动时会固定读取：
+本文面向 Zadig dev 环境。Apollo dev 配置已完成，服务启动时读取 `APOLLOID=live-spider`、`APOLLO_URL=http://dev-apollo.tec-develop.com`、`DEPLOY_ENV=default`：
 
 ```text
-http://dev-apollo.tec-develop.com/configs/live-spider/dev/application
+http://dev-apollo.tec-develop.com/configs/live-spider/default/application
 ```
 
 ## 前置条件
 
 | 项 | 要求 |
 |----|------|
-| Apollo | `live-spider / dev / application` 已配置完整 |
+| Apollo | `live-spider / default / application` 已配置完整 |
 | Redis | `redisHost` / `redisPort` / `redisPassword` / `redisDb` 可从 Pod 访问 |
 | MediaMTX | 与 live-platform 同机或同网络，API 与 RTMP 地址和 Apollo 配置一致 |
 | 存储目录 | 宿主机存在 `/data/recordings` 和 `/data/live-platform/logs` |
@@ -24,7 +24,7 @@ http://dev-apollo.tec-develop.com/configs/live-spider/dev/application
 2. 使用当前代码构建镜像。
 3. 确认镜像内包含：
    - Python 3.12
-   - FFmpeg（仅用于 `HTTP-FLV -> RTMP` relay）
+   - FFmpeg（用于 `HTTP-FLV -> RTMP` relay，以及长切片按需 `-c copy` 拆分）
    - Node.js / npm
    - `services/live-platform/utils/`
 4. 部署到 dev 环境。
@@ -42,6 +42,19 @@ docker compose logs -f live-platform
 ```
 
 容器启动顺序:MediaMTX 健康探针通过后才启动 live-platform(`depends_on.condition: service_healthy`)。当前 `docker-compose.yml` 不再注入业务环境变量；业务配置只从 Apollo 读取。
+
+### MediaMTX 录制格式
+
+MediaMTX 必须使用 MPEG-TS 录制格式：
+
+```yaml
+pathDefaults:
+  record: yes
+  recordFormat: mpegts
+  recordSegmentDuration: 10s
+```
+
+`recordPath` 可以继续使用时间戳物理路径；最终 OSS object name 由 `upload.legacy_naming.LegacySegmentName` 生成，格式为 `realtime-video/{filePath}_{CreatTime}_{sequence:05d}.ts`。
 
 ## Redis Seed 写入格式
 
@@ -75,7 +88,7 @@ redis-cli HSET live:collection:coll_1001:config \
 5. FFmpeg relay 只把 HTTP-FLV 转推成 RTMP publisher；MediaMTX recorder 负责录制、切片和写入 `/data/recordings`。
 6. 每轮检测都会写入 `live:collection:{collectionId}:status`。
 7. MediaMTX 完成切片后调用 `/internal/segment-ready`。
-8. Upload worker 先上传 OSS,再推送 Kafka(payload 含 `dataSource: live_crawler_{platform}`)。
+8. Upload worker 使用 legacy basename 上传 OSS，再用同一个 `LegacySegmentName` 推送 Kafka。Kafka payload 保持 legacy 字段，不再依赖 MediaMTX 物理文件名。
 
 ## 关键日志
 
