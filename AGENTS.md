@@ -74,49 +74,16 @@ git push -u gitlab <current-branch>
 <claude-mem-context>
 # Memory Context
 
-# [live-platform] recent context, 2026-06-24 9:46am GMT+8
+# [live-platform] recent context, 2026-06-24 1:20pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (23,303t read) | 634,831t work | 96% savings
+Stats: 50 obs (16,163t read) | 348,033t work | 95% savings
 
-### May 29, 2026
-1314 10:29a 🟣 TikTok HTTP Collector Implementation with Credential Management
-1315 " ✅ Phase 4A & 4B Completion: SQLite Removal and Daily Report Agent
-1316 " 🔵 Credential Endpoint Migration: PUT /api/credentials/{id}
 ### Jun 8, 2026
-2153 10:24p 🔵 Git sync blocked by SSL/TLS connection error to GitHub
-2154 " 🔵 Network SSL connectivity to GitHub confirmed broken at system level
-2155 10:26p ✅ Local uncommitted modification detected in AGENTS.md
-2156 " 🔵 Git fetch succeeds; local branch is 11 commits behind upstream
-2157 " 🔵 Remote commits do not modify AGENTS.md; pull operation is safe
-2158 " ✅ Git sync completed: 11 upstream commits merged with major TikTok crawler refactor
-2162 10:28p 🔵 Local commit history shows 11-commit upstream merge with TikTok enhancements
-2169 10:47p 🔵 Live-Crawler Project Structure Mapped
-2170 " 🔵 Live-Crawler Codebase Scale Confirmed
-2171 " 🔵 CodeGraph Tool Availability Investigation
-2172 10:48p 🔵 CHAPI Project Identified as Alternative Code Analysis Tool
-2173 " 🔵 TikTok HTTP Three-Chain Lifecycle Architecture Documented
-2175 " 🔵 Live-Crawler Codebase Scale and Module Organization
-2176 " 🔵 Code Analysis Tools Evaluation: CHAPI vs Understand
-2179 10:49p ⚖️ Knowledge Graph Tool Selection Decision: Reject CHAPI/Understand, Adopt Hybrid Approach
-2180 " 🔵 Login Callback Orchestration Pattern Mapped via Grep Analysis
-2181 10:50p 🔵 Crawler Implementation Hierarchy Mapped
-2182 " 🔵 Dependency Analysis: Core Module Integration Points Identified
-2183 " ⚖️ Final Tool Selection Decision: Reject Both CHAPI and Understand; Commit to Zero-Cost Hybrid Approach
-2184 10:51p ⚖️ Agent-Conducted Tool Research Completes: Formal Recommendation Against CHAPI and Understand
-2185 11:01p 🔵 Shopee implementation constraints documented in special rules
-2186 " 🔵 Live-crawler project architecture and Shopee implementation constraints
-2187 " 🔵 Shopee account types and login flow architecture
-2188 11:02p 🔵 Shopee account type permission hierarchy and API fallback strategy
-2189 " 🔵 Shopee login detection and shop switching architecture documented
-2190 " 🔵 Shopee account type matrix and system coverage analysis completed
-2191 11:04p 🔵 Shopee login refactor approach options documented with three implementation strategies
-2195 11:16p ⚖️ Shopee Login Refactor Roadmap — Five-Phase Plan
-2196 11:17p ✅ Shopee Login Refactor Specification Suite — Full Delivery
-2197 " ✅ Complete Shopee Login Documentation Deliverables — Account Matrix, Flow Diagrams, and Code Rules
+2197 11:17p ✅ Complete Shopee Login Documentation Deliverables — Account Matrix, Flow Diagrams, and Code Rules
 2198 " 🔵 adspower-server Shopee API Service — Cross-Border/Domestic Shop Detection
 2199 " 🔵 adspower-server login_monitor.py — Passive + Active Hybrid Implementation
 2200 11:18p ✅ End-to-End Sequence Diagram — Shopee Login & Collection (Phases 1–5)
@@ -147,14 +114,38 @@ S432 检查 live-platform 仓库当前工作树状态，并围绕 live-stream/li
 S434 Progress checkpoint for ongoing session (Jun 24 at 2:31 AM)
 3260 2:40a ⚖️ Live-platform cleanup and wiki-first doc governance
 S435 收口 live-platform 归档与过时引用清理检查 (Jun 24 at 3:02 AM)
-**Investigated**: 已检查根目录说明、ROADMAP、若干研究/设计/计划文档，以及仓库内是否仍存在已删除的 services/live-platform 与旧 Phase 1 / MediaMTX 相关文件。也对 docs/research/tiktok-live-dashboard-apis、services/live-monitor 的相关设计/计划做了关键词扫查，核对过时入口与现役边界。
+3305 11:23a ✅ Live dashboard API spec and route migration scoped
+3306 11:24a ⚖️ Planned spec and route work through brainstorming then writing-plans
+3307 " ⚖️ Brainstorming workflow confirmed for spec and route migration
+3308 " ⚖️ Writing-plans requirements confirmed for implementation handoff
+3309 " 🔵 Repository governance and codegraph availability confirmed
+3310 " 🔵 Prior live-platform cleanup and TikTok HTTP migration context found in memory
+3311 11:25a 🔵 Repository governance now requires scoped reads and codegraph-first navigation
+3312 " 🔵 Service boundaries and migration constraints were confirmed from subproject docs
+3313 " 🔵 Prior live-platform workstreams already cover cleanup, sync, and TikTok HTTP refactor context
+3314 " ✅ Working tree currently has one local modification
+3315 " 🔵 live_status route blast radius and current ownership identified
+3316 " 🔵 live-crawler already exposes a token-protected TikTok refresh API
+3317 " 🔵 TikTok live dashboard research bundle now includes downstream API and raw request/response captures
+3318 " 🔵 live-crawler service surface and test coverage map are now clear
+3319 11:26a 🔵 live-status batch endpoint is a tiny FastAPI route backed by Redis repository
+3320 " 🔵 live-crawler monitor server already aggregates API routers
+3321 " 🔵 live-status batch route is tiny and isolated
+3322 " 🔵 TikTok dashboard research bundle expanded to 6 raw API samples
+3323 " ⚖️ live-crawler already has the right router aggregation pattern
+3324 " 🔵 Repository governance and wiki precedents were confirmed
+3325 " 🔵 Dashboard spec is stale against the latest research contract
+3326 " 🔵 live-status batch route remains in live-monitor with a narrow Redis-backed contract
+3327 " ⚖️ live-crawler already hosts the right operational API shape for migrated routes
+3328 11:29a 🔵 Dashboard API spec is outdated relative to current research
+3329 " 🔵 live-status batch endpoint remains a narrow Redis-backed contract in live-monitor
+3330 " 🔵 live-crawler already has the right operational API host shape
+3331 " ✅ Repo validation and roadmap context were clarified
+3335 12:04p ⚖️ Live-dashboard API spec and route ownership were re-scoped
+3336 12:23p ⚖️ Dashboard live-status batch auth and collector split
+3337 12:39p ✅ Dashboard fetchers moved into TikTok real collector
+3338 " ✅ TikTok dashboard fetchers moved to real_collector
+3339 12:51p ⚖️ Spec approved, planning document generation started
 
-**Learned**: services/live-platform 目录与相关旧主体文档已不存在；根入口已改为将 Phase 1 / MediaMTX 资料视为历史归档。现役边界已明显转向 live-monitor + live-stream + live-crawler，其中 Redis bridge 与 live-monitor/live-stream 的职责划分是当前主线。研究摘要中仍残留少量“live-platform API / 下一步实现”式历史表述，但都已在相邻文档中标注为过时背景。
-
-**Completed**: 完成了文件存在性验证、仓库关键词收口扫描，以及对 README、CLAUDE、AGENTS、ROADMAP、Redis bridge 规格/计划、TikTok 大屏研究摘要与 live-monitor 标准化文档的交叉比对。确认了已删除的 PRD、架构总览、MediaMTX ADR、Phase 1 计划不再作为现役入口。
-
-**Next Steps**: 继续收敛 TikTok 大屏研究摘要与历史草案中的过时措辞，重点清理仍指向 live-platform 类/路由/调度器的旧引用，并确认 live-monitor 文档里所有历史项都已明确标记为背景或移出实施范围。
-
-
-Access 635k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 348k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
