@@ -1,5 +1,7 @@
 # TikTok 直播大屏采集开发摘要
 
+> 2026-06-24 note: 本文为早期 workflow 产出的研究备查，其中 `live-platform` API 归属已过时。现役接口边界以 [`docs/specs/tiktok-live-dashboard-data-api-service.md`](../../specs/tiktok-live-dashboard-data-api-service.md) 为准。
+
 ## 1. 需求背景
 
 派大星"直播运营中心-实时监控-直播大屏"模块需要实时展示 TikTok 直播间的核心指标与分析数据。数据来源于 TikTok Seller Center Workbench Live Overview (page 1) 的官方 API，前端按需拉取（不自动轮询），支持查看正在直播和已结束直播的数据。
@@ -42,7 +44,9 @@
 
 ---
 
-## 3. 技术架构
+## 3. 历史技术架构（已废弃）
+
+> 以下架构与排期保留 workflow 原始输出，不再作为实施入口。现役下游接口拆分见 [`docs/specs/tiktok-live-dashboard-data-api-service.md`](../../specs/tiktok-live-dashboard-data-api-service.md)。
 
 ### 3.1 系统架构图
 
@@ -183,7 +187,7 @@ Headers:
 
 ## 4. 实施计划（完整开发排期）
 
-### 4.1 核心功能模块
+### 4.1 历史核心功能模块
 
 本项目包含 **5 大核心模块**：
 

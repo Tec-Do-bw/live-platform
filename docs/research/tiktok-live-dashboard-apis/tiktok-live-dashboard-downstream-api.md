@@ -1,6 +1,7 @@
-# TikTok 直播大屏 下游数据接口规范
+# TikTok 直播大屏 下游数据接口规范（历史草案）
 
-> 本文档定义 live-platform 对**后端(大屏调用方)**暴露的 HTTP 接口契约。
+> 2026-06-24 note: 本文件是研究目录内的历史草案，现役版本见 [`docs/specs/tiktok-live-dashboard-data-api-service.md`](../../specs/tiktok-live-dashboard-data-api-service.md)。
+> 本文档曾定义 live-platform 对**后端(大屏调用方)**暴露的 HTTP 接口契约。
 > 上游 API 调研见 [`docs/research/tiktok-live-dashboard-apis/API-inventory.md`](../research/tiktok-live-dashboard-apis/API-inventory.md)。
 > 信封格式对齐 `services/live-crawler/crawlers/http/tiktok/collector.py` 的 `_format_message`。
 > 平台范围:**当前仅 TikTok**。

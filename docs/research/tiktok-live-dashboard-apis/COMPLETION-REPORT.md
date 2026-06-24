@@ -1,5 +1,7 @@
 # TikTok 直播大屏采集开发摘要 - 完成报告
 
+> 2026-06-24 note: 本报告保留早期研究过程；其中 `live-platform API` 和新增 `live-platform` 类/路由的行动项已过时。现役接口边界以 [`docs/specs/tiktok-live-dashboard-data-api-service.md`](../../specs/tiktok-live-dashboard-data-api-service.md) 为准。
+
 ## ✅ 任务完成状态
 
 **生成时间**: 2026-06-11  
@@ -43,7 +45,7 @@ docs/research/tiktok-live-dashboard-apis/
 
 ---
 
-### 3. 架构设计要点
+### 3. 历史架构设计要点（已废弃）
 
 **核心架构**（第一性原理审视后）：
 
@@ -64,7 +66,7 @@ TikTok 商家后台 API
 
 ---
 
-### 4. 实施计划
+### 4. 历史实施计划（已废弃）
 
 #### Phase 1: MVP (P0 — 核心指标 + 商品列表)
 
@@ -125,7 +127,7 @@ TikTok 商家后台 API
 
 ## 📋 下一步行动
 
-### 立即可执行（开发阶段）
+### 原始下一步行动（已废弃）
 
 1. ~~补充抓包商品列表 API~~ ✅ **已完成**
 2. 创建 `DashboardCollector` 类（`live-platform/dashboard_collector.py`）

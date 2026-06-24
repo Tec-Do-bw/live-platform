@@ -8,13 +8,15 @@
 
 **Tech Stack:** Python, FastAPI, redis-py, pytest, existing Apollo config keys `redisHost` / `redisPort` / `redisPassword` / `redisDb`.
 
+> 2026-06-24 note: `services/live-platform/` 已删除。本文只保留其历史 Redis key shape 作为设计来源，不再包含任何 live-platform recorder 改动。
+
 ---
 
 ## Source Spec
 
 Implement against `docs/specs/live-monitor-stream-redis-bridge.md`.
 
-Do not include `services/live-platform` MediaMTX recorder changes in this plan. Only reuse its Redis seed/status key shape as a design precedent.
+Do not include historical `services/live-platform` MediaMTX recorder changes in this plan. Only reuse its Redis seed/status key shape as a design precedent.
 
 ## File Structure
 

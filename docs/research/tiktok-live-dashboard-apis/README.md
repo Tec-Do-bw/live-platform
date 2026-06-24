@@ -1,6 +1,7 @@
 # TikTok 直播大屏采集开发摘要
 
 > **文档版本**：v1.0 | **生成时间**：2026-06-11 | **目标**：派大星"直播运营中心-实时监控-直播大屏"功能技术实现方案
+> 2026-06-24 note: 本文为早期研究摘要，其中 `live-platform API` 归属已过时。现役下游接口边界以 [`docs/specs/tiktok-live-dashboard-data-api-service.md`](../../specs/tiktok-live-dashboard-data-api-service.md) 为准：开播状态归 `live-monitor`，大屏数据归 `live-crawler`。
 
 ---
 
@@ -30,7 +31,7 @@
 - **数据源**：TikTok 商家后台 `shop.tiktok.com/workbench/live/overview?room_id=XXX`（需登录态）
 - **登录态管理**：cookie 存储在 AdsPower 浏览器环境，`account_credentials` 表维护 HTTP 凭据
 - **采集能力**：`live-crawler` 已实现 TikTok HTTP 采集链路（`fetch_live_list`、`fetch_core_stats` 等）
-- **开播检测**：`live-platform` 的 `scheduler.detect_rooms()` 每 5 分钟扫描
+- **开播检测**：现役方案由 `live-monitor` 写 Redis 状态供下游读取；早期 `live-platform` 调度器方案已废弃。
 
 ---
 
@@ -71,7 +72,9 @@
 
 ---
 
-## 3. 技术架构
+## 3. 历史技术架构（已废弃）
+
+> 以下方案保留原始研究记录，不再作为实施计划。现役下游接口拆分见 [`docs/specs/tiktok-live-dashboard-data-api-service.md`](../../specs/tiktok-live-dashboard-data-api-service.md)。
 
 ### 3.1 数据流图
 
@@ -98,7 +101,7 @@ sequenceDiagram
     LP-->>PD: 返回大屏 JSON
 ```
 
-### 3.2 核心组件
+### 3.2 历史核心组件
 
 | 组件 | 路径 | 职责 |
 |------|------|------|
@@ -197,7 +200,7 @@ GET /api/tiktok/dashboard/detail?room_id=7649951805363391253
 
 ---
 
-## 5. 实施计划
+## 5. 历史实施计划（已废弃）
 
 ### Phase 1: MVP (P0 — 核心指标 + 商品列表)
 

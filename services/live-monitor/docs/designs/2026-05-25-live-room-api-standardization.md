@@ -3,6 +3,7 @@
 > 设计日期：2026-05-25
 > 适用服务：`services/live-monitor`（HTTP 路由层 + Tool 翻译层）
 > 关联接口规范：[`docs/specs/live-room-api.md`](../specs/live-room-api.md)（实施完成后同步重写）
+> 2026-06-24 note: 本文中指向 `services/live-platform/api/routes.py` 的聚合代理改造为历史事项；`services/live-platform/` 已删除，现役接口边界以 `services/live-monitor` 与 Redis bridge 规格为准。
 
 ## 背景
 
@@ -33,7 +34,7 @@
 |----|------|------|
 | HTTP 路由 (`main.py` 三个端点) | 全量重写返回结构 | 对外契约破坏式升级 |
 | Tool 类 (`utils/TiktokTool.py` `utils/ShopeeTool.py` `utils/LazadaTool.py`) | **不动 Tool 类**；翻译逻辑放在新文件 `utils/api_response.py` 的 `classify_xxx_result()` 函数里 | Tool 旧返回 dict 仍保留供 main.py 内部巡检消费 |
-| 聚合代理 (`services/live-platform/api/routes.py`) | 同步使用新的响应结构 | 与 live-monitor 保持一致 |
+| 历史聚合代理 (`services/live-platform/api/routes.py`) | 已随 `services/live-platform/` 删除，不再作为现役改造对象 | 保留为历史背景 |
 | 文档 (`docs/specs/live-room-api.md`) | 实施完成后整体重写为新规范 | 同时更新根 `docs/specs/PRD-live-platform-v1.0.md` 中相关章节 |
 | `main.py` 内部巡检消费点 (`551`, `683`, `687-688`, `753-768`) | **不改** | 留下次独立迁移 |
 
@@ -245,17 +246,9 @@ def error_response(code: int, reason: str, detail: str,
 
 `detail` 写入前必须**截断**异常文本（建议最长 200 字符）并去除堆栈片段，避免泄漏内部信息。
 
-## 聚合代理同步改造
+## 历史聚合代理同步改造
 
-`services/live-platform/api/routes.py:32` 当前直接返回旧 envelope：
-
-```python
-if info is None:
-    info = {"flv_url": "error", "roomId": "", "message": f"{platform}采集异常", "filePath": ""}
-return {"code": 200, "message": "success", "data": {"port_info": info, "mateUrl": request.mateUrl}}
-```
-
-改为调用同样的翻译层 + 包装函数，输出与 live-monitor 一致的新结构。`adapters.get_stream_info()` 内部如果是各 Tool 调用，需要把同样的 `classify_*_result()` 串进去。
+原计划曾要求同步改造 `services/live-platform/api/routes.py`。2026-06-24 已删除 `services/live-platform/`，本节仅保留为历史背景，不再作为实施步骤。
 
 ## 不变项（保持原样）
 
@@ -268,16 +261,15 @@ return {"code": 200, "message": "success", "data": {"port_info": info, "mateUrl"
 1. 新增 `utils/api_response.py`：`CODE_MESSAGES`、`success_response`、`error_response`、`ApiOutcome` dataclass
 2. 各 Tool 新增 `_classify_result()`（或独立 `classify_xxx_result()` 函数），覆盖该平台所有现有返回路径
 3. 改 `main.py` 三个路由处理函数，全量切换到新响应结构；同时把 `errorUrl.txt` 命中检查从 Tool 抽到路由层（保持单点判定）
-4. 改 `services/live-platform/api/routes.py` 与 `adapters.get_stream_info` 链路
-5. 写 pytest 单测覆盖：每个 code 至少一条用例（用 mock 注入 Tool 原始返回 → 断言新响应结构）
-6. 重写 `docs/specs/live-room-api.md`、更新 `docs/specs/PRD-live-platform-v1.0.md` 相关段落
-7. 更新 `docs/specs/example_data/` 中的样例 JSON（TiktokLive.json / ShopeeLive.json / LazadaLive.json 维持，新增几份失败场景样例）
+4. 写 pytest 单测覆盖：每个 code 至少一条用例（用 mock 注入 Tool 原始返回 → 断言新响应结构）
+5. 重写 `docs/specs/live-room-api.md`
+6. 更新 `docs/specs/example_data/` 中的样例 JSON（TiktokLive.json / ShopeeLive.json / LazadaLive.json 维持，新增几份失败场景样例）
 
 ## 验证
 
 - 单测：每个 `error.reason` 至少一条用例
 - 联调：本地分别造三种用例（直播中 / 未开播 / 失效短链）跑一遍三个端点，比对响应结构
-- 主备节点同步：升级一个节点先观察，再升级另一个；调用方仅 live-platform 聚合代理，已同步改造无需停机
+- 主备节点同步：升级一个节点先观察，再升级另一个；外部调用方需按 `docs/specs/live-room-api.md` 验证新响应结构
 
 ## 风险与回滚
 

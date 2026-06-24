@@ -10,7 +10,8 @@
 | 直播流录制 | [`services/live-stream/`](services/live-stream/CLAUDE.md) | FFmpeg 推流、视频切割、OSS 上传 |
 | 浏览器管理 | [`services/adspower-server/`](services/adspower-server/CLAUDE.md) | AdsPower 浏览器、CDP 投屏、登录监控 |
 | 数据采集 | [`services/live-crawler/`](services/live-crawler/CLAUDE.md) | TikTok/Shopee/Lazada 双轨采集(浏览器+HTTP) |
-| Phase 1 整合服务 | [`services/live-platform/`](services/live-platform/CLAUDE.md) | live-monitor + live-stream + MediaMTX(进行中) |
+
+> 历史 Phase 1 / MediaMTX 整合服务已删除，相关实现资料仅保留在归档文档中，不再视为现役子项目。
 
 ## 文档地图
 
@@ -25,7 +26,7 @@
 
 ## 技术栈
 
-Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower API · FFmpeg / MediaMTX · Kafka · 阿里云 OSS · Vue3 + Element Plus · SQLite
+Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower API · FFmpeg · Kafka · 阿里云 OSS · Vue3 + Element Plus · SQLite
 
 ## 已知坑
 

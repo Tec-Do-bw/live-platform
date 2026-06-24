@@ -3,12 +3,13 @@
 > Status: draft implementation spec
 > Date: 2026-06-23
 > Scope: `services/live-monitor/` and `services/live-stream/`
+> 2026-06-24 note: `services/live-platform/` 已从现役服务树删除。本文保留对其 Redis key shape 的历史引用，仅作为设计来源说明。
 
 ## Goal
 
 Use Redis as the contract between `live-monitor` and `live-stream` so that FLV URL resolution, live status, stream-worker ownership, and dashboard live-status reads no longer depend on process-local global dictionaries.
 
-This spec does not change `services/live-platform/` MediaMTX recording. That service is only used here as a reference for Redis seed/status key design.
+This spec does not depend on the historical `services/live-platform/` MediaMTX recorder. That removed service is only referenced as the source of the Redis seed/status key split.
 
 ## Background
 
@@ -37,13 +38,13 @@ The new bridge separates ownership:
 1. Redis is the bridge contract. `live-stream` must not read MySQL or depend on `live-monitor` process memory.
 2. `live-monitor` is the only service that resolves platform live status and writes `flvUrl`.
 3. `live-stream` is the only service that owns recording leases and FFmpeg runtime status.
-4. Seed/config and runtime status are separate keys, following the `services/live-platform/shared/redis_store.py` shape.
-5. Do not copy current `services/live-platform/orchestrator/seed_synchronizer.py` bugs. Reuse its key contract, but make sync safe on query failure and update changed rows every run.
+4. Seed/config and runtime status are separate keys, following the historical `services/live-platform/shared/redis_store.py` shape captured during Phase 1.
+5. Do not copy the historical `services/live-platform/orchestrator/seed_synchronizer.py` implementation. Reuse only the key contract, but make sync safe on query failure and update changed rows every run.
 6. Keep old HTTP endpoints during migration. `/get_roominfo` and `/report_roominfo` can be backed by Redis first, then deprecated after `live-stream` moves to Redis polling.
 
 Reference boundary:
 
-- `services/live-platform/shared/redis_store.py` is a precedent for key naming, config/status separation, and compatibility aliases.
+- Historical `services/live-platform/shared/redis_store.py` is a precedent for key naming, config/status separation, and compatibility aliases.
 - This bridge extends the status schema with short-lived FLV-url fields such as `expiresAt`, `code`, `errorReason`, and `flvUrl`.
 - Do not copy `services/live-platform` MediaMTX recorder behavior or treat its current status hash as the complete schema for this bridge.
 

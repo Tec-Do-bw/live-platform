@@ -7,6 +7,8 @@
 
 遵循 `CLAUDE.md` 中的工作流、代码规范、文档维护规则与已知坑。
 
+仓库当前不再包含 `services/live-platform/`; 相关 Phase 1 / MediaMTX 资料仅作历史归档参考，不再当作现役子项目入口。
+
 ## Git 工作流与远程仓库策略
 
 本项目的提交、发布、同步、PR 统一基于 `$git-workflow` skill，不直接把裸 `git commit` / `git push origin` 作为默认工作流。
@@ -72,75 +74,87 @@ git push -u gitlab <current-branch>
 <claude-mem-context>
 # Memory Context
 
-# [live-platform] recent context, 2026-05-28 11:51pm GMT+8
+# [live-platform] recent context, 2026-06-24 9:46am GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (17,785t read) | 3,516,329t work | 99% savings
+Stats: 50 obs (23,303t read) | 634,831t work | 96% savings
 
-### May 28, 2026
-S272 Generate TikTok collection flow diagrams and refactored design document; compare current vs. refactored architecture based on real API inspection (May 28 at 5:21 PM)
-S273 Design and document Phase 4 monitoring simplification with two-stage rollout approach: Phase 4A adds daily report Agent without breaking existing systems; Phase 4B removes SQLite, recrawl subsystem, and frontend after validation (May 28 at 5:21 PM)
-S274 Refactor TikTok collection architecture: simplify from multi-file async design to single-file synchronous collector.py with unified account_credentials table, eliminating signature layer complexity (May 28 at 5:29 PM)
-S275 更新 TikTok HTTP 化重构计划文档，基于真实 CURL 验证简化架构设计，并清理临时对比文档 (May 28 at 5:31 PM)
-S276 Implement Phase 4A: daily report system for live crawler with log parsing, account state tracking, OpenAI integration, and Feishu notifications (May 28 at 5:42 PM)
-S277 smart-commit: Submit Phase 4A daily reporting infrastructure to feature branch (May 28 at 5:47 PM)
-S278 Implement Phase 4B plan: Remove SQLite and recrawl frontend - specifically removing monitor.record() instrumentation hooks from Shopee crawler (May 28 at 6:20 PM)
-1116 6:45p 🔵 SQLite dependency mapping across live-crawler codebase
-1117 " 🔵 Entry points and data flow for SQLite removal refactoring
-1118 6:46p ⚖️ Task created: Decouple login callbacks and proxy tools from monitor subtree
-1119 " 🔵 Tracker and monitor calls distributed across runtime paths
-1120 " 🔵 Browser crawler monitor integration pattern
-1121 6:47p 🔵 Monitor module serves dual purpose: collection tracking and real-time monitoring dashboard
-1122 " ✅ Task 8 marked in_progress: Decouple login callbacks and proxy tools from monitor subtree
-1123 " 🔵 Scripts directory also uses LoginStatusManager and monitor.conn
-1124 6:48p 🔵 Login callback abstraction layer and cookie API endpoint identified
-1125 " 🔵 Utils directory structure and adspower_client module location
-1126 " ✅ Created utils/adspower_proxy.py - migrated from monitor/recrawl/proxy.py
-1127 " 🔵 Lazada crawler imports proxy from monitor.recrawl.proxy - needs update
-1128 " ✅ Updated crawlers/http/lazada.py import path from monitor.recrawl.proxy to utils.adspower_proxy
-1129 6:49p ✅ Refactored monitor/__init__.py - removed CollectionMonitor, added get_db_connection()
-1130 " ✅ Updated main.py import from get_monitor to get_db_connection
-1131 " ✅ Removed monitor.start_batch() call from main.py _run_once_impl()
-1132 " ✅ Updated main.py to pass get_db_connection() to LoginStatusManager instead of monitor.conn
-1133 6:50p ✅ Removed monitor.finish_batch() and auto_detect_and_recrawl() calls from main.py
-1134 " ✅ Updated scheduler/task_scheduler.py import from get_monitor to get_db_connection
-1135 7:06p ✅ Removed monitoring hook from session_detail collection in Shopee crawler
-1136 " ✅ Removed monitoring hook from replay_detail collection in Shopee crawler
-S279 Update Phase 4B refactoring plan with concrete execution steps for removing live-crawler monitoring subsystem, based on completed assessment of production dependencies. (May 28 at 7:07 PM)
-1137 7:08p 🔵 Phase 4B task list structure and current progress state
-1138 7:09p 🔵 Monitor API usage in Lazada HTTP crawler for partial status reporting
-1139 " 🔵 Monitor API usage in HTTP base crawler and browser API for request context persistence
-1140 " ✅ Removed unused monitor import from HTTP base crawler _process_results method
-1141 " 🔵 Monitor API usage in Lazada HTTP crawler for partial status reporting
-1142 " ✅ Removed monitor.finish_account() call from Lazada HTTP crawler partial status reporting
-1143 7:10p 🔵 Monitor API usage in browser API for request context persistence in supplementary collection
-1144 7:12p 🔵 Account login events table schema and usage across monitor module
-1145 " 🔵 Monitor module database schema and live-monitor service structure
-1146 " ⚖️ 采用 subagent-driven-development 并行子代理执行任务
-1147 7:21p ✅ live-monitor 静态前端下线：删除 HTML 页面与相关路由
-1148 " ✅ monitor/db.py Phase 4B 精简：仅保留 3 张业务表
-1149 " ✅ Phase C 收尾：全仓 get_monitor 引用清零，切换至 get_db_connection
-1150 9:52p 🔵 Phase 4B Refactoring Plan: Remove SQLite & Recrawl System
-1151 " ⚖️ Phase 4B Monitoring Assessment Complete: Selective Deletion Strategy
-1152 9:53p ✅ Phase 4B Execution Plan Refined: Concrete Deletion Steps
-S280 Finalize Phase 4B monitoring assessment plan and commit coordinated refactoring strategy with TikTok HTTP refactor plan. (May 28 at 9:53 PM)
-1153 9:55p ✅ Phase 4B Plan Document Modified and Staged for Commit
-1154 " ✅ Phase 4B and TikTok HTTP Refactor Plans Committed
-S281 Claude-Mem observer initialized to track a primary session executing a refactoring plan to remove SQLite and recrawl functionality from a live platform project (May 28 at 10:23 PM)
-1174 10:34p 🔵 Phase 4B Step 2 Scope: live-crawler Recrawl System Removal
-1175 10:37p 🔵 Recrawl System Removal: Complete Dependency Map and Test Inventory
-1177 10:38p ✅ Phase 4B Step 2: Recrawl System Deletion and Proxy Migration Completed
-1178 " ✅ Phase 4B Step 2 Complete: All Recrawl System Deletions Applied Successfully
-1179 10:39p 🔵 Remaining Recrawl References After Step 2 Deletion
-1180 " 🔵 Git Status Confirms Phase 4B Step 2 Patch Application
-1181 10:40p 🔵 Recrawl Directory Cleanup Status: __pycache__ Remains After Deletion
-1183 " ✅ Test Cleanup and Migration: Recrawl Mock Removal and Proxy Test Relocation
-1184 " ✅ Phase 4B Step 2 Final Cleanup: Test Migration and Directory Removal Complete
-1186 10:41p 🔵 Phase 4B Step 2 Completion Status: Recrawl Directory Fully Deleted, All Changes Staged
-1187 " 🔵 test_login_status_api.py: 5 Test Cases Reference Deleted recrawl_tasks Table
+### May 29, 2026
+1314 10:29a 🟣 TikTok HTTP Collector Implementation with Credential Management
+1315 " ✅ Phase 4A & 4B Completion: SQLite Removal and Daily Report Agent
+1316 " 🔵 Credential Endpoint Migration: PUT /api/credentials/{id}
+### Jun 8, 2026
+2153 10:24p 🔵 Git sync blocked by SSL/TLS connection error to GitHub
+2154 " 🔵 Network SSL connectivity to GitHub confirmed broken at system level
+2155 10:26p ✅ Local uncommitted modification detected in AGENTS.md
+2156 " 🔵 Git fetch succeeds; local branch is 11 commits behind upstream
+2157 " 🔵 Remote commits do not modify AGENTS.md; pull operation is safe
+2158 " ✅ Git sync completed: 11 upstream commits merged with major TikTok crawler refactor
+2162 10:28p 🔵 Local commit history shows 11-commit upstream merge with TikTok enhancements
+2169 10:47p 🔵 Live-Crawler Project Structure Mapped
+2170 " 🔵 Live-Crawler Codebase Scale Confirmed
+2171 " 🔵 CodeGraph Tool Availability Investigation
+2172 10:48p 🔵 CHAPI Project Identified as Alternative Code Analysis Tool
+2173 " 🔵 TikTok HTTP Three-Chain Lifecycle Architecture Documented
+2175 " 🔵 Live-Crawler Codebase Scale and Module Organization
+2176 " 🔵 Code Analysis Tools Evaluation: CHAPI vs Understand
+2179 10:49p ⚖️ Knowledge Graph Tool Selection Decision: Reject CHAPI/Understand, Adopt Hybrid Approach
+2180 " 🔵 Login Callback Orchestration Pattern Mapped via Grep Analysis
+2181 10:50p 🔵 Crawler Implementation Hierarchy Mapped
+2182 " 🔵 Dependency Analysis: Core Module Integration Points Identified
+2183 " ⚖️ Final Tool Selection Decision: Reject Both CHAPI and Understand; Commit to Zero-Cost Hybrid Approach
+2184 10:51p ⚖️ Agent-Conducted Tool Research Completes: Formal Recommendation Against CHAPI and Understand
+2185 11:01p 🔵 Shopee implementation constraints documented in special rules
+2186 " 🔵 Live-crawler project architecture and Shopee implementation constraints
+2187 " 🔵 Shopee account types and login flow architecture
+2188 11:02p 🔵 Shopee account type permission hierarchy and API fallback strategy
+2189 " 🔵 Shopee login detection and shop switching architecture documented
+2190 " 🔵 Shopee account type matrix and system coverage analysis completed
+2191 11:04p 🔵 Shopee login refactor approach options documented with three implementation strategies
+2195 11:16p ⚖️ Shopee Login Refactor Roadmap — Five-Phase Plan
+2196 11:17p ✅ Shopee Login Refactor Specification Suite — Full Delivery
+2197 " ✅ Complete Shopee Login Documentation Deliverables — Account Matrix, Flow Diagrams, and Code Rules
+2198 " 🔵 adspower-server Shopee API Service — Cross-Border/Domestic Shop Detection
+2199 " 🔵 adspower-server login_monitor.py — Passive + Active Hybrid Implementation
+2200 11:18p ✅ End-to-End Sequence Diagram — Shopee Login & Collection (Phases 1–5)
+2201 " ✅ API Reference Stub + Flow Diagrams Section 4 — cb_option/Permission Decision Tables
+2202 " ✅ Flow Diagrams Sections 4.3–4.5 — Domain Correction, Shop Switching, Callback Priority
+2203 11:19p ✅ Shopee Login Refactor Documentation Suite — Complete Delivery
+2204 " ✅ API Reference Complete — All 7 Shopee Endpoints Documented (Domestic & Cross-Border)
+2205 " ✅ API Reference Complete with Appendices — Real-World Workflows & Code Index
+2206 11:20p ✅ Shopee Login Refactor Documentation Suite — Complete Delivery (All 6 Specifications)
+2210 11:22p ✅ account-type-matrix.md Created — 54-Scenario Enumeration + Boundary Issues
+### Jun 15, 2026
+2929 11:58p ✅ Git sync fetched feature/tiktok-crawler-refactor branch updates
+2930 " ✅ Feature branch synced with 10 commits of architecture and service refactoring
+### Jun 23, 2026
+3245 12:39a ⚖️ Live-platform integration scope and data flow clarified
+3246 12:42a ⚖️ Prepare Context.md for downstream AI handoff
+### Jun 24, 2026
+S426 初始化项目上下文并确认协作规则 (Jun 24 at 1:00 AM)
+S427 Prepare to run a deep-research workflow after the user provides a research topic and constraints (Jun 24 at 2:00 AM)
+S428 Explain TikTok live FLV URL validity, why an older FLV URL stopped working while a newer one works, and recommend an efficient recording strategy (Jun 24 at 2:04 AM)
+S429 使用 workflow 审计 services/live-stream 与 services/live-monitor 在稳定拉流相关实现上的分歧和优化点 (Jun 24 at 2:08 AM)
+S430 启动 workflow 审计 live-stream 与 live-monitor 稳定拉流差异 (Jun 24 at 2:12 AM)
+S431 Initial readiness check after invoking the using-superpowers skill (Jun 24 at 2:14 AM)
+S433 清理 live-platform 子项目与过时文档：先做只读盘点，再删除 services/live-platform/ 及相关主体文档，修正文档引用，并产出验证后的清理报告。 (Jun 24 at 2:18 AM)
+3255 2:22a ⚖️ 项目清理提示词将先对齐方向再生成
+3256 2:23a ⚖️ 项目清理方向聚焦 services/live-platform 与过期文档
+S432 检查 live-platform 仓库当前工作树状态，并围绕 live-stream/live-monitor 稳定拉流、live-platform Redis/MediaMTX 集成与 Shopee 全量采集变更进行上下文勘察 (Jun 24 at 2:30 AM)
+S434 Progress checkpoint for ongoing session (Jun 24 at 2:31 AM)
+3260 2:40a ⚖️ Live-platform cleanup and wiki-first doc governance
+S435 收口 live-platform 归档与过时引用清理检查 (Jun 24 at 3:02 AM)
+**Investigated**: 已检查根目录说明、ROADMAP、若干研究/设计/计划文档，以及仓库内是否仍存在已删除的 services/live-platform 与旧 Phase 1 / MediaMTX 相关文件。也对 docs/research/tiktok-live-dashboard-apis、services/live-monitor 的相关设计/计划做了关键词扫查，核对过时入口与现役边界。
 
-Access 3516k tokens of past work via get_observations([IDs]) or mem-search skill.
+**Learned**: services/live-platform 目录与相关旧主体文档已不存在；根入口已改为将 Phase 1 / MediaMTX 资料视为历史归档。现役边界已明显转向 live-monitor + live-stream + live-crawler，其中 Redis bridge 与 live-monitor/live-stream 的职责划分是当前主线。研究摘要中仍残留少量“live-platform API / 下一步实现”式历史表述，但都已在相邻文档中标注为过时背景。
+
+**Completed**: 完成了文件存在性验证、仓库关键词收口扫描，以及对 README、CLAUDE、AGENTS、ROADMAP、Redis bridge 规格/计划、TikTok 大屏研究摘要与 live-monitor 标准化文档的交叉比对。确认了已删除的 PRD、架构总览、MediaMTX ADR、Phase 1 计划不再作为现役入口。
+
+**Next Steps**: 继续收敛 TikTok 大屏研究摘要与历史草案中的过时措辞，重点清理仍指向 live-platform 类/路由/调度器的旧引用，并确认 live-monitor 文档里所有历史项都已明确标记为背景或移出实施范围。
+
+
+Access 635k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

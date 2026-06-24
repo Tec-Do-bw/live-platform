@@ -3,6 +3,7 @@
 > 整合直播间监控、视频流录制、浏览器管理、商家数据采集的一站式平台。
 >
 > AI 协作约束与设计决策见 [`CLAUDE.md`](CLAUDE.md);开发进度看 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+> 历史 Phase 1 / MediaMTX 整合资料已清理出常规入口，现仅保留归档记录。
 
 ## 项目结构
 
@@ -13,7 +14,6 @@ live-platform/
 │   ├── live-stream/        # 直播流录制(FFmpeg 推流、视频切割、OSS 上传)
 │   ├── adspower-server/    # AdsPower 浏览器管理(登录态、CDP 投屏)
 │   ├── live-crawler/       # 商家后台数据采集(TikTok/Shopee/Lazada)
-│   └── live-platform/      # Phase 1 整合服务(live-monitor + live-stream + MediaMTX,进行中)
 ├── docs/
 │   ├── ROADMAP.md          # 进度索引
 │   ├── plans/              # 进行中的实施计划
@@ -49,7 +49,7 @@ live-platform/
 | Web 框架 | FastAPI |
 | 爬虫引擎 | DrissionPage(浏览器)、HTTP(Lazada) |
 | 浏览器管理 | AdsPower API + 指纹浏览器 |
-| 视频处理 | FFmpeg(现) / MediaMTX(Phase 1 整合方向) |
+| 视频处理 | FFmpeg(现) |
 | 消息队列 | Kafka |
 | 对象存储 | 阿里云 OSS |
 | 前端 | Vue3 + Element Plus |
@@ -104,4 +104,4 @@ cd services/live-crawler/monitor/frontend && npm install
 - [直播流录制 (live-stream)](services/live-stream/README.md)
 - [浏览器管理 (adspower-server)](services/adspower-server/README.md)
 - [数据采集 (live-crawler)](services/live-crawler/README.md)
-- [Phase 1 整合 (live-platform)](services/live-platform/README.md)
+- 历史 Phase 1 / MediaMTX 资料：[`docs/archive/`](docs/archive/)
