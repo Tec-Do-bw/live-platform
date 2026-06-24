@@ -26,7 +26,6 @@ live-monitor/
 ├── routes/
 │   ├── websocket_routes.py    # WebSocket 端点、健康检查、Kafka 推送、节点日志同步
 │   ├── activation.py          # 激活码管理（生成/验证/撤销，Redis 存储）
-│   ├── live_status.py         # TikTok 批量开播状态 API（Redis 读取）
 │   └── docs.py                # 文档、配置、离线任务、数据需求池相关 API
 ├── utils/
 │   ├── Tools.py               # 通用工具（Kafka Producer、日志写入、API 配置生成）
@@ -41,6 +40,9 @@ live-monitor/
 │   └── wrapper.py             # 装饰器工具
 ├── tasks/
 │   └── scheduler_tasks.py     # 定时任务实现
+├── scripts/
+│   ├── tiktok_live_stability_probe.py # TikTok 直播稳定性旁路探针
+│   └── sync_tiktok_region.py  # TikTok 主播国家信息对比脚本
 ├── OfflineSpider/             # 离线爬虫脚本与配置
 ├── demo/                      # 示例脚本
 ├── query_helper/              # 查询辅助工具
@@ -61,7 +63,6 @@ live-monitor/
 | `/getCookies` | GET | 获取 TikTok Cookie |
 | `/get_roominfo` | POST | 查询房间信息 |
 | `/report_roominfo` | POST | 上报房间状态 |
-| `/api/v1/tiktok/live-status/batch` | POST | 批量读取 TikTok 开播状态（Redis-only） |
 | `/get_all_rooms` | GET | 获取全部房间列表 |
 | `/sync_room_dict` | POST | 节点间房间数据同步 |
 | `/sync_log` | POST | 节点间日志同步 |
@@ -91,7 +92,15 @@ live-monitor/
 - `live:collection:{collectionId}:config`
 - `live:collection:{collectionId}:status`
 
-`/api/v1/tiktok/live-status/batch` 只读 Redis，不触发 TikTok 请求。完整契约见 `../../docs/specs/live-monitor-stream-redis-bridge.md`。
+下游查询入口已迁移到 `services/live-crawler/monitor/api/live_status_routes.py`；`live-monitor` 这里只负责写入 Redis 状态。完整契约见 `../../docs/specs/live-monitor-stream-redis-bridge.md`。
+
+## 稳定性探针
+
+`scripts/tiktok_live_stability_probe.py` 用于 15 分钟级别的旁路巡检：
+
+- 正常时只记录状态快照和 FLV 指纹
+- 异常时才触发 Playwright 页面验真，并生成 `anomalyReason` / `repairDirection`
+- JSONL 日志写入 `logs/tiktok-live-stability/`
 
 ## 相关文档
 

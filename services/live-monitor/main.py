@@ -149,7 +149,6 @@ except ImportError:
 # 导入路由
 from routes.docs import router as docs_router
 from routes.activation import router as activation_router
-from routes.live_status import router as live_status_router
 from routes.websocket_routes import router as websocket_router, start_background_tasks, manager
 from utils.serverTool import fetch_apollo_config
 from utils.TiktokTool import TiktokTool
@@ -218,7 +217,6 @@ app.add_middleware(
 
 app.include_router(docs_router)
 app.include_router(activation_router)
-app.include_router(live_status_router)
 # app.include_router(websocket_router)
 
 
@@ -424,6 +422,8 @@ def get_error_room_url():
     # 获取当前文件所在目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
     error_url_path = os.path.join(current_dir, "errorUrl.txt")
+    if not os.path.exists(error_url_path):
+        return []
     with open(error_url_path, "r", encoding="utf-8") as f:
         live_error_room_url = [line.strip() for line in f]
     return live_error_room_url

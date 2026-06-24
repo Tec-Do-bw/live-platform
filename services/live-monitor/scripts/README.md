@@ -1,4 +1,36 @@
-# TikTok 主播国家信息对比脚本使用说明
+# live-monitor 脚本说明
+
+## TikTok 直播稳定性探针
+
+`tiktok_live_stability_probe.py` 是旁路巡检脚本，用来验证 `live-crawler`
+批量直播状态 API 与 `live-monitor` Redis status hash 是否稳定。
+
+运行方式：
+
+```bash
+cd services/live-monitor
+set LIVE_CRAWLER_API_TOKEN=<token>
+python scripts/tiktok_live_stability_probe.py
+```
+
+输出规则：
+- 正常时只输出 4 个账号的简短状态摘要，并追加 JSONL 到
+  `logs/tiktok-live-stability/YYYY-MM-DD.jsonl`
+- 只有 batch API / Redis / 直播状态异常时才生成 `anomalyReason`
+  和 `repairDirection`
+- 只有异常时才启动 `playwright-cli` 打开 TikTok 页面做真实开播复核
+- 日志只记录 `flvHash`、`flvHost`、`streamId`、`expire`，不记录完整签名 URL
+
+常用参数：
+
+```bash
+python scripts/tiktok_live_stability_probe.py --json
+python scripts/tiktok_live_stability_probe.py --api-url http://127.0.0.1:8777/api/v1/tiktok/live-status/batch --api-token <token>
+python scripts/tiktok_live_stability_probe.py --skip-playwright
+python scripts/tiktok_live_stability_probe.py --fail-on-anomaly
+```
+
+## TikTok 主播国家信息对比脚本
 
 ## 功能
 

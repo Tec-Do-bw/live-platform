@@ -18,7 +18,7 @@
 | 窗口 | 命令 | 作用 |
 | --- | --- | --- |
 | `live-crawler scheduler` | `python main.py --mode scheduler` | 主采集调度，包含历史采集和 Lazada realtime 间隔采集 |
-| `live-crawler cookie-api` | `python -m monitor.server` | Cookie API + TikTok 凭据刷新 API，监听 `8777` |
+| `live-crawler api` | `python -m monitor.server` | Cookie API + TikTok 凭据刷新 API + TikTok live-status/dashboard API，监听 `8777` |
 | `live-crawler lazada-cookie-keeper` | `python -m cookie_keeper` | Lazada Cookie 养号服务 |
 | `live-crawler daily-report` | `python -m scripts.daily_report` | 执行一次日报生成和推送，窗口保留 |
 | `live-crawler refresh-tiktok-credentials` | `python -m jobs.refresh_tiktok_credentials` | 执行一次 TikTok 凭据刷新，窗口保留 |
@@ -31,6 +31,11 @@ set LOG_LEVEL=INFO
 ```
 
 如果需要手动单独启动某个入口，先进入 `services/live-crawler`，再执行上表命令。
+
+`python -m monitor.server` 现在也是 TikTok 直播大屏查询入口：
+
+- `POST /api/v1/tiktok/live-status/batch`：读取 Redis 中的轻量开播状态，需 `X-API-Token`
+- `POST /api/v1/tiktok/dashboard/data`：按 `dataType + roomId + collectionId` 拉取 TikTok 大屏原始响应信封，需 `X-API-Token`
 
 ## 常用手动命令
 
@@ -56,7 +61,7 @@ python scripts/init_tracker.py
 | `crawlers/browser/` | Shopee 浏览器采集，以及 TikTok 浏览器 fallback |
 | `crawlers/http/` | Lazada HTTP 采集和 TikTok HTTP 采集 |
 | `cookie_keeper/` | Lazada Cookie 养号和 TikTok 凭据刷新实现 |
-| `monitor/` | Cookie API、TikTok 刷新 API、登录状态兼容层 |
+| `monitor/` | Cookie API、TikTok 刷新 API、TikTok live-status/dashboard API、登录状态兼容层 |
 | `services/` | 数据上报、Cookie 管理、登录回调等共享业务服务 |
 | `scripts/` | 日报、迁移、初始化等辅助脚本 |
 | `utils/` | 日志、AdsPower 客户端、HTTP session、Kafka 等工具 |
@@ -75,7 +80,7 @@ python scripts/init_tracker.py
 - `scheduler`
 - `manual_once`
 - `manual_full`
-- `cookie_api`
+- `live_crawler_api`
 - `cookie_keeper`
 - `daily_report`
 - `refresh_tiktok_credentials`

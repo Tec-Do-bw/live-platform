@@ -1,20 +1,20 @@
-# TikTok Live Dashboard Data API Service Implementation Plan
+# TikTok 直播大屏数据 API 服务实施计划
 
-> **For agentic workers:** Execute task-by-task with checkbox (`- [ ]`) tracking. Use `subagent-driven-development` only when tasks are independent and risk/scale justifies review overhead; otherwise use `executing-plans` or inline execution with checkpoints.
+> **给 agentic 执行者：** 按任务逐项执行，并用 checkbox (`- [ ]`) 跟踪进度。只有当任务相互独立，且风险/规模值得引入评审开销时，才使用 `subagent-driven-development`；否则使用 `executing-plans`，或带检查点的内联执行。
 
-**Goal:** Implement the TikTok live dashboard query API in `services/live-crawler`, including authenticated `live-status/batch` and `dashboard/data`, then remove the old `live-monitor` query route.
+**目标：** 在 `services/live-crawler` 中实现 TikTok 直播大屏查询 API，包括带鉴权的 `live-status/batch` 和 `dashboard/data`，然后移除旧的 `live-monitor` 查询路由。
 
-**Architecture:** `services/live-crawler/monitor/server.py` becomes the single FastAPI entry for Cookie API, TikTok credential refresh, live-status reads, and dashboard data fetches. `live-status/batch` reads Redis through a migrated `LiveRedisRepository`; `dashboard/data` uses a new `real_collector.py` for dashboard-only TikTok HTTP fetchers while reusing `collector.py` session, credential, URL, header, and envelope helpers.
+**架构：** `services/live-crawler/monitor/server.py` 成为 Cookie API、TikTok 凭据刷新、live-status 读取和大屏数据拉取的单一 FastAPI 入口。`live-status/batch` 通过迁移后的 `LiveRedisRepository` 读取 Redis；`dashboard/data` 使用新的 `real_collector.py` 承载仅供大屏使用的 TikTok HTTP fetcher，同时复用 `collector.py` 中的 session、credential、URL、header 和 envelope 辅助逻辑。
 
-**Tech Stack:** Python 3.12, FastAPI, Pydantic, redis-py, curl_cffi through existing `utils.http_session`, pytest.
+**技术栈：** Python 3.12、FastAPI、Pydantic、redis-py、通过现有 `utils.http_session` 使用 curl_cffi、pytest。
 
 ---
 
-## Source Spec
+## 源规格
 
-Implement against `docs/specs/tiktok-live-dashboard-data-api-service.md`.
+按 `docs/specs/tiktok-live-dashboard-data-api-service.md` 实现。
 
-Use these source documents only as references when the spec points to them:
+仅在规格文档指向这些资料时，把它们作为参考：
 
 - `docs/research/tiktok-live-dashboard-apis/API-inventory.md`
 - `docs/research/tiktok-live-dashboard-apis/feishu-dashboard-api-doc.md`
@@ -23,118 +23,118 @@ Use these source documents only as references when the spec points to them:
 - `services/live-crawler/CLAUDE.md`
 - `services/live-monitor/CLAUDE.md`
 
-## Non-Negotiables
+## 不可违背项
 
-- `POST /api/v1/tiktok/live-status/batch` lives under `services/live-crawler`, not `services/live-monitor`.
-- `POST /api/v1/tiktok/live-status/batch` and `POST /api/v1/tiktok/dashboard/data` both require `X-API-Token` and compare it to `Settings.COOKIE_API_CONFIG["token"]`.
-- `services/live-monitor/routes/live_status.py` is removed after the new live-crawler route passes tests.
-- Dashboard fetchers live in `services/live-crawler/crawlers/http/tiktok/real_collector.py`.
-- Do not add arbitrary downstream `stats_types` input.
-- Do not parse TikTok business payloads into business DTOs; return the existing `_format_message()` envelope with raw `request.response`.
-- Do not call `_check_code()` for the six dashboard business endpoints. TikTok `code != 0` still becomes a successful API envelope if HTTP succeeded.
-- Continue to use `setup_session(collectionId)` and `account_credentials`; do not read the legacy `cookies` table for TikTok dashboard credentials.
-- `trend_chart` uses its own 27-ID set and never reuses `CORE_STATS_TYPES`.
-- No MySQL migration, no Kafka producer, no dashboard cache.
+- `POST /api/v1/tiktok/live-status/batch` 位于 `services/live-crawler`，不放在 `services/live-monitor`。
+- `POST /api/v1/tiktok/live-status/batch` 和 `POST /api/v1/tiktok/dashboard/data` 都必须要求 `X-API-Token`，并与 `Settings.COOKIE_API_CONFIG["token"]` 对比。
+- 新的 live-crawler 路由测试通过后，移除 `services/live-monitor/routes/live_status.py`。
+- 大屏 fetcher 放在 `services/live-crawler/crawlers/http/tiktok/real_collector.py`。
+- 不添加任意下游 `stats_types` 输入。
+- 不把 TikTok business payload 解析成业务 DTO；返回现有 `_format_message()` envelope，并保留原始 `request.response`。
+- 六个大屏 business endpoint 不调用 `_check_code()`。只要 HTTP 成功，即使 TikTok `code != 0` 也返回成功的 API envelope。
+- 继续使用 `setup_session(collectionId)` 和 `account_credentials`；不要为 TikTok 大屏凭据读取旧的 `cookies` 表。
+- `trend_chart` 使用自己的 27-ID 集合，绝不复用 `CORE_STATS_TYPES`。
+- 不做 MySQL migration，不加 Kafka producer，不加 dashboard cache。
 
-## File Structure
+## 文件结构
 
-Create:
+新建：
 
-- `services/live-crawler/monitor/api/auth.py` — shared `X-API-Token` dependency for the new routes.
-- `services/live-crawler/monitor/api/live_status_routes.py` — `POST /api/v1/tiktok/live-status/batch` route.
-- `services/live-crawler/monitor/api/dashboard_routes.py` — `POST /api/v1/tiktok/dashboard/data` route.
-- `services/live-crawler/monitor/schemas/dashboard.py` — Pydantic request schema and enums.
-- `services/live-crawler/utils/redis_bridge.py` — migrated Redis status reader using live-crawler Apollo config access.
-- `services/live-crawler/services/dashboard_data.py` — dashboard orchestration and API-layer error mapping.
-- `services/live-crawler/crawlers/http/tiktok/real_collector.py` — dashboard-only TikTok HTTP fetchers and constants.
-- `services/live-crawler/tests/utils/test_redis_bridge.py` — migrated Redis status behavior tests.
-- `services/live-crawler/tests/monitor/test_live_status_batch.py` — new authenticated live-status route tests.
-- `services/live-crawler/tests/monitor/test_tiktok_dashboard_routes.py` — dashboard route tests.
-- `services/live-crawler/tests/services/test_dashboard_data.py` — dashboard service tests.
-- `services/live-crawler/tests/crawlers/http/test_tiktok_dashboard_fetchers.py` — dashboard fetcher tests.
+- `services/live-crawler/monitor/api/auth.py` — 新路由共用的 `X-API-Token` 依赖。
+- `services/live-crawler/monitor/api/live_status_routes.py` — `POST /api/v1/tiktok/live-status/batch` 路由。
+- `services/live-crawler/monitor/api/dashboard_routes.py` — `POST /api/v1/tiktok/dashboard/data` 路由。
+- `services/live-crawler/monitor/schemas/dashboard.py` — Pydantic 请求 schema 和枚举。
+- `services/live-crawler/utils/redis_bridge.py` — 迁移后的 Redis 状态读取器，使用 live-crawler Apollo 配置访问方式。
+- `services/live-crawler/services/dashboard_data.py` — 大屏编排和 API 层错误映射。
+- `services/live-crawler/crawlers/http/tiktok/real_collector.py` — 仅供大屏使用的 TikTok HTTP fetcher 与常量。
+- `services/live-crawler/tests/utils/test_redis_bridge.py` — 迁移后的 Redis 状态行为测试。
+- `services/live-crawler/tests/monitor/test_live_status_batch.py` — 新的带鉴权 live-status 路由测试。
+- `services/live-crawler/tests/monitor/test_tiktok_dashboard_routes.py` — 大屏路由测试。
+- `services/live-crawler/tests/services/test_dashboard_data.py` — 大屏服务测试。
+- `services/live-crawler/tests/crawlers/http/test_tiktok_dashboard_fetchers.py` — 大屏 fetcher 测试。
 
-Modify:
+修改：
 
-- `services/live-crawler/monitor/server.py` — include the two new routers and update app title.
-- `services/live-crawler/README.md` — document the expanded `python -m monitor.server` API role.
-- `services/live-monitor/main.py` — remove `routes.live_status` import and `app.include_router(live_status_router)`.
-- `services/live-monitor/README.md` — remove the live-status route from live-monitor API docs and module tree.
-- `docs/ROADMAP.md` — move dashboard API implementation into the active plan index if execution starts, then mark completion after implementation.
+- `services/live-crawler/monitor/server.py` — 引入两个新 router，并更新 app title。
+- `services/live-crawler/README.md` — 记录扩展后的 `python -m monitor.server` API 职责。
+- `services/live-monitor/main.py` — 移除 `routes.live_status` import 和 `app.include_router(live_status_router)`。
+- `services/live-monitor/README.md` — 从 live-monitor API 文档和模块树中移除 live-status 路由。
+- `docs/ROADMAP.md` — 如果开始执行，将大屏 API 实现移入 active plan index；实现完成后标记完成。
 
-Delete:
+删除：
 
 - `services/live-monitor/routes/live_status.py`
 - `services/live-monitor/tests/test_live_status_batch.py`
 
-Keep:
+保留：
 
-- `services/live-monitor/utils/redis_bridge.py` remains because live-monitor still writes Redis status.
-- `services/live-monitor/tests/test_redis_bridge.py` remains because it protects the writer-side Redis semantics.
+- 保留 `services/live-monitor/utils/redis_bridge.py`，因为 live-monitor 仍然负责写入 Redis 状态。
+- 保留 `services/live-monitor/tests/test_redis_bridge.py`，因为它保护写入侧 Redis 语义。
 
-## Task 0: Preflight And Baseline
+## 任务 0：预检与基线
 
-**Files:**
-- Read: `docs/specs/tiktok-live-dashboard-data-api-service.md`
-- Read: `.claude/rules/tiktok-http-lifecycle.md`
-- Read: `services/live-crawler/CLAUDE.md`
-- Read: `services/live-monitor/CLAUDE.md`
+**文件：**
+- 读取：`docs/specs/tiktok-live-dashboard-data-api-service.md`
+- 读取：`.claude/rules/tiktok-http-lifecycle.md`
+- 读取：`services/live-crawler/CLAUDE.md`
+- 读取：`services/live-monitor/CLAUDE.md`
 
-- [ ] **Step 1: Confirm current working tree and do not revert user changes**
+- [x] **步骤 1：确认当前工作树，不要回退用户改动**
 
-Run:
+运行：
 
 ```bash
 git status --short
 ```
 
-Expected: unrelated local changes may exist. Leave them in place. Only edit files listed in this plan.
+预期：可能存在无关的本地改动。保留这些改动，只编辑本计划列出的文件。
 
-- [ ] **Step 2: Confirm source symbols before editing**
+- [x] **步骤 2：编辑前确认源符号**
 
-Run:
+运行：
 
 ```bash
 codegraph explore "tiktok collector setup_session _format_message _build_filtered_url LiveRedisRepository live_status_routes monitor server"
 ```
 
-Expected: current locations include:
+预期：当前位置包括：
 
 - `services/live-crawler/crawlers/http/tiktok/collector.py`
 - `services/live-crawler/monitor/server.py`
 - `services/live-monitor/routes/live_status.py`
 - `services/live-monitor/utils/redis_bridge.py`
 
-- [ ] **Step 3: Run focused baseline tests**
+- [x] **步骤 3：运行聚焦的基线测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/crawlers/http/test_tiktok_collector_query_params.py tests/crawlers/http/test_tiktok_collector_credential_validation.py tests/crawlers/http/test_tiktok_collector_business_retry.py -v
 ```
 
-Expected: pass. If a baseline failure exists before edits, record the exact failing test name and continue only if the failure is unrelated to this plan.
+预期：通过。如果编辑前已有基线失败，记录准确的失败测试名，并且只有在失败与本计划无关时才继续。
 
-Run:
+运行：
 
 ```bash
 cd services/live-monitor
 uv run --python 3.12 pytest tests/test_redis_bridge.py tests/test_live_status_batch.py -v
 ```
 
-Expected: pass before deleting the old live-status route.
+预期：在删除旧 live-status 路由前通过。
 
-## Task 1: Migrate Redis Status Reader Into live-crawler
+## 任务 1：将 Redis 状态读取器迁移到 live-crawler
 
-**Files:**
-- Create: `services/live-crawler/utils/redis_bridge.py`
-- Create: `services/live-crawler/tests/utils/test_redis_bridge.py`
-- Keep: `services/live-monitor/utils/redis_bridge.py`
-- Keep: `services/live-monitor/tests/test_redis_bridge.py`
+**文件：**
+- 新建：`services/live-crawler/utils/redis_bridge.py`
+- 新建：`services/live-crawler/tests/utils/test_redis_bridge.py`
+- 保留：`services/live-monitor/utils/redis_bridge.py`
+- 保留：`services/live-monitor/tests/test_redis_bridge.py`
 
-- [ ] **Step 1: Write the live-crawler Redis bridge tests**
+- [x] **步骤 1：编写 live-crawler Redis bridge 测试**
 
-Create `services/live-crawler/tests/utils/test_redis_bridge.py` with this focused subset. It locks the read contract needed by `live-status/batch`; writer-side tests stay in `services/live-monitor/tests/test_redis_bridge.py`.
+创建 `services/live-crawler/tests/utils/test_redis_bridge.py`，包含下面这组聚焦测试。它锁定 `live-status/batch` 所需的读取契约；写入侧测试保留在 `services/live-monitor/tests/test_redis_bridge.py`。
 
 ```python
 import sys
@@ -243,22 +243,22 @@ def test_list_live_status_treats_dirty_expires_at_as_offline():
     assert rows == [{"collectionId": "coll_live", "isLive": False, "roomId": "", "flvUrl": ""}]
 ```
 
-- [ ] **Step 2: Run the new tests to verify the module is missing**
+- [x] **步骤 2：运行新测试，确认模块缺失**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/utils/test_redis_bridge.py -v
 ```
 
-Expected: fail with `ModuleNotFoundError` or import error for `utils.redis_bridge`.
+预期：失败，报 `utils.redis_bridge` 的 `ModuleNotFoundError` 或 import error。
 
-- [ ] **Step 3: Create `services/live-crawler/utils/redis_bridge.py`**
+- [x] **步骤 3：创建 `services/live-crawler/utils/redis_bridge.py`**
 
-Base it on the current `services/live-monitor/utils/redis_bridge.py` read semantics. Use the same Redis key names and `_status_to_batch_item()` behavior so already-written live-monitor keys remain readable.
+基于当前 `services/live-monitor/utils/redis_bridge.py` 的读取语义实现。使用相同的 Redis key 名称和 `_status_to_batch_item()` 行为，保证 live-monitor 已写入的 key 仍然可读。
 
-Use this live-crawler-specific Apollo config adapter in the new file:
+在新文件中使用这个 live-crawler 专属的 Apollo 配置适配器：
 
 ```python
 from core.apollo import APOLLO
@@ -273,7 +273,7 @@ def _redis_config() -> dict[str, str]:
     }
 ```
 
-Use it in `LiveRedisRepository._create_default_client()`:
+在 `LiveRedisRepository._create_default_client()` 中使用它：
 
 ```python
 @staticmethod
@@ -288,7 +288,7 @@ def _create_default_client() -> redis.Redis:
     )
 ```
 
-The new live-crawler module must expose these names because tests and routes use them:
+新的 live-crawler 模块必须暴露这些名称，因为测试和路由会使用它们：
 
 ```python
 COLLECTIONS_KEY = "live:monitor:collections"
@@ -324,29 +324,29 @@ class LiveRedisRepository:
         return rows
 ```
 
-The actual function bodies for `config_key`, `status_key`, `_decode`, `_decode_hash`, `_status_to_batch_item`, `_is_config_enabled`, `__init__`, and `list_live_status` should match `services/live-monitor/utils/redis_bridge.py` so live-monitor writes and live-crawler reads stay byte-compatible.
+`config_key`、`status_key`、`_decode`、`_decode_hash`、`_status_to_batch_item`、`_is_config_enabled`、`__init__` 和 `list_live_status` 的实际函数体应与 `services/live-monitor/utils/redis_bridge.py` 保持一致，确保 live-monitor 写入与 live-crawler 读取保持 byte-compatible。
 
-- [ ] **Step 4: Run Redis bridge tests**
+- [x] **步骤 4：运行 Redis bridge 测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/utils/test_redis_bridge.py -v
 ```
 
-Expected: pass.
+预期：通过。
 
-## Task 2: Add Authenticated live-status Route In live-crawler
+## 任务 2：在 live-crawler 中添加带鉴权的 live-status 路由
 
-**Files:**
-- Create: `services/live-crawler/monitor/api/auth.py`
-- Create: `services/live-crawler/monitor/api/live_status_routes.py`
-- Create: `services/live-crawler/tests/monitor/test_live_status_batch.py`
+**文件：**
+- 新建：`services/live-crawler/monitor/api/auth.py`
+- 新建：`services/live-crawler/monitor/api/live_status_routes.py`
+- 新建：`services/live-crawler/tests/monitor/test_live_status_batch.py`
 
-- [ ] **Step 1: Write live-status route tests**
+- [x] **步骤 1：编写 live-status 路由测试**
 
-Create `services/live-crawler/tests/monitor/test_live_status_batch.py`:
+创建 `services/live-crawler/tests/monitor/test_live_status_batch.py`：
 
 ```python
 from fastapi import FastAPI
@@ -465,20 +465,20 @@ def test_batch_live_status_redis_failure_returns_5099(monkeypatch):
     assert response.json()["data"] is None
 ```
 
-- [ ] **Step 2: Run route tests and verify they fail**
+- [x] **步骤 2：运行路由测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/monitor/test_live_status_batch.py -v
 ```
 
-Expected: fail because `monitor.api.live_status_routes` does not exist.
+预期：失败，因为 `monitor.api.live_status_routes` 不存在。
 
-- [ ] **Step 3: Implement shared API token dependency**
+- [x] **步骤 3：实现共享 API token 依赖**
 
-Create `services/live-crawler/monitor/api/auth.py`:
+创建 `services/live-crawler/monitor/api/auth.py`：
 
 ```python
 """共享 API 鉴权依赖。"""
@@ -497,9 +497,9 @@ def require_cookie_api_token(x_api_token: str = Header(default="")) -> None:
         raise HTTPException(status_code=403, detail="Invalid API token")
 ```
 
-- [ ] **Step 4: Implement live-status route**
+- [x] **步骤 4：实现 live-status 路由**
 
-Create `services/live-crawler/monitor/api/live_status_routes.py`:
+创建 `services/live-crawler/monitor/api/live_status_routes.py`：
 
 ```python
 """TikTok 批量开播状态 API。"""
@@ -539,28 +539,28 @@ def batch_live_status(req: BatchLiveStatusRequest, _: None = Depends(require_coo
     return JSONResponse(content={"code": 200, "message": "success", "data": data})
 ```
 
-- [ ] **Step 5: Run live-status tests**
+- [x] **步骤 5：运行 live-status 测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/monitor/test_live_status_batch.py tests/utils/test_redis_bridge.py -v
 ```
 
-Expected: pass.
+预期：通过。
 
-## Task 3: Add Dashboard Fetchers In real_collector.py
+## 任务 3：在 real_collector.py 中添加大屏 fetcher
 
-**Files:**
-- Create: `services/live-crawler/crawlers/http/tiktok/real_collector.py`
-- Create: `services/live-crawler/tests/crawlers/http/test_tiktok_dashboard_fetchers.py`
-- Read: `docs/research/tiktok-live-dashboard-apis/API-inventory.md`
-- Reuse: `services/live-crawler/crawlers/http/tiktok/collector.py`
+**文件：**
+- 新建：`services/live-crawler/crawlers/http/tiktok/real_collector.py`
+- 新建：`services/live-crawler/tests/crawlers/http/test_tiktok_dashboard_fetchers.py`
+- 读取：`docs/research/tiktok-live-dashboard-apis/API-inventory.md`
+- 复用：`services/live-crawler/crawlers/http/tiktok/collector.py`
 
-- [ ] **Step 1: Write dashboard fetcher tests**
+- [x] **步骤 1：编写大屏 fetcher 测试**
 
-Create `services/live-crawler/tests/crawlers/http/test_tiktok_dashboard_fetchers.py`:
+创建 `services/live-crawler/tests/crawlers/http/test_tiktok_dashboard_fetchers.py`：
 
 ```python
 from __future__ import annotations
@@ -688,7 +688,7 @@ def test_trend_chart_full_range_omits_start_time():
     assert "start_time" not in _last_payload(session)["request"]
 
 
-def test_source_new_uses_v3_flat_room_payload():
+def test_source_new_uses_v3_room_filter_payload():
     session = FakeSession()
 
     real_collector.fetch_dashboard_source_new(session, _cred(), "room-1")
@@ -696,8 +696,8 @@ def test_source_new_uses_v3_flat_room_payload():
     payload = _last_payload(session)
     assert "/api/v3/insights/workbench/live/detail/source/new" in session.posts[-1]["url"]
     assert payload == {
-        "request": {"room_id": "room-1", "is_content_type": 1, "stats_types": [100]},
-        "version": "3",
+        "request": {"stats_types": [100], "room_filter": {"room_id": "room-1", "is_content_type": 1}},
+        "version": 3,
     }
 
 
@@ -729,20 +729,20 @@ def test_tiktok_business_code_is_preserved_as_successful_fetch_result():
     assert json.loads(result["response_body"])["code"] == 98001021
 ```
 
-- [ ] **Step 2: Run fetcher tests and verify they fail**
+- [x] **步骤 2：运行 fetcher 测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/crawlers/http/test_tiktok_dashboard_fetchers.py -v
 ```
 
-Expected: fail because `crawlers.http.tiktok.real_collector` does not exist.
+预期：失败，因为 `crawlers.http.tiktok.real_collector` 不存在。
 
-- [ ] **Step 3: Implement dashboard constants and shared POST helper**
+- [x] **步骤 3：实现大屏常量和共享 POST helper**
 
-Create `services/live-crawler/crawlers/http/tiktok/real_collector.py` with these constants from `API-inventory.md`:
+创建 `services/live-crawler/crawlers/http/tiktok/real_collector.py`，并加入 `API-inventory.md` 中的这些常量：
 
 ```python
 """TikTok 直播大屏实时查询 fetchers。"""
@@ -807,9 +807,9 @@ def _post_dashboard_api(session: Any, cred: Credentials, endpoint: str, path: st
     return _make_result(ok=True, url=url, request_body=_json_dumps(payload), response_body=resp.text, data=data)
 ```
 
-- [ ] **Step 4: Implement the six fetchers**
+- [x] **步骤 4：实现这六个 fetcher**
 
-Add these functions to `real_collector.py`:
+向 `real_collector.py` 添加以下函数：
 
 ```python
 def fetch_dashboard_core_stats(session: Any, cred: Credentials, room_id: str) -> FetchResult:
@@ -860,8 +860,11 @@ def fetch_dashboard_trend_chart(
 
 def fetch_dashboard_source_new(session: Any, cred: Credentials, room_id: str) -> FetchResult:
     payload = {
-        "request": {"room_id": room_id, "is_content_type": 1, "stats_types": [100]},
-        "version": "3",
+        "request": {
+            "stats_types": [100],
+            "room_filter": {"room_id": room_id, "is_content_type": 1},
+        },
+        "version": 3,
     }
     return _post_dashboard_api(
         session,
@@ -916,29 +919,29 @@ def fetch_dashboard_room_info(session: Any, cred: Credentials, room_id: str) -> 
     )
 ```
 
-- [ ] **Step 5: Run fetcher tests and collector regressions**
+- [x] **步骤 5：运行 fetcher 测试和 collector 回归测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/crawlers/http/test_tiktok_dashboard_fetchers.py tests/crawlers/http/test_tiktok_collector_query_params.py tests/crawlers/http/test_tiktok_collector_business_retry.py -v
 ```
 
-Expected: pass. The regression tests prove `real_collector.py` did not change scheduled `collector.py::collect_tiktok()` semantics.
+预期：通过。回归测试证明 `real_collector.py` 没有改变定时 `collector.py::collect_tiktok()` 的语义。
 
-## Task 4: Add Dashboard Service, Schemas, And Route
+## 任务 4：添加大屏服务、schema 和路由
 
-**Files:**
-- Create: `services/live-crawler/monitor/schemas/dashboard.py`
-- Create: `services/live-crawler/services/dashboard_data.py`
-- Create: `services/live-crawler/monitor/api/dashboard_routes.py`
-- Create: `services/live-crawler/tests/services/test_dashboard_data.py`
-- Create: `services/live-crawler/tests/monitor/test_tiktok_dashboard_routes.py`
+**文件：**
+- 新建：`services/live-crawler/monitor/schemas/dashboard.py`
+- 新建：`services/live-crawler/services/dashboard_data.py`
+- 新建：`services/live-crawler/monitor/api/dashboard_routes.py`
+- 新建：`services/live-crawler/tests/services/test_dashboard_data.py`
+- 新建：`services/live-crawler/tests/monitor/test_tiktok_dashboard_routes.py`
 
-- [ ] **Step 1: Write dashboard service tests**
+- [x] **步骤 1：编写大屏服务测试**
 
-Create `services/live-crawler/tests/services/test_dashboard_data.py`:
+创建 `services/live-crawler/tests/services/test_dashboard_data.py`：
 
 ```python
 from __future__ import annotations
@@ -1108,9 +1111,9 @@ def test_json_decode_style_value_error_maps_to_upstream_error(monkeypatch):
     assert session.closed is True
 ```
 
-- [ ] **Step 2: Write dashboard route tests**
+- [x] **步骤 2：编写大屏路由测试**
 
-Create `services/live-crawler/tests/monitor/test_tiktok_dashboard_routes.py`:
+创建 `services/live-crawler/tests/monitor/test_tiktok_dashboard_routes.py`：
 
 ```python
 from fastapi import FastAPI
@@ -1211,20 +1214,20 @@ def test_dashboard_route_maps_api_error_to_response_body(monkeypatch):
     }
 ```
 
-- [ ] **Step 3: Run service and route tests to verify imports fail**
+- [x] **步骤 3：运行服务和路由测试，确认 import 失败**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/services/test_dashboard_data.py tests/monitor/test_tiktok_dashboard_routes.py -v
 ```
 
-Expected: fail because `monitor.schemas.dashboard`, `services.dashboard_data`, and `monitor.api.dashboard_routes` do not exist.
+预期：失败，因为 `monitor.schemas.dashboard`、`services.dashboard_data` 和 `monitor.api.dashboard_routes` 都不存在。
 
-- [ ] **Step 4: Implement dashboard schemas**
+- [x] **步骤 4：实现大屏 schemas**
 
-Create `services/live-crawler/monitor/schemas/dashboard.py`:
+创建 `services/live-crawler/monitor/schemas/dashboard.py`：
 
 ```python
 """TikTok 大屏 API schema。"""
@@ -1256,9 +1259,9 @@ class DashboardDataRequest(BaseModel):
     timeRange: DashboardTimeRange = DashboardTimeRange.full
 ```
 
-- [ ] **Step 5: Implement dashboard service**
+- [x] **步骤 5：实现大屏服务**
 
-Create `services/live-crawler/services/dashboard_data.py`:
+创建 `services/live-crawler/services/dashboard_data.py`：
 
 ```python
 """TikTok 大屏实时查询编排。"""
@@ -1361,9 +1364,9 @@ def fetch_dashboard_data(
             session.close()
 ```
 
-- [ ] **Step 6: Implement dashboard route**
+- [x] **步骤 6：实现大屏路由**
 
-Create `services/live-crawler/monitor/api/dashboard_routes.py`:
+创建 `services/live-crawler/monitor/api/dashboard_routes.py`：
 
 ```python
 """TikTok 大屏数据 API。"""
@@ -1397,29 +1400,29 @@ async def dashboard_data(req: DashboardDataRequest, _: None = Depends(require_co
         )
 ```
 
-- [ ] **Step 7: Run dashboard service and route tests**
+- [x] **步骤 7：运行大屏服务和路由测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/services/test_dashboard_data.py tests/monitor/test_tiktok_dashboard_routes.py -v
 ```
 
-Expected: pass.
+预期：通过。
 
-## Task 5: Register New Routers And Remove live-monitor Query Route
+## 任务 5：注册新路由并移除 live-monitor 查询路由
 
-**Files:**
-- Modify: `services/live-crawler/monitor/server.py`
-- Modify: `services/live-monitor/main.py`
-- Delete: `services/live-monitor/routes/live_status.py`
-- Delete: `services/live-monitor/tests/test_live_status_batch.py`
-- Create or extend: `services/live-crawler/tests/monitor/test_server_routes.py`
+**文件：**
+- 修改：`services/live-crawler/monitor/server.py`
+- 修改：`services/live-monitor/main.py`
+- 删除：`services/live-monitor/routes/live_status.py`
+- 删除：`services/live-monitor/tests/test_live_status_batch.py`
+- 新建或扩展：`services/live-crawler/tests/monitor/test_server_routes.py`
 
-- [ ] **Step 1: Add server route registration test**
+- [x] **步骤 1：添加 server 路由注册测试**
 
-Create `services/live-crawler/tests/monitor/test_server_routes.py`:
+创建 `services/live-crawler/tests/monitor/test_server_routes.py`：
 
 ```python
 from monitor.server import app
@@ -1434,20 +1437,20 @@ def test_monitor_server_registers_dashboard_and_live_status_routes():
     assert "/api/refresh_tiktok_credential" in paths
 ```
 
-- [ ] **Step 2: Run the registration test and verify it fails**
+- [x] **步骤 2：运行注册测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/monitor/test_server_routes.py -v
 ```
 
-Expected: fail because the new routers are not registered.
+预期：失败，因为新路由尚未注册。
 
-- [ ] **Step 3: Register routers in live-crawler server**
+- [x] **步骤 3：在 live-crawler server 中注册路由**
 
-Modify `services/live-crawler/monitor/server.py`:
+修改 `services/live-crawler/monitor/server.py`：
 
 ```python
 from monitor.api.cookie_routes import router as cookie_router
@@ -1466,11 +1469,11 @@ app.include_router(live_status_router)
 app.include_router(dashboard_router)
 ```
 
-Keep `python -m monitor.server` and port `8777`.
+保持 `python -m monitor.server` 和端口 `8777` 不变。
 
-- [ ] **Step 4: Remove old live-monitor route registration**
+- [x] **步骤 4：移除旧的 live-monitor 路由注册**
 
-Modify `services/live-monitor/main.py`:
+修改 `services/live-monitor/main.py`：
 
 ```python
 # Remove this import:
@@ -1480,55 +1483,55 @@ Modify `services/live-monitor/main.py`:
 # app.include_router(live_status_router)
 ```
 
-Then delete:
+然后删除：
 
 ```text
 services/live-monitor/routes/live_status.py
 services/live-monitor/tests/test_live_status_batch.py
 ```
 
-- [ ] **Step 5: Run server and route tests**
+- [x] **步骤 5：运行 server 和路由测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/monitor/test_server_routes.py tests/monitor/test_live_status_batch.py tests/monitor/test_tiktok_dashboard_routes.py -v
 ```
 
-Expected: pass.
+预期：通过。
 
-Run:
+运行：
 
 ```bash
 cd services/live-monitor
 uv run --python 3.12 pytest tests/test_redis_bridge.py tests/test_api_response.py -v
 ```
 
-Expected: pass. `tests/test_live_status_batch.py` no longer exists in live-monitor.
+预期：通过。`tests/test_live_status_batch.py` 已不再存在于 live-monitor 中。
 
-## Task 6: Documentation And Roadmap Sync
+## 任务 6：同步文档与 Roadmap
 
-**Files:**
-- Modify: `services/live-crawler/README.md`
-- Modify: `services/live-monitor/README.md`
-- Modify: `docs/ROADMAP.md`
+**文件：**
+- 修改：`services/live-crawler/README.md`
+- 修改：`services/live-monitor/README.md`
+- 修改：`docs/ROADMAP.md`
 
-- [ ] **Step 1: Update live-crawler README API role**
+- [x] **步骤 1：更新 live-crawler README 的 API 职责**
 
-In `services/live-crawler/README.md`, update the `live-crawler cookie-api` row:
+在 `services/live-crawler/README.md` 中，更新 `live-crawler cookie-api` 这一行：
 
 ```markdown
 | `live-crawler api` | `python -m monitor.server` | Cookie API + TikTok 凭据刷新 API + TikTok live-status/dashboard API，监听 `8777` |
 ```
 
-In the module overview, update `monitor/`:
+在模块总览里，更新 `monitor/`：
 
 ```markdown
 | `monitor/` | Cookie API、TikTok 刷新 API、TikTok live-status/dashboard API、登录状态兼容层 |
 ```
 
-Add a short API note after the startup table:
+在启动表后补一段简短的 API 说明：
 
 ```markdown
 `python -m monitor.server` 现在也是 TikTok 直播大屏查询入口：
@@ -1537,77 +1540,77 @@ Add a short API note after the startup table:
 - `POST /api/v1/tiktok/dashboard/data`：按 `dataType + roomId + collectionId` 拉取 TikTok 大屏原始响应信封，需 `X-API-Token`
 ```
 
-- [ ] **Step 2: Update live-monitor README ownership**
+- [x] **步骤 2：更新 live-monitor README 的归属说明**
 
-In `services/live-monitor/README.md`, remove the module-tree row for `routes/live_status.py` and remove `/api/v1/tiktok/live-status/batch` from the API list.
+在 `services/live-monitor/README.md` 中，移除 `routes/live_status.py` 的模块树条目，并从 API 列表中删除 `/api/v1/tiktok/live-status/batch`。
 
-Add this note near the Redis bridge section:
+在 Redis bridge 小节附近加上这段说明：
 
 ```markdown
 live-monitor 只负责写入 Redis 状态；下游查询入口已迁移到 `services/live-crawler/monitor/api/live_status_routes.py`。
 ```
 
-- [ ] **Step 3: Update ROADMAP when execution starts**
+- [x] **步骤 3：在开始执行时更新 ROADMAP**
 
-If this plan is being executed immediately, add one `进行中` item to `docs/ROADMAP.md`:
+如果这个 plan 现在就要执行，在 `docs/ROADMAP.md` 中新增一条 `进行中` 项：
 
 ```markdown
 - [ ] **TikTok 直播大屏数据 API 服务**(live-crawler live-status/dashboard 查询入口) → [superpowers/plans/2026-06-24-tiktok-live-dashboard-data-api-service.md](superpowers/plans/2026-06-24-tiktok-live-dashboard-data-api-service.md)
 ```
 
-When all acceptance criteria pass, move the item to `最近完成` with date `2026-06-24`.
+当所有验收标准都通过后，把该项移到 `最近完成`，日期写 `2026-06-24`。
 
-## Task 7: Final Verification
+## 任务 7：最终验证
 
-**Files:**
-- Verify: all files touched by this plan
+**文件：**
+- 验证：本计划触及的所有文件
 
-- [ ] **Step 1: Run new live-crawler tests**
+- [x] **步骤 1：运行新的 live-crawler 测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/utils/test_redis_bridge.py tests/crawlers/http/test_tiktok_dashboard_fetchers.py tests/services/test_dashboard_data.py tests/monitor/test_live_status_batch.py tests/monitor/test_tiktok_dashboard_routes.py tests/monitor/test_server_routes.py -v
 ```
 
-Expected: pass.
+预期：通过。
 
-- [ ] **Step 2: Run TikTok HTTP regression tests**
+- [x] **步骤 2：运行 TikTok HTTP 回归测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
 uv run --python 3.12 pytest tests/crawlers/http/test_tiktok_collector_query_params.py tests/crawlers/http/test_tiktok_collector_credential_validation.py tests/crawlers/http/test_tiktok_collector_business_retry.py tests/crawlers/http/test_tiktok_adapter_recovery.py -v
 ```
 
-Expected: pass.
+预期：通过。
 
-- [ ] **Step 3: Run live-monitor remaining Redis tests**
+- [x] **步骤 3：运行 live-monitor 剩余的 Redis 测试**
 
-Run:
+运行：
 
 ```bash
 cd services/live-monitor
 uv run --python 3.12 pytest tests/test_redis_bridge.py tests/test_api_response.py -v
 ```
 
-Expected: pass.
+预期：通过。
 
-- [ ] **Step 4: Confirm old live-monitor query route is gone**
+- [x] **步骤 4：确认旧的 live-monitor 查询路由已删除**
 
-Run:
+运行：
 
 ```bash
 rg -n "routes.live_status|live_status_router|/api/v1/tiktok/live-status/batch" services/live-monitor
 ```
 
-Expected: no references to `routes.live_status` or `live_status_router`. A README note that says the query entry moved to live-crawler is acceptable.
+预期：没有 `routes.live_status` 或 `live_status_router` 的引用。README 里说明查询入口已迁移到 live-crawler 也可以接受。
 
-- [ ] **Step 5: Confirm new live-crawler endpoints are discoverable**
+- [x] **步骤 5：确认新的 live-crawler endpoint 可发现**
 
-Run:
+运行：
 
 ```bash
 cd services/live-crawler
@@ -1619,7 +1622,7 @@ for route in app.routes:
 PY
 ```
 
-Expected output includes:
+预期输出包含：
 
 ```text
 /api/cookies/{account_id}
@@ -1628,16 +1631,16 @@ Expected output includes:
 /api/v1/tiktok/dashboard/data
 ```
 
-- [ ] **Step 6: Manual smoke test with real token and account**
+- [ ] **步骤 6：使用真实 token 和账号做手工 smoke test**
 
-Start the API:
+启动 API：
 
 ```bash
 cd services/live-crawler
 APP_ENV=pro uv run --python 3.12 python -m monitor.server
 ```
 
-In another terminal, call live-status:
+在另一个终端里调用 live-status：
 
 ```bash
 TOKEN="$(uv run --python 3.12 python - <<'PY'
@@ -1652,9 +1655,9 @@ curl -X POST http://127.0.0.1:8777/api/v1/tiktok/live-status/batch \
   -d "{\"collectionIds\":[\"${ACCOUNT_ID}\"]}"
 ```
 
-Expected: JSON body has `code=200` and `data[0]` contains `collectionId`, `isLive`, `roomId`, and `flvUrl`.
+预期：JSON body 的 `code=200`，且 `data[0]` 包含 `collectionId`、`isLive`、`roomId` 和 `flvUrl`。
 
-Call dashboard data:
+调用 dashboard data：
 
 ```bash
 ROOM_ID="7651420995556182804"
@@ -1664,19 +1667,19 @@ curl -X POST http://127.0.0.1:8777/api/v1/tiktok/dashboard/data \
   -d "{\"dataType\":\"trend_chart\",\"roomId\":\"${ROOM_ID}\",\"collectionId\":\"${ACCOUNT_ID}\",\"timeRange\":\"last_5m\"}"
 ```
 
-Expected: JSON body has `code=200`, `data.dataType="trend_chart"`, `data.roomId` equal to `${ROOM_ID}`, and `data.request.response` is a TikTok raw JSON string.
+预期：JSON body 的 `code=200`，`data.dataType="trend_chart"`，`data.roomId` 等于 `${ROOM_ID}`，并且 `data.request.response` 是 TikTok 原始 JSON 字符串。
 
-## Acceptance Criteria
+## 验收标准
 
-- `POST /api/v1/tiktok/live-status/batch` is available from `services/live-crawler/monitor/server.py`.
-- `POST /api/v1/tiktok/live-status/batch` returns the same `collectionId/isLive/roomId/flvUrl` shape as the old live-monitor route.
-- Both new endpoints reject missing or wrong `X-API-Token` with HTTP 403.
-- `services/live-monitor/routes/live_status.py` and `services/live-monitor/tests/test_live_status_batch.py` are gone.
-- `POST /api/v1/tiktok/dashboard/data` supports `core_stats`, `trend_chart`, `source_new`, `user_portrait`, `product_list`, and `room_info`.
-- `trend_chart` supports `timeRange=full|last_5m|last_30m`; only `last_5m` and `last_30m` send upstream `start_time`.
-- `real_collector.py` contains dashboard-only fetchers and does not mix scheduled `collect_tiktok()` behavior into real-time query flow.
-- `real_collector.py` uses the 55-ID core stats set and the independent 27-ID trend chart set from `API-inventory.md`.
-- Dashboard fetchers do not call `_check_code()` for the six business endpoints.
-- `setup_session(collectionId)` remains the only TikTok dashboard credential/session entry.
-- New focused tests and existing TikTok HTTP regression tests pass.
-- README and ROADMAP reflect the new ownership: live-monitor writes Redis; live-crawler exposes downstream query APIs.
+- `POST /api/v1/tiktok/live-status/batch` 可从 `services/live-crawler/monitor/server.py` 访问。
+- `POST /api/v1/tiktok/live-status/batch` 返回的 `collectionId/isLive/roomId/flvUrl` 结构与旧的 live-monitor 路由一致。
+- 两个新 endpoint 都会对缺失或错误的 `X-API-Token` 返回 HTTP 403。
+- `services/live-monitor/routes/live_status.py` 和 `services/live-monitor/tests/test_live_status_batch.py` 已删除。
+- `POST /api/v1/tiktok/dashboard/data` 支持 `core_stats`、`trend_chart`、`source_new`、`user_portrait`、`product_list` 和 `room_info`。
+- `trend_chart` 支持 `timeRange=full|last_5m|last_30m`；只有 `last_5m` 和 `last_30m` 会向上游发送 `start_time`。
+- `real_collector.py` 只包含大屏 fetcher，不会把定时 `collect_tiktok()` 的行为混进实时查询流。
+- `real_collector.py` 使用 `API-inventory.md` 里的 55-ID core stats 集合，以及独立的 27-ID trend chart 集合。
+- 对这六个 business endpoint，大屏 fetcher 不会调用 `_check_code()`。
+- `setup_session(collectionId)` 仍然是 TikTok 大屏凭据/session 的唯一入口。
+- 新增的聚焦测试和现有的 TikTok HTTP 回归测试都通过。
+- README 和 ROADMAP 体现了新的归属关系：live-monitor 写 Redis；live-crawler 暴露下游查询 API。

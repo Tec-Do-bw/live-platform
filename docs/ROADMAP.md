@@ -14,6 +14,8 @@
 
 ## 最近完成 (Recently Done · 仅显示最近 10 项)
 
+- [x] 2026-06-24 TikTok 直播稳定性旁路探针：15 分钟巡检、异常时 Playwright 验真、FLV 指纹记录
+- [x] 2026-06-24 TikTok 直播大屏数据 API 服务：live-crawler live-status/dashboard 查询入口 → [superpowers/plans/2026-06-24-tiktok-live-dashboard-data-api-service.md](superpowers/plans/2026-06-24-tiktok-live-dashboard-data-api-service.md)
 - [x] 2026-06-09 Shopee 登录检测重构 Phase 1：主动验证快速路径 + 跨境店多店列表接口 + HTTP 切换
 - [x] 2026-05-28 Phase 4B 删除 SQLite 监控面板、补采系统与旧前端
 - [x] 2026-05-28 `/get_roominfo` 排除 `flv_url=error` 的采集失败房间

@@ -2,7 +2,7 @@
 
 > Status: draft implementation spec
 > Date: 2026-06-23
-> Scope: `services/live-monitor/` and `services/live-stream/`
+> Scope: `services/live-monitor/`, `services/live-stream/`, and the downstream read API in `services/live-crawler/`
 > 2026-06-24 note: `services/live-platform/` 已从现役服务树删除。本文保留对其 Redis key shape 的历史引用，仅作为设计来源说明。
 
 ## Goal
@@ -31,7 +31,7 @@ The new bridge separates ownership:
 | current platform live status and latest FLV URL | `live-monitor` | `live:collection:{collectionId}:status` |
 | recording worker lease | `live-stream` | `live:collection:{collectionId}:lease` |
 | recording worker runtime status | `live-stream` | `live:collection:{collectionId}:recording` |
-| dashboard live-status batch API | `live-monitor` | reads `status` |
+| dashboard live-status batch API | `live-crawler` | reads `status` |
 
 ## Design Decisions
 
@@ -243,7 +243,7 @@ This is the main fix for stale FLV URL failures.
 
 ## Batch Live Status API
 
-Service: `live-monitor`
+Service: `live-crawler`
 
 Endpoint:
 
@@ -305,7 +305,8 @@ Recommended files:
 
 | Service | Files |
 |---|---|
-| `live-monitor` | `utils/redis_bridge.py`, `main.py`, `tests/test_redis_bridge.py`, `tests/test_live_status_batch.py` |
+| `live-monitor` | `utils/redis_bridge.py`, `main.py`, `tests/test_redis_bridge.py` |
+| `live-crawler` | `utils/redis_bridge.py`, `monitor/api/live_status_routes.py`, `tests/utils/test_redis_bridge.py`, `tests/monitor/test_live_status_batch.py` |
 | `live-stream` | `redis_room_source.py`, `TT_client.py`, `requirements.txt`, `tests/test_redis_room_source.py` |
 
 Do not copy `services/live-platform/shared/redis_store.py` wholesale. Keep the bridge code local to each service and preserve each service's existing style.

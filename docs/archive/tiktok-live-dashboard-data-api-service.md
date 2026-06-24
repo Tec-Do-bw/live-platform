@@ -198,7 +198,7 @@ API 层自身失败返回独立错误对象。
 | --- | --- | --- |
 | `core_stats` | `/api/v1/insights/workbench/live/detail/core/stats` | `room_filter.room_id`、`is_content_type=1`、`creator_id`、`country`、55 个 `stats_types` |
 | `trend_chart` | `/api/v1/insights/workbench/live/detail/trend/chart` | `room_filter.room_id`、`is_content_type=1`、`TREND_CHART_FULL` 27 个独立趋势 ID；`timeRange` 映射为可选 `start_time` |
-| `source_new` | `/api/v3/insights/workbench/live/detail/source/new` | `room_id`、`is_content_type=1`、`stats_types=[100]`、`version=3` |
+| `source_new` | `/api/v3/insights/workbench/live/detail/source/new` | `room_filter.room_id`、`room_filter.is_content_type=1`、`stats_types=[100]`、`version=3` |
 | `user_portrait` | `/api/v1/insights/workbench/live/detail/user/portrait` | `room_filter.room_id`、`is_content_type=1`、`stats_types=[80,81,82,83,90,85,86,87,88,350,351,352,353]` |
 | `product_list` | `/api/v1/insights/workbench/live/detail/product/list` | `room_filter.room_id`、`is_content_type=1`、`sorting_type=1`、`stats_types=[4,5,6,7,10,15,17,18,21,30,35,41,48,51,55,64,120,301,345]` |
 | `room_info` | `/api/v1/insights/workbench/live/detail/room/info` | `room_filter.room_id`、`is_content_type=1`、无 `stats_types` |
@@ -311,7 +311,7 @@ def fetch_dashboard_room_info(session: Any, cred: Credentials, room_id: str) -> 
 - `core_stats` request body 包含 `creator_id`、`country`、55 个 stats types。
 - `trend_chart` 使用 27 个独立趋势 ID。
 - `trend_chart` 在传入 `start_time` 时把它写入请求体。
-- `source_new` 使用 v3 path、`room_id` 扁平结构、`version=3`。
+- `source_new` 使用 v3 path、`room_filter.room_id` 结构、`version=3`。
 - `user_portrait` 使用 13 个画像 ID。
 - `product_list` 使用 `sorting_type=1` 和 19 个商品 ID。
 - `room_info` 使用 room/info path，request body 无 `stats_types`。

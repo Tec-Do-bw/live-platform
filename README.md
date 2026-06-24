@@ -94,7 +94,7 @@ cd services/live-crawler/monitor/frontend && npm install
 |------|------|
 | `cd services/live-crawler && python main.py --mode once --crawl-type realtime` | Lazada 实时采集 |
 | `cd services/live-crawler && python main.py --mode full` | 全量采集(串行) |
-| `cd services/live-crawler && python -m monitor.server` | 启动采集监控面板(端口 8777) |
+| `cd services/live-crawler && python -m monitor.server` | 启动 live-crawler API(Cookie/TikTok refresh/live-status/dashboard,端口 8777) |
 | `cd services/live-crawler && python -m cookie_keeper` | 启动 Cookie 养号服务 |
 | `curl http://localhost:8080/health` | 检查 live-monitor 健康状态 |
 
