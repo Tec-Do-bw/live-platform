@@ -65,7 +65,9 @@ def fetch_dashboard_data(
     """查询单个 TikTok 直播大屏接口并包装成上报消息 envelope。"""
     session = None
     try:
-        cred, session, _login_result = setup_session(req.collectionId)
+        # skip_verification=True：跳过 fetch_account_info 登录验证
+        # 大屏查询场景凭据已确认可用，业务接口会自行处理登录态失效
+        cred, session, _login_result = setup_session(req.collectionId, skip_verification=True)
         fetcher = DASHBOARD_FETCHERS[req.dataType]
         if req.dataType == DashboardDataType.trend_chart:
             result = fetcher(session, cred, req.roomId, _start_time_for(req.timeRange, now_func))

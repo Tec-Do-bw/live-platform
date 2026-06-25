@@ -43,7 +43,11 @@ def test_fetch_dashboard_data_builds_success_envelope(monkeypatch):
     session = FakeSession()
     seen = {}
 
-    monkeypatch.setattr(dashboard_data, "setup_session", lambda collection_id: (FakeCred(), session, {}))
+    def mock_setup_session(collection_id, *, skip_verification=False):
+        seen["skip_verification"] = skip_verification
+        return FakeCred(), session, None
+
+    monkeypatch.setattr(dashboard_data, "setup_session", mock_setup_session)
 
     def fake_fetcher(got_session, got_cred, room_id):
         seen["args"] = (got_session, got_cred, room_id)
@@ -72,6 +76,7 @@ def test_fetch_dashboard_data_builds_success_envelope(monkeypatch):
     assert result["data"]["socketUserId"] == "coll-1"
     assert seen["args"][0] is session
     assert seen["args"][2] == "room-1"
+    assert seen["skip_verification"] is True  # 验证传入 skip_verification=True
     assert session.closed is True
 
 
@@ -87,7 +92,11 @@ def test_trend_chart_time_range_maps_to_start_time(monkeypatch, time_range, expe
     session = FakeSession()
     seen = {}
 
-    monkeypatch.setattr(dashboard_data, "setup_session", lambda collection_id: (FakeCred(), session, {}))
+    monkeypatch.setattr(
+        dashboard_data,
+        "setup_session",
+        lambda collection_id, *, skip_verification=False: (FakeCred(), session, None),
+    )
     monkeypatch.setattr(
         dashboard_data,
         "_format_message",
@@ -120,7 +129,11 @@ def test_trend_chart_time_range_maps_to_start_time(monkeypatch, time_range, expe
 )
 def test_fetch_dashboard_data_maps_errors_and_closes_session(monkeypatch, exc, code, reason):
     session = FakeSession()
-    monkeypatch.setattr(dashboard_data, "setup_session", lambda collection_id: (FakeCred(), session, {}))
+    monkeypatch.setattr(
+        dashboard_data,
+        "setup_session",
+        lambda collection_id, *, skip_verification=False: (FakeCred(), session, None),
+    )
 
     def fake_fetcher(*args):
         raise exc
@@ -145,7 +158,11 @@ def test_fetch_dashboard_data_maps_errors_and_closes_session(monkeypatch, exc, c
 )
 def test_fetch_dashboard_data_maps_retry_exceptions(monkeypatch, exc, expected_reason):
     session = FakeSession()
-    monkeypatch.setattr(dashboard_data, "setup_session", lambda collection_id: (FakeCred(), session, {}))
+    monkeypatch.setattr(
+        dashboard_data,
+        "setup_session",
+        lambda collection_id, *, skip_verification=False: (FakeCred(), session, None),
+    )
 
     def fake_fetcher(*args):
         raise exc
@@ -161,11 +178,10 @@ def test_fetch_dashboard_data_maps_retry_exceptions(monkeypatch, exc, expected_r
 
 
 def test_fetch_dashboard_data_maps_setup_login_required_without_session(monkeypatch):
-    monkeypatch.setattr(
-        dashboard_data,
-        "setup_session",
-        lambda collection_id: (_ for _ in ()).throw(LoginRequired("login expired")),
-    )
+    def mock_setup_session(collection_id, *, skip_verification=False):
+        raise LoginRequired("login expired")
+
+    monkeypatch.setattr(dashboard_data, "setup_session", mock_setup_session)
 
     with pytest.raises(DashboardApiError) as err:
         dashboard_data.fetch_dashboard_data(_req())

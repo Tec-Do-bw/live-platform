@@ -93,3 +93,63 @@ def test_region_profile_known_region_unaffected():
     """已知 region：正常返回对应特征，校验未引入回归。"""
     assert collector._region_profile("JP")["timezone_offset"] == 32400
     assert collector._region_profile("us")["timezone_offset"] == -28800
+
+
+def test_setup_session_skip_verification_returns_none_login_result(monkeypatch):
+    """skip_verification=True：跳过 fetch_account_info，返回 (cred, session, None)。"""
+    call_count = {"fetch_account_info": 0}
+
+    def mock_fetch_account_info(session, cred):
+        call_count["fetch_account_info"] += 1
+        return {"ok": True, "url": "", "request_body": None, "response_body": "", "data": {}}
+
+    monkeypatch.setattr(collector, "load_credentials", lambda account_id, platform="tiktok": _cred())
+    monkeypatch.setattr(collector, "get_session", lambda spec, proxy=None: _FakeSession())
+    monkeypatch.setattr(collector, "fetch_account_info", mock_fetch_account_info)
+
+    cred, session, login_result = collector.setup_session("acc-1", skip_verification=True)
+
+    assert cred is not None
+    assert session is not None
+    assert login_result is None  # 跳过验证时返回 None
+    assert call_count["fetch_account_info"] == 0  # 未调用 fetch_account_info
+    session.close()
+
+
+def test_setup_session_default_behavior_verifies_login(monkeypatch):
+    """默认行为（skip_verification=False）：验证登录态，返回 login_result。"""
+    call_count = {"fetch_account_info": 0}
+
+    def mock_fetch_account_info(session, cred):
+        call_count["fetch_account_info"] += 1
+        return {"ok": True, "url": "", "request_body": None, "response_body": "", "data": {"user_id": "123"}}
+
+    monkeypatch.setattr(collector, "load_credentials", lambda account_id, platform="tiktok": _cred())
+    monkeypatch.setattr(collector, "get_session", lambda spec, proxy=None: _FakeSession())
+    monkeypatch.setattr(collector, "fetch_account_info", mock_fetch_account_info)
+
+    cred, session, login_result = collector.setup_session("acc-1")
+
+    assert login_result is not None
+    assert login_result["ok"] is True
+    assert call_count["fetch_account_info"] == 1  # 调用了 fetch_account_info
+    session.close()
+
+
+class _FakeSession:
+    """测试用轻量 Session 替身。"""
+
+    def __init__(self):
+        self.cookies = _FakeCookies()
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeCookies:
+    """测试用 cookies 容器。"""
+
+    def update(self, cookies):
+        pass
+

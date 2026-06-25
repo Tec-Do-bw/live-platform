@@ -788,14 +788,24 @@ def _full_stats_days_range(region: str) -> range:
     return range(0, days_count)
 
 
-def setup_session(account_id: str) -> tuple[Credentials, Any, FetchResult]:
+def setup_session(
+    account_id: str,
+    *,
+    skip_verification: bool = False,
+) -> tuple[Credentials, Any, FetchResult | None]:
     """加载凭据、建立会话并验证登录态。
 
     从 collect_tiktok 头部抽出，供 adapter 在进入数据采集前先验证登录态：
     验证通过才发 success 回调并决定本轮 full，验证失败抛 LoginRequired 走登出回调。
 
+    Args:
+        account_id: 账号 ID
+        skip_verification: 跳过 fetch_account_info 验证（用于实时查询场景，调用方已确认凭据可用）
+
     Returns:
         (cred, session, login_result) 三元组；登录态失效时抛 LoginRequired。
+        - skip_verification=False 时，login_result 为 FetchResult
+        - skip_verification=True 时，login_result 为 None
         调用方负责在使用完毕后 session.close()。
     """
     cred = load_credentials(account_id, platform="tiktok")
@@ -814,6 +824,13 @@ def setup_session(account_id: str) -> tuple[Credentials, Any, FetchResult]:
     session = get_session(cred.fingerprint_spec, proxy=cred.proxy)
     try:
         session.cookies.update(_cookie_dict_from_token(cred.token_data))
+
+        # 跳过验证场景：直接返回会话，不调用 fetch_account_info
+        # 用于实时查询（如大屏数据），调用方已确认凭据可用，业务接口会自行处理登录态失效
+        if skip_verification:
+            return cred, session, None
+
+        # 默认场景：验证登录态
         login_result = fetch_account_info(session, cred)
     except TikTokBusinessCodeError as e:
         session.close()
