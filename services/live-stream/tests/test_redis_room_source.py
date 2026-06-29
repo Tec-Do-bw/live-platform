@@ -1,9 +1,18 @@
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import redis_room_source as rrs
 from redis_room_source import RedisRoomSource, COLLECTIONS_KEY, config_key, status_key, lease_key, recording_key
+
+
+@pytest.fixture(autouse=True)
+def _stub_lease_ttl(monkeypatch):
+    # 隔离 Apollo: lease ttl 用固定值,避免测试触达配置中心
+    monkeypatch.setattr(rrs.config, "stream_lease_ttl_seconds", lambda: 360)
 
 
 class FakeRedis:
