@@ -17,6 +17,7 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Callable
 import re
+import config
 
 
 # 配置日志
@@ -30,30 +31,9 @@ logger.add(
 )
 
 app = FastAPI()
-LIVE_STREAM_ROOM_SOURCE = os.environ.get("LIVE_STREAM_ROOM_SOURCE", "redis").lower()
 online_room_list = {}
 MainHelperObj = None
 _redis_room_source = None
-
-
-def _env_int(name: str, default: int, minimum: int | None = None) -> int:
-    try:
-        value = int(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        value = default
-    if minimum is not None:
-        return max(value, minimum)
-    return value
-
-
-def _env_float(name: str, default: float, minimum: float | None = None) -> float:
-    try:
-        value = float(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        value = default
-    if minimum is not None:
-        return max(value, minimum)
-    return value
 
 
 def build_live_url_candidates(port_info: dict) -> list[str]:
@@ -498,11 +478,6 @@ class FFmpegStreamManager:
         }
 
 
-# ========== 主备节点配置 ==========
-PRIMARY_NODE_URL = os.environ.get('PRIMARY_NODE_URL', 'http://192.168.46.39:8080')
-BACKUP_NODE_URL = os.environ.get('BACKUP_NODE_URL', 'http://192.168.46.39:8080')  # 备用节点URL
-
-
 # 心跳接口
 @app.get("/check_status")
 def read_root():
@@ -531,9 +506,10 @@ def request_with_fallback(method, endpoint, json_data=None, timeout=5):
 
     返回: 响应对象，如果两个节点都失败则返回 None
     """
-    nodes = [PRIMARY_NODE_URL]
-    if BACKUP_NODE_URL:
-        nodes.append(BACKUP_NODE_URL)
+    nodes = [config.primary_node_url()]
+    backup = config.backup_node_url()
+    if backup and backup != nodes[0]:
+        nodes.append(backup)
 
     for node_url in nodes:
         try:
@@ -556,49 +532,6 @@ def request_with_fallback(method, endpoint, json_data=None, timeout=5):
                 return None
 
     return None
-
-
- # apollo获取配置
-def fetch_apollo_config(istest=0):
-    APOLLO_URL = str(os.environ.get('APOLLO_URL')).strip()
-    APOLLOID = str(os.environ.get('APOLLOID')).strip()
-
-    # 判断是不是测试环境
-    if 'develop' in APOLLO_URL:
-        istest = 1
-
-    # if istest == 1:
-    #     APOLLO_URL = 'http://dev-apollo.tec-develop.com'
-
-    if istest != 1:
-        # http://10.225.17.67:30080（windows机子需要单独做映射）
-        if os.name == 'nt':
-            APOLLO_URL = 'http://10.225.17.67:30080'
-
-    APOLLOID = 'live-spider'
-
-    if istest == 1:
-        url = "{}/configs/{}/dev01/application".format(str(APOLLO_URL), str(APOLLOID))
-        print("测试环境", url)
-    else:
-        url = "{}/configs/{}/PRO/application".format(str(APOLLO_URL), str(APOLLOID))
-        print("生产环境", url)
-
-    # 配置你的 Apollo 服务详情
-    config_data = {}
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # 检查响应是否成功
-        config_data = response.json()
-    except Exception as e:
-        print(f"获取apollo配置失败: {e}")
-
-    if config_data:
-        configurations = config_data["configurations"]
-        return configurations
-    else:
-        return {}
-
 
 
 # 获取当前文件所在文件夹绝对路径
@@ -671,9 +604,8 @@ def count_files_in_subdirectories(folder_path="", iscount=False):
 
 # kafka相关操作
 class KafkaHelper:
-    def __init__(self, istest=1):
-        configurations = fetch_apollo_config(istest)
-        kafka_server = list(eval(configurations["kafkaPro"]))
+    def __init__(self):
+        kafka_server = config.kafka_servers()
         self.producer = KafkaProducer(
             bootstrap_servers=kafka_server,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -687,13 +619,12 @@ class KafkaHelper:
 
 # 阿里云OSS相关操作
 class AiyunOBSHelper:
-    def __init__(self, istest=1):
-        configurations = fetch_apollo_config(istest)
-        # print("configurations-->",configurations)
-        self.endpoint = configurations['endpoint']
-        self.bucket_name = configurations['bucket_name']
-        self.access_key_id = configurations['access_key_id']
-        self.access_key_secret = configurations['access_key_secret']
+    def __init__(self):
+        oss_cfg = config.oss_config()
+        self.endpoint = oss_cfg["endpoint"]
+        self.bucket_name = oss_cfg["bucket_name"]
+        self.access_key_id = oss_cfg["access_key_id"]
+        self.access_key_secret = oss_cfg["access_key_secret"]
 
         # 创建Bucket实例
         self.auth = oss2.Auth(self.access_key_id, self.access_key_secret)
@@ -925,10 +856,10 @@ class FileHelper:
 
 # 入kafaka 格式矫正
 class MainHelper:
-    def __init__(self, topic_name='liveTs', istest=1):
+    def __init__(self, topic_name='liveTs'):
         self.FileHelperObj = FileHelper()
-        self.AliYOBSHelperObj = AiyunOBSHelper(istest)
-        self.KafkaHelperObj = KafkaHelper(istest)
+        self.AliYOBSHelperObj = AiyunOBSHelper()
+        self.KafkaHelperObj = KafkaHelper()
         self.topic_name = topic_name
 
         # 文件处理状态追踪 (防止重复处理)
@@ -1125,18 +1056,11 @@ class MainHelper:
             except Exception as e:
                 logger.error(f"发送Kafka异常--> {e}")
 def is_redis_room_source_enabled():
-    return os.environ.get("LIVE_STREAM_ROOM_SOURCE", LIVE_STREAM_ROOM_SOURCE).lower() == "redis"
+    return config.is_redis_room_source()
 
 
 def get_worker_id():
-    configured = os.environ.get("LIVE_STREAM_WORKER_ID")
-    if configured:
-        return configured
-    try:
-        local_ip = socket.gethostbyname(socket.gethostname())
-    except Exception:
-        local_ip = "unknown"
-    return f"{socket.gethostname()}:{local_ip}:{os.getpid()}"
+    return config.worker_id()
 
 
 def get_redis_room_source():
@@ -1239,14 +1163,14 @@ def ProducerTask(port_info_init):
 
     # 创建推流配置
     stream_config = StreamConfig(
-        max_retries=_env_int("STREAM_MAX_RETRIES", 12, minimum=1),
-        retry_interval=_env_int("STREAM_RETRY_INTERVAL_SECONDS", 1, minimum=1),
-        retry_backoff=_env_float("STREAM_RETRY_BACKOFF", 1.5, minimum=1.0),
-        max_retry_interval=_env_int("STREAM_MAX_RETRY_INTERVAL_SECONDS", 30, minimum=1),
-        analyzeduration=_env_int("STREAM_ANALYZE_DURATION_US", 5000000, minimum=1000000),
-        probesize=_env_int("STREAM_PROBE_SIZE_BYTES", 10000000, minimum=1000000),
-        heartbeat_interval=_env_int("STREAM_HEARTBEAT_INTERVAL_SECONDS", 10, minimum=5),
-        no_data_timeout=_env_int("STREAM_NO_DATA_TIMEOUT_SECONDS", 25, minimum=10)
+        max_retries=config.stream_max_retries(),
+        retry_interval=config.stream_retry_interval_seconds(),
+        retry_backoff=config.stream_retry_backoff(),
+        max_retry_interval=config.stream_max_retry_interval_seconds(),
+        analyzeduration=config.stream_analyze_duration_us(),
+        probesize=config.stream_probe_size_bytes(),
+        heartbeat_interval=config.stream_heartbeat_interval_seconds(),
+        no_data_timeout=config.stream_no_data_timeout_seconds(),
     )
 
     # 创建推流管理器
@@ -1564,10 +1488,8 @@ if __name__ == "__main__":
         os.makedirs(log_dir)
         logger.info(f"创建日志目录: {log_dir}")
 
-    istest = 0
-    config_apollo = fetch_apollo_config(istest)
-    topic_name = config_apollo.get("topic_name", "liveTs")
-    liveRoomNumber = int(config_apollo.get("cutliveNumber",4))
+    topic_name = config.kafka_topic()
+    liveRoomNumber = config.cut_live_number()
     MainHelperObj = MainHelper(topic_name=topic_name)
     online_room_list = dict()
 
