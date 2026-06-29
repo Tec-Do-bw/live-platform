@@ -7,6 +7,8 @@
 
 遵循 `CLAUDE.md` 中的工作流、代码规范、文档维护规则与已知坑。
 
+配置相关改动遵循 `.claude/rules/apollo-config.md`（Apollo 为唯一配置权威源,小写点分 key,引导参数走环境变量）。
+
 仓库当前不再包含 `services/live-platform/`; 相关 Phase 1 / MediaMTX 资料仅作历史归档参考，不再当作现役子项目入口。
 
 ## Git 工作流与远程仓库策略

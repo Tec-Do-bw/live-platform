@@ -56,6 +56,7 @@ Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower
 | `shopee-special-rules.md` | 编辑 live-crawler shopee 相关代码 | page_urls 模板、时区 T-1、域名映射、JS 注入采集 |
 | `tiktok-collection-time.md` | 编辑 live-crawler tiktok(http collector/browser)/browserapi | 增量 T-3、全量 T-28、禁用 SETTLEMENT_HOUR |
 | `tiktok-http-lifecycle.md` | 编辑 tiktok HTTP 三链路(adapter/collector/refresher/refresh_routes/login_monitor) | 登录态一律走 HTTP account_info、回调三铁律、三链路衔接契约 |
+| `apollo-config.md` | 编辑各服务 core/apollo、config.py 或配置读取代码 | Apollo 唯一权威源、点分命名、引导参数例外、OpenAPI 写入与 token 安全 |
 
 其他工作流约定:
 
