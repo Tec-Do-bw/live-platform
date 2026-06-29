@@ -1,18 +1,44 @@
+import importlib
 import os
 import sys
+import types
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import redis_room_source as rrs
-from redis_room_source import RedisRoomSource, COLLECTIONS_KEY, config_key, status_key, lease_key, recording_key
+
+class FakeApollo:
+    def get_value(self, key, default_val=None, namespace="application"):
+        return default_val
 
 
-@pytest.fixture(autouse=True)
-def _stub_lease_ttl(monkeypatch):
+@pytest.fixture
+def rrs(monkeypatch):
+    old_config = sys.modules.pop("config", None)
+    old_room_source = sys.modules.pop("redis_room_source", None)
+    old_apollo = sys.modules.get("core.apollo")
+    fake_apollo_module = types.ModuleType("core.apollo")
+    fake_apollo_module.APOLLO = FakeApollo()
+    monkeypatch.setitem(sys.modules, "core.apollo", fake_apollo_module)
+    module = importlib.import_module("redis_room_source")
     # 隔离 Apollo: lease ttl 用固定值,避免测试触达配置中心
-    monkeypatch.setattr(rrs.config, "stream_lease_ttl_seconds", lambda: 360)
+    monkeypatch.setattr(module.config, "stream_lease_ttl_seconds", lambda: 360)
+    try:
+        yield module
+    finally:
+        if sys.modules.get("redis_room_source") is module:
+            sys.modules.pop("redis_room_source", None)
+        if old_room_source is not None:
+            sys.modules["redis_room_source"] = old_room_source
+        if sys.modules.get("config") is module.config:
+            sys.modules.pop("config", None)
+        if old_config is not None:
+            sys.modules["config"] = old_config
+        if old_apollo is None:
+            sys.modules.pop("core.apollo", None)
+        else:
+            sys.modules["core.apollo"] = old_apollo
 
 
 class FakeRedis:
@@ -70,43 +96,43 @@ class FakeRedis:
         return 0
 
 
-def test_claim_allows_one_worker_only():
+def test_claim_allows_one_worker_only(rrs):
     redis = FakeRedis()
-    source = RedisRoomSource(redis)
+    source = rrs.RedisRoomSource(redis)
 
     assert source.claim("coll_1", "worker-a", ttl_seconds=360) is True
     assert source.claim("coll_1", "worker-b", ttl_seconds=360) is False
-    assert redis.get(lease_key("coll_1")) == "worker-a"
+    assert redis.get(rrs.lease_key("coll_1")) == "worker-a"
 
 
-def test_renew_requires_same_worker():
+def test_renew_requires_same_worker(rrs):
     redis = FakeRedis()
-    source = RedisRoomSource(redis)
+    source = rrs.RedisRoomSource(redis)
     source.claim("coll_1", "worker-a", ttl_seconds=100)
 
     assert source.renew("coll_1", "worker-b", ttl_seconds=360) is False
     assert source.renew("coll_1", "worker-a", ttl_seconds=360) is True
-    assert redis.expirations[lease_key("coll_1")] == 360
+    assert redis.expirations[rrs.lease_key("coll_1")] == 360
 
 
-def test_release_requires_same_worker():
+def test_release_requires_same_worker(rrs):
     redis = FakeRedis()
-    source = RedisRoomSource(redis)
+    source = rrs.RedisRoomSource(redis)
     source.claim("coll_1", "worker-a", ttl_seconds=100)
 
     assert source.release("coll_1", "worker-b") is False
-    assert redis.get(lease_key("coll_1")) == "worker-a"
+    assert redis.get(rrs.lease_key("coll_1")) == "worker-a"
     assert source.release("coll_1", "worker-a") is True
-    assert redis.get(lease_key("coll_1")) is None
+    assert redis.get(rrs.lease_key("coll_1")) is None
 
 
-def test_live_candidates_skip_expired_status():
+def test_live_candidates_skip_expired_status(rrs):
     redis = FakeRedis()
-    source = RedisRoomSource(redis)
-    redis.sadd(COLLECTIONS_KEY, "coll_expired")
-    redis.sadd(COLLECTIONS_KEY, "coll_live")
+    source = rrs.RedisRoomSource(redis)
+    redis.sadd(rrs.COLLECTIONS_KEY, "coll_expired")
+    redis.sadd(rrs.COLLECTIONS_KEY, "coll_live")
     redis.hset(
-        status_key("coll_expired"),
+        rrs.status_key("coll_expired"),
         mapping={
             "collectionId": "coll_expired",
             "isLive": "1",
@@ -117,7 +143,7 @@ def test_live_candidates_skip_expired_status():
         },
     )
     redis.hset(
-        status_key("coll_live"),
+        rrs.status_key("coll_live"),
         mapping={
             "collectionId": "coll_live",
             "isLive": "1",
@@ -142,11 +168,11 @@ def test_live_candidates_skip_expired_status():
     ]
 
 
-def test_get_status_returns_metadata_for_producer_task():
+def test_get_status_returns_metadata_for_producer_task(rrs):
     redis = FakeRedis()
-    source = RedisRoomSource(redis)
+    source = rrs.RedisRoomSource(redis)
     redis.hset(
-        status_key("coll_live"),
+        rrs.status_key("coll_live"),
         mapping={
             "collectionId": "coll_live",
             "isLive": "1",
@@ -165,13 +191,13 @@ def test_get_status_returns_metadata_for_producer_task():
     assert row["metadata"]["filePath"] == "demo"
 
 
-def test_live_candidates_skip_disabled_config():
+def test_live_candidates_skip_disabled_config(rrs):
     redis = FakeRedis()
-    source = RedisRoomSource(redis)
-    redis.sadd(COLLECTIONS_KEY, "coll_disabled")
-    redis.hset(config_key("coll_disabled"), mapping={"enabled": "0"})
+    source = rrs.RedisRoomSource(redis)
+    redis.sadd(rrs.COLLECTIONS_KEY, "coll_disabled")
+    redis.hset(rrs.config_key("coll_disabled"), mapping={"enabled": "0"})
     redis.hset(
-        status_key("coll_disabled"),
+        rrs.status_key("coll_disabled"),
         mapping={
             "collectionId": "coll_disabled",
             "isLive": "1",
@@ -186,11 +212,11 @@ def test_live_candidates_skip_disabled_config():
     assert source.get_status("coll_disabled", now=1500) is None
 
 
-def test_write_recording_status_sets_hash_and_ttl():
+def test_write_recording_status_sets_hash_and_ttl(rrs):
     redis = FakeRedis()
-    source = RedisRoomSource(redis)
+    source = rrs.RedisRoomSource(redis)
 
     source.write_recording_status("coll_1", {"workerId": "worker-a", "status": "recording"}, ttl_seconds=360)
 
-    assert redis.hgetall(recording_key("coll_1"))["status"] == "recording"
-    assert redis.expirations[recording_key("coll_1")] == 360
+    assert redis.hgetall(rrs.recording_key("coll_1"))["status"] == "recording"
+    assert redis.expirations[rrs.recording_key("coll_1")] == 360
