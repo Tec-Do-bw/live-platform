@@ -83,18 +83,20 @@ def backup_node_url() -> str:
 
 # ========== 房间来源 / worker（实时）==========
 def is_redis_room_source() -> bool:
-    return _get_str("live_stream.room_source", "http").lower() == "redis"
+    return _get_str("live_stream.room_source", "http").strip().lower() == "redis"
 
 
 def worker_id() -> str:
-    configured = _get_str("live_stream.worker_id")
+    configured = _get_str("live_stream.worker_id").strip()
     if configured:
         return configured
     try:
-        local_ip = socket.gethostbyname(socket.gethostname())
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
     except Exception:
+        hostname = "unknown"
         local_ip = "unknown"
-    return f"{socket.gethostname()}:{local_ip}:{os.getpid()}"
+    return f"{hostname}:{local_ip}:{os.getpid()}"
 
 
 def stream_lease_ttl_seconds() -> int:

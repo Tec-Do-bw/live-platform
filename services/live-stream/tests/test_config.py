@@ -1,9 +1,8 @@
 import os
 import sys
+import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import config as cfg
 
 
 class FakeApollo:
@@ -12,6 +11,13 @@ class FakeApollo:
 
     def get_value(self, key, default_val=None, namespace="application"):
         return self.store.get(key, default_val)
+
+
+fake_apollo_module = types.ModuleType("core.apollo")
+fake_apollo_module.APOLLO = FakeApollo({})
+sys.modules["core.apollo"] = fake_apollo_module
+
+import config as cfg
 
 
 def test_stream_int_with_minimum(monkeypatch):
@@ -48,3 +54,34 @@ def test_kafka_servers_no_eval(monkeypatch):
 def test_room_source_is_redis(monkeypatch):
     monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.room_source": "redis"}))
     assert cfg.is_redis_room_source() is True
+
+
+def test_room_source_strips_spaces(monkeypatch):
+    monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.room_source": " redis "}))
+    assert cfg.is_redis_room_source() is True
+
+
+def test_worker_id_strips_configured_value(monkeypatch):
+    monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.worker_id": " worker-1 "}))
+    assert cfg.worker_id() == "worker-1"
+
+
+def test_worker_id_blank_config_falls_back(monkeypatch):
+    monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.worker_id": "   "}))
+    monkeypatch.setattr(cfg.socket, "gethostname", lambda: "host-1")
+    monkeypatch.setattr(cfg.socket, "gethostbyname", lambda hostname: "127.0.0.1")
+    monkeypatch.setattr(cfg.os, "getpid", lambda: 12345)
+
+    assert cfg.worker_id() == "host-1:127.0.0.1:12345"
+
+
+def test_worker_id_hostname_error_falls_back(monkeypatch):
+    monkeypatch.setattr(cfg, "APOLLO", FakeApollo({}))
+
+    def raise_hostname_error():
+        raise OSError("hostname unavailable")
+
+    monkeypatch.setattr(cfg.socket, "gethostname", raise_hostname_error)
+    monkeypatch.setattr(cfg.os, "getpid", lambda: 12345)
+
+    assert cfg.worker_id() == "unknown:unknown:12345"
