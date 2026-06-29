@@ -63,12 +63,36 @@ git push gitlab <current-branch>
 git push -u gitlab <current-branch>
 ```
 
+### 公司环境：同步 live-stream 到 live-spider
+
+`services/live-stream/` 子目录额外有独立仓库 `https://git.tec-do.com/live/live-spider`，**只在公司 Windows 环境**执行同步（与 GitLab 同步策略一致）。
+
+同步命令：
+
+```bash
+bash scripts/sync-live-spider.sh
+```
+
+也可以让 AI 代为执行（两种 CLI 均支持，底层都调上面这个脚本）：
+
+- **Claude Code**：`/sync-live-spider`，或直接说「同步 live-spider」
+- **Codex**：`/sync-live-spider`，或直接说「同步 live-spider」
+- 命令定义：Claude Code 在 `.claude/commands/sync-live-spider.md`，Codex 在 `.codex/skills/sync-live-spider/SKILL.md`
+
+- **推送语义**：覆盖式（force push）推送到 `live-spider` 的 `sync/live-platform` 分支，内容以 monorepo 为准
+- **前置条件**：`services/live-stream/` 无未提交改动（脚本会自动检查）
+- **执行时机**：通常在 `$git-workflow publish` 推送 GitHub 后、`git push gitlab` 推送 GitLab 后执行
+- 脚本会自动补 remote（首次执行时）、抽取子目录历史、清理临时分支
+
+详细用法与配置见脚本内注释（单一权威源）。
+
 ### 禁止事项
 
 - 不要把 `origin` 改成 GitLab。
 - 不要给 `origin` 配多个 push URL。
-- 家里 Mac 不需要配置 `gitlab` remote。
+- 家里 Mac 不需要配置 `gitlab` remote，也不执行 `live-spider` 同步。
 - 不要修改 `$git-workflow` 让它默认双推 GitHub + GitLab；GitLab 同步只在公司 Windows 单独执行。
+- 不要把 `live-spider` remote 配成 push 通道混进 `$git-workflow` 默认流程；它只通过 `scripts/sync-live-spider.sh` 手动触发。
 
 
 <claude-mem-context>

@@ -1,0 +1,74 @@
+flowchart TB
+    subgraph MySQL["MySQL 数据源"]
+        DB[(live_streaming_room)]
+    end
+
+    subgraph Monitor["live-monitor 监控服务"]
+        Sync[Seed Sync<br/>同步种子]
+        Detect[状态检测<br/>check_live_status]
+        MonitorWrite[写入 Redis]
+    end
+
+    subgraph Redis["Redis 桥接层"]
+        Collections[Set: collections<br/>房间ID集合]
+        Config[Hash: config<br/>配置/无TTL]
+        Status[Hash: status<br/>状态/TTL 900s<br/><b>含 flvUrl</b>]
+        Lease[String: lease<br/>租约/TTL 360s]
+        Recording[Hash: recording<br/>录制状态/TTL 360s]
+    end
+
+    subgraph Stream["live-stream 录制客户端"]
+        Poll[轮询候选<br/>list_live_candidates]
+        ClaimLease[抢占租约<br/>SET NX EX]
+        ReadStatus[读取状态<br/>get_status]
+        FFmpeg[FFmpeg 拉流]
+        Health[健康检查<br/>每10s]
+        Retry{断流重连?}
+        Refresh[on_retry_refresh<br/><b>重新读 Redis</b>]
+        CheckURL{flvUrl<br/>变化?}
+        UseNew[用新URL重连]
+        UseBackup[轮换备用URL]
+        Stop[停止录制<br/>释放租约]
+    end
+
+    subgraph Output["输出"]
+        Segment[TS切片文件]
+        KafkaOSS[Kafka + OSS]
+    end
+
+    DB -->|查询| Sync
+    Sync -->|写入| Collections
+    Sync -->|写入| Config
+    Detect -->|每轮更新| Status
+    MonitorWrite -.-> Collections
+    MonitorWrite -.-> Config
+    MonitorWrite -.-> Status
+
+    Collections -->|SMEMBERS| Poll
+    Status -->|HGETALL| Poll
+    Poll -->|找到直播房间| ClaimLease
+    ClaimLease -->|成功| ReadStatus
+    ReadStatus -->|获取 flvUrl| FFmpeg
+    FFmpeg -->|推流| Segment
+    Segment -->|上传| KafkaOSS
+
+    FFmpeg -->|定期| Health
+    Health -->|25s无数据| Retry
+    FFmpeg -->|进程退出| Retry
+
+    Retry -->|是| Refresh
+    Refresh -->|重新读| Status
+    Refresh --> CheckURL
+    CheckURL -->|是| UseNew
+    CheckURL -->|否| UseBackup
+    UseNew -->|重启FFmpeg| FFmpeg
+    UseBackup -->|重启FFmpeg| FFmpeg
+    CheckURL -->|离线/过期| Stop
+
+    FFmpeg -.->|续租| Lease
+    FFmpeg -.->|心跳| Recording
+    Stop -.->|释放| Lease
+
+    style Status fill:#ff9,stroke:#f66,stroke-width:3px
+    style Refresh fill:#9f9,stroke:#393,stroke-width:3px
+    style CheckURL fill:#9cf,stroke:#369,stroke-width:2px

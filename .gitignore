@@ -27,6 +27,10 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# === AI 工具私有配置 ===
+.codex/config.toml
+.mcp.json
+
 # === OS ===
 .DS_Store
 Thumbs.db

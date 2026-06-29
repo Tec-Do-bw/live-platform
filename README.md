@@ -98,6 +98,14 @@ cd services/live-crawler/monitor/frontend && npm install
 | `cd services/live-crawler && python -m cookie_keeper` | 启动 Cookie 养号服务 |
 | `curl http://localhost:8080/health` | 检查 live-monitor 健康状态 |
 
+## 工具脚本
+
+| 脚本 | 用途 | 适用环境 |
+|------|------|----------|
+| `scripts/sync-live-spider.sh` | 同步 `services/live-stream/` 到独立仓库 `live-spider` 的 `sync/live-platform` 分支 | 仅公司 Windows 环境 |
+
+详见 [`AGENTS.md` Git 工作流章节](AGENTS.md#git-工作流与远程仓库策略)。
+
 ## 子项目文档
 
 - [直播间监控 (live-monitor)](services/live-monitor/README.md)

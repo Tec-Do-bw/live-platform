@@ -482,7 +482,7 @@ trend_chart 支持通过可选参数 `start_time` 控制时间窗口,下游接�
 ### 5.6.1 完整请求参数
 
 ```json
-{"request":{"room_filter":{"room_id":"7649951805363391253","is_content_type":1},"stats_types":[80, 81, 82, 83, 90, 85, 86, 87, 88, 350, 351, 352, 353]}}
+{"request":{"room_filter":{"room_id":"7649951805363391253","is_content_type":1},"stats_types":[80,81,82,83,90,85,86,87,88,350,351,352,353,92,93,95]}}
 ```
 
 > 默认请求 13 个画像 ID，一次返回 Viewer / Customer / Impressions 三类画像。`92/93/95` 是粉丝 GMV 贡献维度，可后续作为扩展请求并入，不属于当前默认 13 ID。
@@ -504,9 +504,9 @@ trend_chart 支持通过可选参数 `start_time` 控制时间窗口,下游接�
 | Impressions profile | `351` | Country | `impressions_country_distribution` | `data.stats.impressions_country_distribution` |
 | Impressions profile | `352` | Age | `impressions_age_distribution` | `data.stats.impressions_age_distribution` |
 | Impressions profile | `353` | Region | `impressions_state_distribution` | `data.stats.impressions_state_distribution` |
-| Optional fan contribution | `92` | Follower GMV | `follower_gmv_local_distribution` | 可选扩展，不在默认请求中 |
-| Optional fan contribution | `93` | Follower SKU orders | `follower_sku_order_distribution` | 可选扩展，不在默认请求中 |
-| Optional fan contribution | `95` | Follower AOV | `follower_main_aov_local_distribution` | 可选扩展，不在默认请求中 |
+| Optional fan contribution | `92` | Follower GMV | `follower_gmv_local_distribution` | data.stats.follower_gmv_local_distribution |
+| Optional fan contribution | `93` | Follower SKU orders | `follower_sku_order_distribution` | data.stats.follower_sku_order_distribution |
+| Optional fan contribution | `95` | Follower AOV | `follower_main_aov_local_distribution` | data.stats.follower_main_aov_local_distribution |
 
 ## 5.7 product_list 字段映射
 

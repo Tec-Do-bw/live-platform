@@ -30,7 +30,7 @@ logger.add(
 )
 
 app = FastAPI()
-LIVE_STREAM_ROOM_SOURCE = os.environ.get("LIVE_STREAM_ROOM_SOURCE", "http").lower()
+LIVE_STREAM_ROOM_SOURCE = os.environ.get("LIVE_STREAM_ROOM_SOURCE", "redis").lower()
 online_room_list = {}
 MainHelperObj = None
 _redis_room_source = None
