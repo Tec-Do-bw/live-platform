@@ -68,8 +68,8 @@ def oss_config() -> dict[str, str]:
 
 
 def cut_live_number() -> int:
-    """单房间切片积压阈值（原 cutliveNumber 通用 key,保留原名）。"""
-    return _get_int("cutliveNumber", 4)
+    """单房间切片积压阈值。"""
+    return _get_int("live_stream.cut_live_number", 4)
 
 
 # ========== 主备节点（实时,热更新）==========

@@ -38,37 +38,27 @@ FFmpeg 断流后触发 `on_retry_refresh()` 回调：
 
 ## 配置迁移指南
 
-### 环境变量配置
+### Apollo 配置
 
-```bash
-# 核心开关：选择房间源模式
-LIVE_STREAM_ROOM_SOURCE=redis  # 旧值: http
+业务配置统一通过 Apollo `application` namespace 的小写点分 key 下发。
+环境变量只保留 Apollo 引导参数：`APOLLO_URL`、`APOLLOID`、`DEPLOY_ENV`。
 
-# Redis 连接配置（二选一）
-# 方式1：直接配置
-REDIS_HOST=10.225.17.67
-REDIS_PORT=6379
-REDIS_PASSWORD=your_password
-REDIS_DB=0
+关键 key：
 
-# 方式2：通过 Apollo 自动获取（推荐）
-APOLLO_URL=http://10.225.17.67:30080
-ISTEST=0  # 0=生产, 1=测试
-
-# 可选：调优参数
-STREAM_LEASE_TTL_SECONDS=360        # 租约时长
-STREAM_MAX_RETRIES=12                # 最大重试次数
-STREAM_HEARTBEAT_INTERVAL_SECONDS=10 # 心跳间隔
-STREAM_NO_DATA_TIMEOUT_SECONDS=25    # 无数据超时
-STREAM_RETRY_INTERVAL_SECONDS=1      # 重试初始间隔
-```
+- `live_stream.room_source=redis`
+- `redis.host` / `redis.port` / `redis.password` / `redis.db`
+- `live_stream.lease_ttl_seconds`
+- `live_stream.max_retries`
+- `live_stream.heartbeat_interval_seconds`
+- `live_stream.no_data_timeout_seconds`
+- `live_stream.retry_interval_seconds`
 
 ### 迁移步骤
 
 #### 阶段 1：验证 Redis 连接
 ```bash
 # 测试 Redis 连接
-redis-cli -h <REDIS_HOST> -p <REDIS_PORT> -a <REDIS_PASSWORD>
+redis-cli -h <redis_host> -p <redis_port> -a <redis_password>
 > PING
 PONG
 
@@ -79,25 +69,13 @@ PONG
 ```
 
 #### 阶段 2：灰度切换单台 live-stream
-```bash
-# 1. 停止旧进程
-kill <old_pid>
-
-# 2. 设置环境变量
-export LIVE_STREAM_ROOM_SOURCE=redis
-export REDIS_HOST=10.225.17.67
-export REDIS_PORT=6379
-
-# 3. 启动新进程
-python TT_client.py
-
-# 4. 观察日志
-tail -f logs/ffmpeg_stream_*.log
-# 查找关键日志：
-# - "使用 Redis 房间源"
-# - "成功抢占租约"
-# - "直播源已刷新，使用新的FLV URL重连"
-```
+1. 在 Apollo 将灰度节点对应 cluster 的 `live_stream.room_source` 改为 `redis`
+2. 确认 `redis.*` 连接 key 与 `live_stream.lease_ttl_seconds` 已配置
+3. 重启该 live-stream 节点
+4. 观察 `logs/ffmpeg_stream_*.log`，查找关键日志：
+   - "使用 Redis 房间源"
+   - "成功抢占租约"
+   - "直播源已刷新，使用新的FLV URL重连"
 
 #### 阶段 3：验证断流刷新机制
 ```bash
@@ -129,18 +107,14 @@ redis-cli DEL live:collection:<ID>:lease
 ### 问题 2：断流后仍用旧 URL
 **现象**：日志未显示 "直播源已刷新"
 **排查**：
-1. 检查 `LIVE_STREAM_ROOM_SOURCE` 是否为 `redis`
+1. 检查 Apollo `live_stream.room_source` 是否为 `redis`
 2. 检查 Redis status 中的 `flvUrl` 是否已更新
 3. 检查 `expiresAt` 是否过期
 
 ### 问题 3：频繁抢占/释放租约
 **现象**：同一房间在多个 worker 间跳动
 **原因**：心跳续租失败或 TTL 过短
-**解决**：
-```bash
-# 增加租约 TTL
-export STREAM_LEASE_TTL_SECONDS=600
-```
+**解决**：在 Apollo 增加 `live_stream.lease_ttl_seconds`
 
 ---
 

@@ -88,6 +88,7 @@ live-monitor /get_roominfo
 - 通用 key：`oss.endpoint` `oss.bucket_name` `oss.access_key_id` `oss.access_key_secret`
 - live-stream key：`live_stream.primary_node_url` `live_stream.backup_node_url`
 - live-stream key：`live_stream.room_source` `live_stream.worker_id` `live_stream.lease_ttl_seconds`
+- live-stream key：`live_stream.cut_live_number`
 - live-stream key：`live_stream.max_retries` `live_stream.retry_interval_seconds`
 - live-stream key：`live_stream.retry_backoff` `live_stream.max_retry_interval_seconds`
 - live-stream key：`live_stream.analyze_duration_us` `live_stream.probe_size_bytes`

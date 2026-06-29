@@ -31,7 +31,7 @@ paths:
   `redis.host` `redis.port` `redis.password` `redis.db`
   `kafka.servers`（逗号分隔字符串,取出即用,**不再 eval**）`kafka.topic`
   `oss.endpoint` `oss.bucket_name` `oss.access_key_id` `oss.access_key_secret` `oss.region`
-- **服务特有配置**（加服务前缀）: `live_stream.primary_node_url` `live_stream.max_retries` …
+- **服务特有配置**（加服务前缀）: `live_stream.primary_node_url` `live_stream.cut_live_number` `live_stream.max_retries` …
 
 ## 消费方式：读取点实时调用 get_value
 

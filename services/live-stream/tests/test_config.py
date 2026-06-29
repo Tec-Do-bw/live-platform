@@ -70,6 +70,11 @@ def test_kafka_servers_skips_blank_items(cfg, monkeypatch):
     assert cfg.kafka_servers() == ["a:1", "b:2"]
 
 
+def test_cut_live_number_uses_dot_case_key(cfg, monkeypatch):
+    monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.cut_live_number": "6"}))
+    assert cfg.cut_live_number() == 6
+
+
 def test_room_source_is_redis(cfg, monkeypatch):
     monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.room_source": "redis"}))
     assert cfg.is_redis_room_source() is True
