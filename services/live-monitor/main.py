@@ -150,7 +150,6 @@ except ImportError:
 from routes.docs import router as docs_router
 from routes.activation import router as activation_router
 from routes.websocket_routes import router as websocket_router, start_background_tasks, manager
-from utils.serverTool import fetch_apollo_config
 from utils.TiktokTool import TiktokTool
 from utils.ShopeeTool import ShopeeTool
 from utils.LazadaTool import LazadaTool
@@ -163,12 +162,15 @@ from check_cj_data import check_CJ_data
 # ⚠️ 部署时需要修改以下参数
 # 主机1: NODE_ID='node1', NODE_IP='47.237.6.199', PRIORITY=100
 # 主机2: NODE_ID='node2', NODE_IP='47.236.42.104', PRIORITY=50
+# 节点配置已迁移到 Apollo（config.py 门面）
 
-NODE_ID = os.environ.get('NODE_ID', 'node1')  # 节点ID
-NODE_IP = os.environ.get('NODE_IP', '127.0.0.1')  # 节点IP
-PRIORITY = int(os.environ.get('PRIORITY', '100'))  # 节点优先级
-BACKUP_NODE_URL = os.environ.get('BACKUP_NODE_URL', '')  # 备用节点URL
-ISTEST = int(os.environ.get('ISTEST', '1'))
+import config
+
+NODE_ID = config.node_id()
+NODE_IP = config.node_ip()
+PRIORITY = config.priority()
+BACKUP_NODE_URL = config.backup_node_url()
+# 旧环境变量已删除，改用 config.is_test_env()
 
 logger.info(f"节点配置 | NODE_ID={NODE_ID}, NODE_IP={NODE_IP}, PRIORITY={PRIORITY}, BACKUP_NODE_URL={BACKUP_NODE_URL}")
 OP = None
@@ -933,7 +935,7 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
-def start_select_info_scheduler(ISTEST):
+def start_select_info_scheduler():
     """
     启动定时任务,每5分钟执行一次select_Info
     ✅ 支持主备切换：只有主节点执行任务，备节点监控主节点健康状态
@@ -1096,7 +1098,7 @@ def start_scheduler_monitor():
                     except:
                         pass
                     
-                    start_select_info_scheduler(ISTEST)
+                    start_select_info_scheduler()
                     logger.info("✅ 调度器线程已重启")
                     
             except Exception as e:
@@ -1159,14 +1161,14 @@ if __name__ == '__main__':
 
     # ###############以下是真正服务####################
     logger.info("获取Apollo配置...")
-    config_data = fetch_apollo_config(ISTEST)
-    # print(config_data)
+    # MySQL 连接参数已迁移到 Apollo（config 门面）
     getLiveCookiessql = "SELECT cookies FROM live_account_info where cookies like '%true%'  order by id desc limit 20"
-    host = config_data.get("devSqlHost")
-    user = config_data.get("devSqlUser")
-    password = config_data.get("devSqlPassword")
-    database = config_data.get("database")
-    port = int(config_data.get("devSqlPort"))
+    db_cfg = config.mysql_config()
+    host = db_cfg["host"]
+    user = db_cfg["user"]
+    password = db_cfg["password"]
+    database = db_cfg["database"]
+    port = db_cfg["port"]
 
     # ✅ 初始化数据库连接池（不打印密码）
     logger.info(f"初始化数据库连接池 | host={host} database={database} port={port}")
@@ -1188,13 +1190,13 @@ if __name__ == '__main__':
 
         sys.exit(1)
 
-    # ✅ 代理池配置
+    # ✅ 代理池配置（已迁移到 Apollo）
     try:
-        if ISTEST == 1:
-            ipList = ['senspower:T9u_SCK5Bezq@31.59.112.68:2333','senspower:T9u_SCK5Bezq@82.29.150.155:2333','senspower:T9u_SCK5Bezq@31.59.112.103:2333','senspower:T9u_SCK5Bezq@31.59.112.85:2333','senspower:T9u_SCK5Bezq@82.29.150.35:2333','senspower:T9u_SCK5Bezq@82.29.150.254:2333','senspower:T9u_SCK5Bezq@31.59.112.233:2333','senspower:T9u_SCK5Bezq@82.29.150.192:2333','senspower:T9u_SCK5Bezq@31.59.112.166:2333','senspower:T9u_SCK5Bezq@31.59.112.202:2333','senspower:T9u_SCK5Bezq@31.59.112.220:2333','senspower:T9u_SCK5Bezq@82.29.150.187:2333','senspower:T9u_SCK5Bezq@82.29.150.102:2333','senspower:T9u_SCK5Bezq@31.59.112.213:2333','senspower:T9u_SCK5Bezq@167.148.104.151:2333','senspower:T9u_SCK5Bezq@167.148.104.72:2333','senspower:T9u_SCK5Bezq@167.148.104.79:2333','senspower:T9u_SCK5Bezq@167.148.104.252:2333','senspower:T9u_SCK5Bezq@167.148.104.54:2333','senspower:T9u_SCK5Bezq@167.148.104.182:2333','senspower:T9u_SCK5Bezq@167.148.104.172:2333','senspower:T9u_SCK5Bezq@167.148.104.76:2333','senspower:T9u_SCK5Bezq@167.148.104.254:2333','senspower:T9u_SCK5Bezq@167.148.104.225:2333','senspower:T9u_SCK5Bezq@199.182.96.180:2333','senspower:T9u_SCK5Bezq@199.182.96.171:2333','senspower:T9u_SCK5Bezq@199.182.96.95:2333','senspower:T9u_SCK5Bezq@199.182.96.132:2333','senspower:T9u_SCK5Bezq@199.182.96.155:2333','senspower:T9u_SCK5Bezq@199.182.96.31:2333','senspower:T9u_SCK5Bezq@199.182.96.28:2333','senspower:T9u_SCK5Bezq@199.182.96.46:2333','senspower:T9u_SCK5Bezq@199.182.96.59:2333','senspower:T9u_SCK5Bezq@199.182.96.220:2333','senspower:T9u_SCK5Bezq@199.182.96.249:2333','senspower:T9u_SCK5Bezq@199.182.96.55:2333','senspower:T9u_SCK5Bezq@199.182.96.13:2333','senspower:T9u_SCK5Bezq@172.121.61.57:2333','senspower:T9u_SCK5Bezq@172.121.61.119:2333','senspower:T9u_SCK5Bezq@172.121.61.154:2333','senspower:T9u_SCK5Bezq@172.120.245.229:2333','senspower:T9u_SCK5Bezq@172.121.61.47:2333','senspower:T9u_SCK5Bezq@172.120.245.3:2333','senspower:T9u_SCK5Bezq@172.121.61.48:2333','senspower:T9u_SCK5Bezq@172.121.61.86:2333','senspower:T9u_SCK5Bezq@172.121.61.8:2333','senspower:T9u_SCK5Bezq@172.120.245.187:2333','senspower:T9u_SCK5Bezq@172.120.245.65:2333','senspower:T9u_SCK5Bezq@172.121.61.146:2333','senspower:T9u_SCK5Bezq@172.121.53.220:2333','senspower:T9u_SCK5Bezq@172.121.53.147:2333','senspower:T9u_SCK5Bezq@172.121.53.246:2333','senspower:T9u_SCK5Bezq@172.121.53.91:2333','senspower:T9u_SCK5Bezq@172.121.53.161:2333','senspower:T9u_SCK5Bezq@172.121.53.4:2333','senspower:T9u_SCK5Bezq@172.120.245.211:2333','senspower:T9u_SCK5Bezq@172.120.245.160:2333','senspower:T9u_SCK5Bezq@172.120.245.121:2333','senspower:T9u_SCK5Bezq@172.120.245.141:2333','senspower:T9u_SCK5Bezq@172.120.245.87:2333','senspower:T9u_SCK5Bezq@172.121.53.14:2333','senspower:T9u_SCK5Bezq@172.121.53.122:2333','senspower:T9u_SCK5Bezq@172.121.53.47:2333','senspower:T9u_SCK5Bezq@172.121.61.237:2333','senspower:T9u_SCK5Bezq@172.120.245.223:2333','senspower:T9u_SCK5Bezq@172.121.53.176:2333','senspower:T9u_SCK5Bezq@172.120.245.240:2333','senspower:T9u_SCK5Bezq@172.121.61.43:2333','senspower:T9u_SCK5Bezq@172.121.61.63:2333','senspower:T9u_SCK5Bezq@172.120.245.220:2333','senspower:T9u_SCK5Bezq@172.121.53.178:2333','senspower:T9u_SCK5Bezq@172.121.53.123:2333','senspower:T9u_SCK5Bezq@172.120.245.118:2333','senspower:T9u_SCK5Bezq@172.121.61.58:2333','senspower:T9u_SCK5Bezq@172.121.61.250:2333','senspower:T9u_SCK5Bezq@172.121.61.245:2333','senspower:T9u_SCK5Bezq@172.121.53.254:2333','senspower:T9u_SCK5Bezq@172.121.53.102:2333','senspower:T9u_SCK5Bezq@172.120.245.173:2333','senspower:T9u_SCK5Bezq@96.62.57.90:2333','senspower:T9u_SCK5Bezq@96.62.151.62:2333','senspower:T9u_SCK5Bezq@96.62.149.229:2333','senspower:T9u_SCK5Bezq@96.62.151.66:2333','senspower:T9u_SCK5Bezq@96.62.149.252:2333','senspower:T9u_SCK5Bezq@96.62.151.130:2333','senspower:T9u_SCK5Bezq@96.62.151.99:2333','senspower:T9u_SCK5Bezq@96.62.151.182:2333','senspower:T9u_SCK5Bezq@96.62.149.159:2333','senspower:T9u_SCK5Bezq@96.62.57.84:2333','senspower:T9u_SCK5Bezq@96.62.149.186:2333','senspower:T9u_SCK5Bezq@96.62.149.68:2333','senspower:T9u_SCK5Bezq@96.62.151.128:2333','senspower:T9u_SCK5Bezq@96.62.149.94:2333','senspower:T9u_SCK5Bezq@96.62.57.187:2333','senspower:T9u_SCK5Bezq@96.62.151.228:2333','senspower:T9u_SCK5Bezq@96.62.151.125:2333','senspower:T9u_SCK5Bezq@96.62.149.15:2333','senspower:T9u_SCK5Bezq@96.62.149.156:2333','senspower:T9u_SCK5Bezq@96.62.151.184:2333','senspower:T9u_SCK5Bezq@96.62.151.147:2333','senspower:T9u_SCK5Bezq@96.62.149.63:2333','senspower:T9u_SCK5Bezq@96.62.149.23:2333','senspower:T9u_SCK5Bezq@96.62.149.33:2333','senspower:T9u_SCK5Bezq@96.62.149.231:2333','senspower:T9u_SCK5Bezq@96.62.149.46:2333','senspower:T9u_SCK5Bezq@96.62.57.226:2333','senspower:T9u_SCK5Bezq@96.62.149.40:2333','senspower:T9u_SCK5Bezq@96.62.151.249:2333','senspower:T9u_SCK5Bezq@96.62.149.222:2333','senspower:T9u_SCK5Bezq@96.62.151.21:2333','senspower:T9u_SCK5Bezq@96.62.151.142:2333','senspower:T9u_SCK5Bezq@68.64.159.78:2333','senspower:T9u_SCK5Bezq@68.64.159.74:2333','senspower:T9u_SCK5Bezq@68.64.159.68:2333','senspower:T9u_SCK5Bezq@68.64.159.128:2333','senspower:T9u_SCK5Bezq@68.64.159.18:2333','senspower:T9u_SCK5Bezq@68.64.159.48:2333','senspower:T9u_SCK5Bezq@68.64.159.72:2333','senspower:T9u_SCK5Bezq@68.64.159.217:2333','senspower:T9u_SCK5Bezq@68.64.159.15:2333','senspower:T9u_SCK5Bezq@68.64.159.84:2333','senspower:T9u_SCK5Bezq@68.64.159.178:2333','senspower:T9u_SCK5Bezq@68.64.159.119:2333','senspower:T9u_SCK5Bezq@68.64.159.156:2333','senspower:T9u_SCK5Bezq@68.64.159.124:2333','senspower:T9u_SCK5Bezq@68.64.159.76:2333','senspower:T9u_SCK5Bezq@68.64.159.93:2333','senspower:T9u_SCK5Bezq@68.64.159.136:2333','senspower:T9u_SCK5Bezq@68.64.159.218:2333','senspower:T9u_SCK5Bezq@68.64.159.172:2333','senspower:T9u_SCK5Bezq@68.64.159.89:2333','senspower:T9u_SCK5Bezq@68.64.159.45:2333','senspower:T9u_SCK5Bezq@68.64.159.79:2333','senspower:T9u_SCK5Bezq@68.64.159.12:2333','senspower:T9u_SCK5Bezq@68.64.159.38:2333','senspower:T9u_SCK5Bezq@216.231.43.109:2333','senspower:T9u_SCK5Bezq@216.231.42.140:2333','senspower:T9u_SCK5Bezq@216.231.45.207:2333','senspower:T9u_SCK5Bezq@216.231.44.191:2333','senspower:T9u_SCK5Bezq@216.231.40.79:2333','senspower:T9u_SCK5Bezq@216.231.43.43:2333','senspower:T9u_SCK5Bezq@216.231.42.193:2333','senspower:T9u_SCK5Bezq@216.231.45.68:2333','senspower:T9u_SCK5Bezq@216.231.43.247:2333','senspower:T9u_SCK5Bezq@216.231.43.143:2333','senspower:T9u_SCK5Bezq@216.231.43.181:2333','senspower:T9u_SCK5Bezq@149.52.118.151:2333','senspower:T9u_SCK5Bezq@149.52.118.128:2333','senspower:T9u_SCK5Bezq@149.52.118.74:2333','senspower:T9u_SCK5Bezq@149.52.118.150:2333','senspower:T9u_SCK5Bezq@149.52.118.248:2333','senspower:T9u_SCK5Bezq@149.52.118.205:2333','senspower:T9u_SCK5Bezq@149.52.118.113:2333','senspower:T9u_SCK5Bezq@149.52.118.220:2333','senspower:T9u_SCK5Bezq@149.52.118.133:2333','senspower:T9u_SCK5Bezq@149.52.118.6:2333','senspower:T9u_SCK5Bezq@149.52.118.18:2333','senspower:T9u_SCK5Bezq@149.52.118.194:2333','senspower:T9u_SCK5Bezq@149.52.118.124:2333','senspower:T9u_SCK5Bezq@149.40.69.69:2333','senspower:T9u_SCK5Bezq@149.40.83.188:2333','senspower:T9u_SCK5Bezq@149.40.71.30:2333','senspower:T9u_SCK5Bezq@149.40.71.40:2333','senspower:T9u_SCK5Bezq@149.40.69.74:2333','senspower:T9u_SCK5Bezq@149.40.71.16:2333','senspower:T9u_SCK5Bezq@149.40.71.149:2333','senspower:T9u_SCK5Bezq@149.40.83.13:2333','senspower:T9u_SCK5Bezq@149.40.69.184:2333','senspower:T9u_SCK5Bezq@149.40.83.200:2333','senspower:T9u_SCK5Bezq@149.40.71.98:2333','senspower:T9u_SCK5Bezq@149.40.83.163:2333','senspower:T9u_SCK5Bezq@149.40.83.194:2333','senspower:T9u_SCK5Bezq@149.40.71.155:2333','senspower:T9u_SCK5Bezq@149.40.83.96:2333','senspower:T9u_SCK5Bezq@149.40.71.146:2333','senspower:T9u_SCK5Bezq@149.40.69.124:2333','senspower:T9u_SCK5Bezq@149.40.69.89:2333','senspower:T9u_SCK5Bezq@149.40.69.84:2333','senspower:T9u_SCK5Bezq@149.40.71.203:2333','senspower:T9u_SCK5Bezq@149.40.83.161:2333','senspower:T9u_SCK5Bezq@149.40.83.178:2333','senspower:T9u_SCK5Bezq@149.40.71.243:2333','senspower:T9u_SCK5Bezq@149.40.71.251:2333','senspower:T9u_SCK5Bezq@149.40.69.202:2333','senspower:T9u_SCK5Bezq@149.40.69.105:2333','senspower:T9u_SCK5Bezq@149.40.71.234:2333','senspower:T9u_SCK5Bezq@149.40.69.157:2333','senspower:T9u_SCK5Bezq@149.40.83.156:2333','senspower:T9u_SCK5Bezq@149.40.83.124:2333','senspower:T9u_SCK5Bezq@149.40.71.170:2333','senspower:T9u_SCK5Bezq@149.40.83.88:2333','senspower:T9u_SCK5Bezq@149.40.71.3:2333','senspower:T9u_SCK5Bezq@149.40.71.197:2333','senspower:T9u_SCK5Bezq@149.40.69.58:2333','senspower:T9u_SCK5Bezq@149.40.83.17:2333','senspower:T9u_SCK5Bezq@149.40.71.201:2333','senspower:T9u_SCK5Bezq@149.40.69.60:2333','senspower:T9u_SCK5Bezq@149.40.83.133:2333','senspower:T9u_SCK5Bezq@149.40.71.69:2333','senspower:T9u_SCK5Bezq@149.40.69.125:2333','senspower:T9u_SCK5Bezq@149.40.71.229:2333','senspower:T9u_SCK5Bezq@149.40.69.104:2333','senspower:T9u_SCK5Bezq@149.40.69.101:2333','senspower:T9u_SCK5Bezq@149.40.83.205:2333','senspower:T9u_SCK5Bezq@149.40.71.74:2333','senspower:T9u_SCK5Bezq@149.40.83.74:2333','senspower:T9u_SCK5Bezq@149.40.83.231:2333','senspower:T9u_SCK5Bezq@149.40.69.223:2333','senspower:T9u_SCK5Bezq@149.40.83.114:2333','senspower:T9u_SCK5Bezq@149.40.71.103:2333','senspower:T9u_SCK5Bezq@149.40.83.244:2333','senspower:T9u_SCK5Bezq@149.40.69.117:2333','senspower:T9u_SCK5Bezq@149.40.69.113:2333','senspower:T9u_SCK5Bezq@149.40.83.216:2333','senspower:T9u_SCK5Bezq@149.40.83.246:2333','senspower:T9u_SCK5Bezq@149.40.83.67:2333','senspower:T9u_SCK5Bezq@149.40.83.137:2333','senspower:T9u_SCK5Bezq@149.40.71.96:2333','senspower:T9u_SCK5Bezq@149.40.69.149:2333','senspower:T9u_SCK5Bezq@149.40.83.33:2333','senspower:T9u_SCK5Bezq@149.40.69.186:2333','senspower:T9u_SCK5Bezq@149.40.71.65:2333','senspower:T9u_SCK5Bezq@149.40.83.228:2333','senspower:T9u_SCK5Bezq@149.40.69.239:2333','senspower:T9u_SCK5Bezq@149.40.69.52:2333','senspower:T9u_SCK5Bezq@149.40.69.119:2333','senspower:T9u_SCK5Bezq@149.40.71.249:2333','senspower:T9u_SCK5Bezq@149.40.69.88:2333','senspower:T9u_SCK5Bezq@149.40.71.39:2333','senspower:T9u_SCK5Bezq@149.40.71.54:2333','senspower:T9u_SCK5Bezq@149.40.69.39:2333','senspower:T9u_SCK5Bezq@149.40.71.147:2333','senspower:T9u_SCK5Bezq@149.40.69.254:2333','senspower:T9u_SCK5Bezq@149.40.71.178:2333','senspower:T9u_SCK5Bezq@149.40.69.220:2333','senspower:T9u_SCK5Bezq@149.40.69.11:2333','senspower:T9u_SCK5Bezq@149.40.69.42:2333','senspower:T9u_SCK5Bezq@149.40.69.138:2333','senspower:T9u_SCK5Bezq@149.40.83.183:2333','senspower:T9u_SCK5Bezq@149.40.69.128:2333','senspower:T9u_SCK5Bezq@149.40.83.77:2333','senspower:T9u_SCK5Bezq@149.40.69.146:2333','senspower:T9u_SCK5Bezq@149.40.69.139:2333','senspower:T9u_SCK5Bezq@149.40.83.44:2333','senspower:T9u_SCK5Bezq@149.40.71.28:2333','senspower:T9u_SCK5Bezq@149.40.83.247:2333','senspower:T9u_SCK5Bezq@149.40.71.184:2333','senspower:T9u_SCK5Bezq@149.40.69.4:2333','senspower:T9u_SCK5Bezq@149.40.83.232:2333','senspower:T9u_SCK5Bezq@149.40.71.211:2333','senspower:T9u_SCK5Bezq@149.40.69.13:2333','senspower:T9u_SCK5Bezq@149.40.69.44:2333','senspower:T9u_SCK5Bezq@149.40.69.79:2333','senspower:T9u_SCK5Bezq@192.200.211.246:2333','senspower:T9u_SCK5Bezq@192.200.211.240:2333','senspower:T9u_SCK5Bezq@192.200.211.233:2333','senspower:T9u_SCK5Bezq@192.200.211.245:2333','senspower:T9u_SCK5Bezq@192.200.211.236:2333']
+        ipList = config.static_proxy_pool()
+        if not ipList:
+            logger.warning("代理池为空，将使用无代理模式")
         else:
-            ipList = eval(config_data.get("ipList"))
-        logger.info(f"代理池配置成功 | 数量={len(ipList)}")
+            logger.info(f"代理池配置成功 | 数量={len(ipList)}")
     except Exception as e:
         logger.warning(f"获取ipList配置失败: {e}")
         ipList = []
@@ -1209,7 +1211,7 @@ if __name__ == '__main__':
     logger.info("✅ 工具类初始化完成")
 
     # ✅ 启动定时任务（房间检测和离线脚本监控）
-    start_select_info_scheduler(ISTEST)
+    start_select_info_scheduler()
 
     # ✅ 启动调度器健康监控线程
     start_scheduler_monitor()
@@ -1225,7 +1227,7 @@ if __name__ == '__main__':
 
     # ✅ 初始化 WebSocket 路由
     # from routes.websocket_routes import init_websocket_routes
-    # init_websocket_routes(ISTEST)
+    # init_websocket_routes()
     # logger.info("✅ WebSocket 路由已初始化")
 
     logger.info("=" * 60)

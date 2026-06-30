@@ -16,7 +16,9 @@ curl http://localhost:8080/health # 健康检查
 live-monitor/
 ├── main.py                    # FastAPI 应用入口、核心路由（直播间检测、房间管理）
 ├── base.py                    # 基础类：AdsPowerHelper（浏览器管理）、MainHelper、OperateHelper
-├── config.py                  # 浏览器配置、监听 URL 配置、版本历史
+├── config.py                  # Apollo 配置访问门面 + 浏览器/API 文档等静态兼容配置
+├── core/
+│   └── apollo/                # Apollo 客户端（读取、热更新、本地缓存）
 ├── parseMian.py               # 直播间数据解析
 ├── check_cj_data.py           # CJ 数据校验
 ├── get_tt_Cookies.py          # TikTok Cookie 获取
@@ -33,7 +35,6 @@ live-monitor/
 │   ├── TiktokTool.py          # TikTok 直播间检测与流地址获取
 │   ├── ShopeeTool.py          # Shopee 直播间检测与流地址获取
 │   ├── LazadaTool.py          # Lazada 直播间检测与流地址获取
-│   ├── serverTool.py          # Apollo 配置中心对接
 │   ├── db_pool.py             # MySQL 连接池
 │   ├── logger.py              # loguru 日志
 │   ├── scheduler_manager.py   # 调度器管理
@@ -73,16 +74,15 @@ live-monitor/
 
 ## 环境变量
 
+Apollo 是业务配置唯一权威源，业务配置通过 `config.py` 门面读取。环境变量只保留 Apollo 引导参数。
+
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `NODE_ID` | 节点标识 | `node1` |
-| `NODE_IP` | 节点 IP | `127.0.0.1` |
-| `PRIORITY` | 节点优先级（越大越优先） | `100` |
-| `BACKUP_NODE_URL` | 备用节点 URL | 空 |
-| `ISTEST` | 环境标识（0=生产, 1=测试） | `1` |
-| `LIVE_STATUS_TTL_SECONDS` | Redis 直播状态 TTL | `900` |
+| `APOLLOID` | Apollo app_id | `live-spider` |
+| `APOLLO_URL` | Apollo 配置中心地址 | `http://dev-apollo.tec-develop.com` |
+| `DEPLOY_ENV` | Apollo cluster（如 dev02 / PRO） | `dev02` |
 
-详见 `env.example`。
+已迁移到 Apollo 的旧环境变量：`NODE_ID`、`NODE_IP`、`PRIORITY`、`BACKUP_NODE_URL`、`ISTEST`、`ACCESS_KEY_ACTIVATION`、`LIVE_STATUS_TTL_SECONDS`。对应 key 为 `live_monitor.node_id`、`live_monitor.node_ip`、`live_monitor.priority`、`live_monitor.backup_node_url`、`live_monitor.access_key_activation`、`live_monitor.redis_status_ttl_seconds`；环境判断统一由 `DEPLOY_ENV` 决定。
 
 ## Redis 桥接
 

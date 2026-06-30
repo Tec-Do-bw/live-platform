@@ -162,44 +162,8 @@ def get_current_directory():
 
     
     
-# ✅ ✅ ✅ ✅ 公司apollo获取配置 ✅ ✅ ✅ ✅ ✅ 
-# apollo获取配置
-def fetch_apollo_config(istest=1):
-    #测试环境
-    if istest == 1:
-        APOLLO_URL = 'http://dev-apollo.tec-develop.com'
-        APOLLOID = 'live-spider'
-
-    #正式环境
-    else:
-        # http://10.225.17.67:30080（windows机子需要单独做映射）
-        APOLLO_URL = 'http://10.225.17.67:30080'
-        # APOLLO_URL = 'http://apollo-service-apollo-configservice.apollo:8080'
-        APOLLOID = 'live-spider'
-       
-
-
-    if istest == 1:
-        url = "{}/configs/{}/dev01/application".format(str(APOLLO_URL),str(APOLLOID))
-    else:
-        url = "{}/configs/{}/PRO/application".format(str(APOLLO_URL),str(APOLLOID))
-   
-    # 配置你的 Apollo 服务详情
-    config_data = {}
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # 检查响应是否成功
-        config_data = response.json()
-    except Exception as e:
-        print(f"获取apollo配置失败: {e}")
-        
-    if config_data:
-        configurations = config_data["configurations"]
-        return  configurations
-    else:
-        return {}
-
-
+# Apollo 配置统一走 config 门面（唯一权威源）
+import config
 
 
 # ✅ ✅ ✅ ✅ 公共解析相关 ✅ ✅ ✅ ✅ ✅ 
@@ -818,16 +782,14 @@ class databaseMiddleInsert(threading.Thread):
 class KafkaHelper:
     def __init__(self):
         try:
-            configurations = fetch_apollo_config()
-            print(configurations["kafkaAddress"])
-            # print("configurations-->",str(configurations))
-            kafka_server = list(eval(configurations["kafkaAddress"]))
+            # Kafka broker 列表已迁移到 Apollo（config 门面），无需 eval
+            kafka_server = config.kafka_servers()
             self.producer = KafkaProducer(
                 bootstrap_servers=kafka_server,
                 value_serializer=lambda v: json.dumps(v).encode('utf-8')
             )
         except:
-            print("kafka连接失败,apollo配置中kafkaAddress为空,或配置错误")
+            print("kafka连接失败,Apollo 中 kafka.servers 为空或配置错误")
             self.producer = None
         print(self.producer)
     #数据推到kafka    
@@ -851,27 +813,18 @@ class proxyIpThread(threading.Thread):
         dataIPList= []
         # 公司国内代理
         if self.mode == 1:
-            configurations = fetch_apollo_config()
-            # 国内动态代理是实时通过链接获取
-            url = configurations.get("DomesticIPPool","")
-            dataJson = requests.get(url)
-            resultJson = dataJson.json()
-            ipJsonList = resultJson.get("data")
-            for ipItem in ipJsonList:
-                dataIP = ipItem["ip"]+':'+str(ipItem["port"])
-                dataIPList.append(dataIP)
+            # 国内动态代理 URL 已废弃（新 Apollo 无对应 key），离线脚本代理功能不再使用
+            pass
                 
         # 公司海外静态代理
         elif self.mode == 2:
-            configurations = fetch_apollo_config()
-            dataIPList = list(eval(configurations["abroadIPPool"]))
+            # 海外静态代理池已迁移到 Apollo（config 门面）
+            dataIPList = config.abroad_proxy_pool()
 
         # 公司动态代理
         elif self.mode == 3:
-            configurations = fetch_apollo_config()
-            # 海外动态代理是直接链接获取
-            url = configurations.get("dynamicsIPPool","")
-            dataIPList.append(url)
+            # 海外动态代理 URL 已废弃（新 Apollo 无对应 key），离线脚本代理功能不再使用
+            pass
         #预留代理模式
         else:
             print("proxy is error")

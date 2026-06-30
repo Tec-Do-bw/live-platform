@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import Any
 
 import redis
 
-from utils.serverTool import fetch_apollo_config
+import config
 
 
 COLLECTIONS_KEY = "live:monitor:collections"
@@ -281,19 +280,18 @@ class LiveRedisRepository:
         status_ttl_seconds: int | None = None,
     ):
         self.redis = redis_client or self._create_default_client()
+        # Redis 状态 TTL 已迁移到 Apollo（config 门面）；显式参数仅用于测试/调用方注入
         self.status_ttl_seconds = int(
             status_ttl_seconds
-            or os.environ.get("LIVE_STATUS_TTL_SECONDS", DEFAULT_LIVE_STATUS_TTL_SECONDS)
+            if status_ttl_seconds is not None
+            else config.redis_status_ttl_seconds()
         )
 
     @staticmethod
     def _create_default_client() -> redis.Redis:
-        cfg = fetch_apollo_config(int(os.environ.get("ISTEST", "1")))
+        # Redis 连接参数已迁移到 Apollo（config 门面）
         return redis.Redis(
-            host=cfg.get("redisHost"),
-            port=int(cfg.get("redisPort")),
-            password=cfg.get("redisPassword"),
-            db=int(cfg.get("redisDb")),
+            **config.redis_config(),
             decode_responses=True,
         )
 

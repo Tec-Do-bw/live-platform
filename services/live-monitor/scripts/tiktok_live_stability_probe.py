@@ -264,14 +264,11 @@ def create_redis_client() -> Any:
         sys.path.insert(0, str(live_monitor_dir))
 
     import redis
-    from utils.serverTool import fetch_apollo_config
+    import config
 
-    cfg = fetch_apollo_config(int(os.environ.get("ISTEST", "1")))
+    # Redis 连接参数已迁移到 Apollo（config 门面）
     return redis.Redis(
-        host=cfg.get("redisHost"),
-        port=int(cfg.get("redisPort")),
-        password=cfg.get("redisPassword"),
-        db=int(cfg.get("redisDb")),
+        **config.redis_config(),
         decode_responses=True,
     )
 

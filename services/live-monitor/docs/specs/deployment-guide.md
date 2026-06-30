@@ -19,26 +19,38 @@
 
 ### 主机1 (47.237.6.199)
 
-**环境变量配置：**
+**Apollo 配置（cluster 由 `DEPLOY_ENV` 决定）：**
+```python
+live_monitor.node_id = node1
+live_monitor.node_ip = 47.237.6.199
+live_monitor.priority = 100
+live_monitor.backup_node_url = http://47.236.42.104:8080
+```
+
+**环境变量只保留 Apollo 引导参数：**
 ```bash
-NODE_ID=node1
-NODE_IP=47.237.6.199
-PRIORITY=100
-BACKUP_NODE_URL=http://47.236.42.104:8080
-ISTEST=1  # 0=生产环境, 1=测试环境
+APOLLOID=live-spider
+APOLLO_URL=http://dev-apollo.tec-develop.com
+DEPLOY_ENV=dev02
 ```
 
 ---
 
 ### 主机2 (47.236.42.104)
 
-**环境变量配置：**
+**Apollo 配置（cluster 由 `DEPLOY_ENV` 决定）：**
+```python
+live_monitor.node_id = node2
+live_monitor.node_ip = 47.236.42.104
+live_monitor.priority = 50
+live_monitor.backup_node_url = http://47.237.6.199:8080
+```
+
+**环境变量只保留 Apollo 引导参数：**
 ```bash
-NODE_ID=node2
-NODE_IP=47.236.42.104
-PRIORITY=50
-BACKUP_NODE_URL=http://47.237.6.199:8080
-ISTEST=1  # 0=生产环境, 1=测试环境
+APOLLOID=live-spider
+APOLLO_URL=http://dev-apollo.tec-develop.com
+DEPLOY_ENV=dev02
 ```
 
 ---
@@ -325,7 +337,7 @@ grep "数据同步" main.log
 **解决:** 
 - 确保备节点服务正常运行
 - 检查网络连接
-- 查看BACKUP_NODE_URL是否配置正确
+- 查看 `live_monitor.backup_node_url` 是否配置正确
 
 ---
 

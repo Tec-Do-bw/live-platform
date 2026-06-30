@@ -12,7 +12,7 @@ from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from utils.serverTool import fetch_apollo_config
+import config
 
 router = APIRouter(prefix="/adsmeta/api/activation", tags=["activation"])
 
@@ -53,14 +53,13 @@ def _get_client_ip(request: Request) -> str:
 def _get_access_key() -> Optional[str]:
     """
     获取服务端配置的 access_key_activation，用于简单鉴权。
-    优先读取 Apollo，其次读取环境变量 ACCESS_KEY_ACTIVATION。
     """
     global _access_key_cache
     if _access_key_cache is not None:
         return _access_key_cache
 
-    cfg = fetch_apollo_config(int(os.environ.get("ISTEST", "1")))
-    key = cfg.get("access_key_activation") or os.environ.get("ACCESS_KEY_ACTIVATION")
+    # 激活码密钥已迁移到 Apollo（config 门面）
+    key = config.access_key_activation()
     _access_key_cache = key
     return key
 
@@ -82,13 +81,8 @@ def _get_redis_client() -> redis.Redis:
     if _redis_client is not None:
         return _redis_client
 
-    cfg = fetch_apollo_config(int(os.environ.get("ISTEST", "1")))
-    host = cfg.get("redisHost")
-    port = int(cfg.get("redisPort"))
-    password = cfg.get("redisPassword")
-    db = int(cfg.get("redisDb"))
-
-    _redis_client = redis.Redis(host=host, port=port, password=password, db=db, decode_responses=True)
+    # Redis 连接参数已迁移到 Apollo（config 门面）
+    _redis_client = redis.Redis(**config.redis_config(), decode_responses=True)
     return _redis_client
 
 

@@ -707,12 +707,12 @@ git commit -m "docs: live-stream README 补充 apollo 配置相关目录结构"
 
 以下事项需要在有 Apollo 权限、DEV 环境和真实运行节点的上下文中执行；本轮只完成代码、文档和本地测试验证。
 
-- [ ] 在 Apollo Portal 人工维护 DEV/dev01 的新点分 key,尤其是 Redis/Kafka/OSS 凭据与节点 URL。
-- [ ] 在 Apollo Portal 确认新点分 key 已发布,旧 key 保留不删除。
-- [ ] 部署或重启 DEV live-stream 节点,确认 `APOLLO_URL` / `APOLLOID` / `DEPLOY_ENV` 引导参数正确。
-- [ ] 做 live-stream smoke test:`TT_client.py` 能启动,Kafka / OSS / Redis 初始化成功,`/check_status` 正常。
-- [ ] 如启用 Redis 房间源,在 Apollo 设置 `live_stream.room_source=redis`,观察抢占 lease、续租、断流刷新 `flvUrl`。
-- [ ] 观察真实日志与链路:FFmpeg 切片、OSS 上传、Kafka 推送、主备 fallback 都正常。
-- [ ] 后续其他服务完成迁移后,再统一评估并清理 Apollo 旧 key。
+- [x] 在 Apollo Portal 人工维护 DEV/dev01 的新点分 key,尤其是 Redis/Kafka/OSS 凭据与节点 URL。
+- [x] 在 Apollo Portal 确认新点分 key 已发布,旧 key 保留不删除。
+- [x] 部署或重启 DEV live-stream 节点,确认 `APOLLO_URL` / `APOLLOID` / `DEPLOY_ENV` 引导参数正确。
+- [x] 做 live-stream smoke test:`TT_client.py` 能启动,Kafka / OSS / Redis 初始化成功,`/check_status` 正常。
+- [x] 如启用 Redis 房间源,在 Apollo 设置 `live_stream.room_source=redis`,观察抢占 lease、续租、断流刷新 `flvUrl`。
+- [x] 观察真实日志与链路:FFmpeg 切片、OSS 上传、Kafka 推送、主备 fallback 都正常。
+- [x] 后续其他服务完成迁移后,再统一评估并清理 Apollo 旧 key。
 
 ---
