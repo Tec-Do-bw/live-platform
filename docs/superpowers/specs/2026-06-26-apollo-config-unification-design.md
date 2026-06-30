@@ -1,6 +1,6 @@
 # Apollo 配置统一改造设计
 
-> 状态:已确认,待 writing-plans 拆解实施计划
+> 状态:已确认,写入方案已按公司 Apollo 策略调整为 Portal 人工维护
 > 日期:2026-06-26
 > 本次范围:彻底迁移 live-stream + 全局通用 key + apollo 模板改造分发到 4 服务
 
@@ -21,7 +21,7 @@ live-stream 当前配置散落在三处,方式各异:
 ### 目标
 
 所有业务配置收敛到 Apollo,**Apollo 是唯一权威源**,不从环境变量/.env/硬编码读取业务配置。
-用 live-crawler 的成熟 Apollo 客户端(含热更新/缓存/容灾)替换临时实现,并新增写入能力。
+用 live-crawler 的成熟 Apollo 客户端(含热更新/缓存/容灾)替换临时实现。公司 Apollo 禁止代码自动写入/发布配置,配置值由 Apollo Portal 人工维护。
 
 ### 关键约束
 
@@ -37,7 +37,7 @@ live-stream 当前配置散落在三处,方式各异:
 | 项目 | 本次做 | 留待后续 |
 |------|--------|----------|
 | live-stream 全部配置迁移 | ✅ 彻底做(通用 + 特有 key) | — |
-| 全局通用 key 写入 Apollo(DEV) | ✅ | PRO 等生产集群用户确认后单独处理 |
+| 全局通用 key 写入 Apollo(DEV) | ❌ | 公司 Apollo 禁止代码写入,由 Apollo Portal 人工维护 |
 | 4 服务通用 key 引用同步改名 | ✅ 必须(Apollo 改名后旧引用失效) | — |
 | apollo 模板改造 + 分发到 4 服务 | ✅ | — |
 | live-crawler/live-monitor/adspower 特有 key 迁移 | ❌ | 用户在本次所有 todo 完成后接着实现 |
@@ -45,17 +45,15 @@ live-stream 当前配置散落在三处,方式各异:
 
 ## 3. Apollo 模板改造(基准)
 
-以 `services/live-crawler/core/apollo` 为基准,参考 `services/live-crawler/core/reference_apollo`
-新增写入能力:
+以 `services/live-crawler/core/apollo` 为基准,仅保留读取能力:
 
 | 能力 | 来源 | 说明 |
 |------|------|------|
 | 读取 `get_value` | 现有 apollo | 三级降级 + 热更新长轮询 + 本地缓存容灾,保留 |
-| 写入 `update_apollo_config` | 参考 reference_apollo | PUT `/openapi/v1/envs/{env}/apps/{appid}/clusters/{cluster}/namespaces/{ns}/items/{key}` |
-| 发布 `publish_apollo_config` | 参考 reference_apollo | POST `.../releases` |
+| 写入/发布配置 | 不实现 | 公司 Apollo 禁止代码、脚本或 OpenAPI 自动写入/发布配置 |
 
-- OpenAPI token 从环境变量读取,**绝不硬编码或提交**
 - 改造后分发到 4 个服务各自独立的 `core/apollo/`,各服务独立演进
+- 配置值由有权限的人在 Apollo Portal 人工维护和发布
 
 ## 4. 配置 Key 清单(全部小写点分)
 
@@ -68,7 +66,7 @@ live-stream 当前配置散落在三处,方式各异:
 | Redis password | `redisPassword` | `redis.password` |
 | Redis db | `redisDb` | `redis.db` |
 | Kafka 服务器 | `kafkaPro` | `kafka.servers`(取出即用,不 eval) |
-| Kafka topic | `topic_name` | `kafka.topic` |
+| Kafka topic | `topic_name` | `live_stream.kafka.topic` |
 | OSS endpoint | `endpoint` | `oss.endpoint` |
 | OSS bucket | `bucket_name` | `oss.bucket_name` |
 | OSS key id | `access_key_id` | `oss.access_key_id` |
@@ -103,7 +101,7 @@ services/live-stream/
 │   ├── __init__.py
 │   └── apollo/
 │       ├── __init__.py          # 全局单例 APOLLO,引导参数从环境变量读取
-│       ├── apollo_client.py     # 读取+热更新+缓存+新增 OpenAPI 写入能力
+│       ├── apollo_client.py     # 读取+热更新+缓存
 │       └── util.py
 ├── config.py                    # 【新增】集中配置访问层(门面)
 ├── TT_client.py                 # 改为从 config 读取
@@ -142,14 +140,13 @@ def redis_config() -> dict: ...
 - 流控参数、节点 URL、超时等 → 读取点实时 `get_value`,享热更新,**禁止存模块级常量**
 - 连接类配置(Redis/Kafka/OSS client)→ 启动读一次建立连接,变更需重启生效
 - 移除所有 Windows 硬编码 URL、`istest`/`develop` 环境判断(环境由 cluster=`DEPLOY_ENV` 决定)
-- `kafka.servers` 取出即用,移除 `eval()`;`kafka.topic` 取代硬编码 `liveTs`
+- `kafka.servers` 取出即用,移除 `eval()`;`live_stream.kafka.topic` 取代硬编码 `liveTs`
 
-## 7. 写入与迁移策略
+## 7. 配置维护策略
 
-- 生成写入脚本,用新写入能力把全部新点分 key/value/备注写入并发布到 **仅 DEV/dev01**
-- 写入的 key = 全部通用点分 key + 全部 `live_stream.*` 特有 key(其余 3 服务特有 key 本次不写)
+- 不生成写入脚本,不提供 `openapi_writer.py`,不通过代码、脚本、CI 或 OpenAPI 自动写入/发布 Apollo 配置
+- 由有权限的人在 Apollo Portal 人工新增/更新全部通用点分 key + 全部 `live_stream.*` 特有 key(其余 3 服务特有 key 本次不写)
 - **新 key 与旧 key 并存,不删旧 key**(用户后续自行在 Portal 清理)
-- token 留空由用户本地注入后自己跑
 - PRO 等生产集群用户确认后单独处理
 
 ## 8. 跨服务影响
@@ -167,13 +164,13 @@ def redis_config() -> dict: ...
 新建 `.claude/rules/apollo-config.md`(按 `paths` frontmatter 自动触发),记录:
 Apollo 唯一权威源、共享 app_id/namespace、cluster 由 DEPLOY_ENV 决定、3 个引导参数例外、
 小写点分命名、每服务独立 core/apollo、读取点实时 get_value、config.py 门面、
-kafka.servers 取出即用、改通用 key 的连锁影响、OpenAPI 写入与 token 安全。
+kafka.servers 取出即用、改通用 key 的连锁影响、禁止代码写入 Apollo。
 在根 `CLAUDE.md` rules 表格和 `AGENTS.md` 各加一行指针引用(single-source-of-truth,不重复内容)。
 
 ## 10. 执行顺序
 
-1. 改造 apollo 模板(新增写入能力)
-2. 生成写入脚本 / 分发模板到 4 服务(并行)
-3. live-stream 建 config.py → 改造 live-stream / codegraph 定位引用
+1. 分发 apollo 读取模板到 live-stream
+2. live-stream 建 config.py → 改造 live-stream / codegraph 定位引用
+3. 由 Apollo Portal 人工维护新点分 key
 4. 同步改 4 服务通用 key 引用 → 写规则文件
 5. 验证 4 服务无回归

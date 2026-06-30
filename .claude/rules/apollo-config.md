@@ -1,10 +1,10 @@
 ---
 paths:
+  - "**/core/apollo/**"
   - "services/live-stream/core/apollo/**"
   - "services/live-stream/config.py"
   - "services/live-stream/TT_client.py"
   - "services/live-stream/redis_room_source.py"
-  - "services/live-stream/scripts/seed_apollo_config.py"
   - "services/live-crawler/core/apollo/**"
 ---
 
@@ -29,9 +29,9 @@ paths:
 
 - **通用配置**（跨服务共享,不加服务前缀）:
   `redis.host` `redis.port` `redis.password` `redis.db`
-  `kafka.servers`（逗号分隔字符串,取出即用,**不再 eval**）`kafka.topic`
+  `kafka.servers`（逗号分隔字符串,取出即用,**不再 eval**）
   `oss.endpoint` `oss.bucket_name` `oss.access_key_id` `oss.access_key_secret` `oss.region`
-- **服务特有配置**（加服务前缀）: `live_stream.primary_node_url` `live_stream.cut_live_number` `live_stream.max_retries` …
+- **服务特有配置**（加服务前缀）: `live_stream.primary_node_url` `live_stream.kafka.topic` `live_stream.cut_live_number` `live_stream.max_retries` …
 
 ## 消费方式：读取点实时调用 get_value
 
@@ -43,12 +43,13 @@ paths:
 
 ## 每服务独立 core/apollo/ 副本
 
-apollo 客户端模板（读取 + 热更新 + 缓存 + OpenAPI 写入）在每个服务下各有一份
-`core/apollo/`,独立演进。新增写入能力见 `core/apollo/openapi_writer.py`。
+apollo 客户端模板（读取 + 热更新 + 缓存）在每个服务下各有一份
+`core/apollo/`,独立演进。
 
-## 写配置到 Apollo：OpenAPI
+## 禁止代码写入 Apollo
 
-- 写入走 `openapi_writer.py`（PUT items + POST releases）,OpenAPI env 用小写 `dev`
-- **token 从环境变量 `APOLLO_OPENAPI_TOKEN` 读取,绝不硬编码或提交**
+- 公司 Apollo 禁止代码、脚本或 OpenAPI 自动写入/发布配置。
+- 禁止新增 `openapi_writer.py`、seed 脚本、自动发布配置的 CI/定时任务或运行时代码。
+- 配置变更必须由有权限的人在 Apollo Portal 人工维护与发布。
 - 改通用 key 影响多个服务: 重命名通用 key 时需在所有 cluster 同步,
   并用 codegraph 定位全部引用点与配置改名同时上线;旧 key 删除前先确认无服务再读

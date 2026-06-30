@@ -15,9 +15,7 @@ bash start.sh          # 等价命令
 ```
 live-stream/
 ├── core/
-│   └── apollo/                    # Apollo 客户端副本与 OpenAPI 写入能力
-├── scripts/
-│   └── seed_apollo_config.py      # 一次性写入 live-stream 点分 key 到 Apollo DEV/dev01
+│   └── apollo/                    # Apollo 客户端副本（仅读取）
 ├── tests/
 │   ├── test_config.py             # 配置门面测试
 │   ├── test_ffmpeg_command.py     # FFmpeg 命令与 URL 候选测试
@@ -84,17 +82,18 @@ live-monitor /get_roominfo
 业务配置（Kafka / OSS / Redis / 主备节点 / 房间源 / FFmpeg 参数）统一从 Apollo `application` namespace 读取：
 
 - 通用 key：`redis.host` `redis.port` `redis.password` `redis.db`
-- 通用 key：`kafka.servers` `kafka.topic`
+- 通用 key：`kafka.servers`
 - 通用 key：`oss.endpoint` `oss.bucket_name` `oss.access_key_id` `oss.access_key_secret`
 - live-stream key：`live_stream.primary_node_url` `live_stream.backup_node_url`
 - live-stream key：`live_stream.room_source` `live_stream.worker_id` `live_stream.lease_ttl_seconds`
+- live-stream key：`live_stream.kafka.topic`
 - live-stream key：`live_stream.cut_live_number`
 - live-stream key：`live_stream.max_retries` `live_stream.retry_interval_seconds`
 - live-stream key：`live_stream.retry_backoff` `live_stream.max_retry_interval_seconds`
 - live-stream key：`live_stream.analyze_duration_us` `live_stream.probe_size_bytes`
 - live-stream key：`live_stream.heartbeat_interval_seconds` `live_stream.no_data_timeout_seconds`
 
-写入 Apollo DEV/dev01 的一次性脚本：`scripts/seed_apollo_config.py`
+配置值由 Apollo Portal 人工维护。公司 Apollo 禁止代码、脚本或 OpenAPI 自动写入/发布配置。
 
 回滚方式：
 

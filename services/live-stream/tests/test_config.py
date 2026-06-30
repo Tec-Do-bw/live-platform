@@ -70,6 +70,11 @@ def test_kafka_servers_skips_blank_items(cfg, monkeypatch):
     assert cfg.kafka_servers() == ["a:1", "b:2"]
 
 
+def test_kafka_topic_uses_live_stream_key(cfg, monkeypatch):
+    monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.kafka.topic": "devLiveTs"}))
+    assert cfg.kafka_topic() == "devLiveTs"
+
+
 def test_cut_live_number_uses_dot_case_key(cfg, monkeypatch):
     monkeypatch.setattr(cfg, "APOLLO", FakeApollo({"live_stream.cut_live_number": "6"}))
     assert cfg.cut_live_number() == 6

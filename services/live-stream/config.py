@@ -54,7 +54,7 @@ def kafka_servers() -> list[str]:
 
 
 def kafka_topic() -> str:
-    return _get_str("kafka.topic", "liveTs")
+    return _get_str("live_stream.kafka.topic", "liveTs")
 
 
 def oss_config() -> dict[str, str]:
