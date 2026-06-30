@@ -47,6 +47,18 @@ def test_dashboard_route_rejects_invalid_request(monkeypatch):
     assert response.status_code == 422
 
 
+def test_dashboard_route_rejects_product_list_last_30m(monkeypatch):
+    client = make_client(monkeypatch, lambda req: {"code": 200, "message": "success", "data": {}})
+
+    response = client.post(
+        "/api/v1/tiktok/dashboard/data",
+        headers={"X-API-Token": API_TOKEN},
+        json=_payload(dataType="product_list", timeRange="last_30m"),
+    )
+
+    assert response.status_code == 422
+
+
 def test_dashboard_route_returns_service_success(monkeypatch):
     seen = {}
 

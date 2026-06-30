@@ -344,10 +344,11 @@ class TiktokTool:
             if tier in h264 and h264[tier] not in play_urls:
                 play_urls.append(h264[tier])
 
-        # 首选 flv_url：H265 origin > H265 hd > H264 hd > 列表首位
+        # 首选 flv_url：H265 origin > H265 hd > H264 hd > 列表首位  TODO flv解析选择需要优化一下 当前只是测试几个账号选择的H264 H265出现很多问题
         flv_url = (
-            h265.get("origin") or h265.get("hd")
-            or h264.get("hd") or (play_urls[0] if play_urls else "")
+            h264.get("hd") or (play_urls[0] if play_urls else "")
+            or h265.get("origin") or h265.get("hd")
+
         )
 
         # 优先用 streamData 内 common.room_id（更可靠）
@@ -520,7 +521,7 @@ if __name__ == '__main__':
         start_time = time.time()
         try:
             # room_url = "https://www.tiktok.com/@greameofficialstore/live" #18岁禁止
-            room_url = "https://www.tiktok.com/@ipopi_official_account/live" #正常
+            room_url = "https://www.tiktok.com/@bagsmart_official.id/live" #正常
             # room_url = "https://www.tiktok.com/@vrcomfyny/live" #没有直播
             port_info = tiktokTool.getLiveStreamInfo_requests(room_url, ipList) or {}
             print(port_info)

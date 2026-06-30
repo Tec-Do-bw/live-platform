@@ -50,6 +50,13 @@ def _start_time_for(time_range: DashboardTimeRange, now_func: Callable[[], float
     return None
 
 
+def _product_list_granularity_for(time_range: DashboardTimeRange) -> int | None:
+    """按请求窗口计算商品列表 granularity。"""
+    if time_range == DashboardTimeRange.last_5m:
+        return 5
+    return None
+
+
 def _upstream_reason(exc: BaseException) -> str:
     """区分上游超时与其他请求错误。"""
     if isinstance(exc, TimeoutError):
@@ -71,6 +78,8 @@ def fetch_dashboard_data(
         fetcher = DASHBOARD_FETCHERS[req.dataType]
         if req.dataType == DashboardDataType.trend_chart:
             result = fetcher(session, cred, req.roomId, _start_time_for(req.timeRange, now_func))
+        elif req.dataType == DashboardDataType.product_list:
+            result = fetcher(session, cred, req.roomId, _product_list_granularity_for(req.timeRange))
         else:
             result = fetcher(session, cred, req.roomId)
 

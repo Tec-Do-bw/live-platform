@@ -139,15 +139,21 @@ def fetch_dashboard_user_portrait(session: Any, cred: Credentials, room_id: str)
     )
 
 
-def fetch_dashboard_product_list(session: Any, cred: Credentials, room_id: str) -> FetchResult:
+def fetch_dashboard_product_list(
+    session: Any,
+    cred: Credentials,
+    room_id: str,
+    granularity: int | None = None,
+) -> FetchResult:
     """获取直播大屏商品列表。"""
-    payload = {
-        "request": {
-            "room_filter": {"room_id": room_id, "is_content_type": 1},
-            "sorting_type": 1,
-            "stats_types": PRODUCT_LIST_TYPES,
-        }
+    request: dict[str, Any] = {
+        "room_filter": {"room_id": room_id, "is_content_type": 1},
+        "sorting_type": 1,
+        "stats_types": PRODUCT_LIST_TYPES,
     }
+    if granularity is not None:
+        request["granularity"] = granularity
+    payload = {"request": request}
     return _post_dashboard_api(
         session,
         cred,

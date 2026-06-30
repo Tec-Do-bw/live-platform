@@ -172,6 +172,20 @@ def test_user_portrait_product_list_and_room_info_payloads():
     assert room_payload["request"] == {"room_filter": {"room_id": "room-1", "is_content_type": 1}}
 
 
+def test_product_list_optional_granularity_payload():
+    cred = _cred()
+
+    product_session = FakeSession()
+    real_collector.fetch_dashboard_product_list(product_session, cred, "room-1")
+    product_payload = _last_payload(product_session)
+    assert "granularity" not in product_payload["request"]
+
+    product_last_5m_session = FakeSession()
+    real_collector.fetch_dashboard_product_list(product_last_5m_session, cred, "room-1", granularity=5)
+    product_last_5m_payload = _last_payload(product_last_5m_session)
+    assert product_last_5m_payload["request"]["granularity"] == 5
+
+
 def test_tiktok_business_code_is_preserved_as_successful_fetch_result():
     session = FakeSession({"code": 98001021, "message": "call downstream server error", "data": {}})
 

@@ -218,7 +218,7 @@ POST /api/v1/tiktok/dashboard/data
 | `dataType` | string | 是 | 6 种之一，见 4.3 |
 | `roomId` | string | 是 | 来自开播状态接口 |
 | `collectionId` | string | 是 | 采集任务标识；本层据此定位账号会话，内部映射到信封 `socketUserId` |
-| `timeRange` | string | 否 | 时间范围，仅 `trend_chart` 时生效。枚举：`full`(默认，Full LIVE 完整直播)、`last_5m`(Last 5m 近5分钟)、`last_30m`(Last 30m 近30分钟)。本层按枚举计算上游 `start_time` |
+| `timeRange` | string | 否 | 时间范围。`trend_chart` 支持 `full`(默认)、`last_5m`、`last_30m`，本层按枚举计算上游 `start_time`；`product_list` 仅支持 `full` 和 `last_5m`，`last_5m` 会向上游传 `granularity=5` |
 
 上游细节（`stats_types`、`creator_id`、`country`、排序、分页、`start_time`）由本层按 `dataType` 固定填充，不暴露给后端或前端。
 
@@ -230,7 +230,7 @@ POST /api/v1/tiktok/dashboard/data
 | `trend_chart` | `08-trend-chart` | `/api/v1/insights/workbench/live/detail/trend/chart` | ① Performance trends | `room_filter.room_id`、`is_content_type=1`、`TREND_CHART_FULL` 27 个合法 ID；按 `timeRange` 计算 `start_time`(full→不传,last_5m→now-300,last_30m→now-1800) |
 | `source_new` | `03-source-new` | `/api/v3/insights/workbench/live/detail/source/new` | ④ Traffic source | `room_id`、`is_content_type`、`stats_types=[100]`、`version=3`；2026-06-11 旧批样本，本次未重采 |
 | `user_portrait` | `04all-user-portrait` | `/api/v1/insights/workbench/live/detail/user/portrait` | ⑥ Follower analytics + ⑦ User profile | `room_filter.room_id`、`is_content_type=1`、`stats_types=[80,81,82,83,90,85,86,87,88,350,351,352,353]` |
-| `product_list` | `05-product-list` | `/api/v1/insights/workbench/live/detail/product/list` | ⑤ Product List | `room_filter.room_id`、`is_content_type=1`、`sorting_type=1`、19 个有效商品指标 ID |
+| `product_list` | `05-product-list` | `/api/v1/insights/workbench/live/detail/product/list` | ⑤ Product List | `room_filter.room_id`、`is_content_type=1`、`sorting_type=1`、19 个有效商品指标 ID；`timeRange=last_5m` 时额外传 `granularity=5` |
 | `room_info` | `09-room-info` | `/api/v1/insights/workbench/live/detail/room/info` | 大屏头部 | `room_filter.room_id`、`is_content_type=1`；**无 stats_types**，返回房间与主播完整信息 |
 
 ## 4.4 成功出参：采集信封
@@ -517,6 +517,7 @@ trend_chart 支持通过可选参数 `start_time` 控制时间窗口,下游接�
 ```
 
 > 默认请求 19 个有效商品指标 ID。`1/2/3/37/350` 虽合法但单传不新增字段，不作为默认请求参数。
+> `product_list` 的时间窗口只支持 `last_5m`；传 `last_5m` 时请求体额外加入 `"granularity":5`，`last_30m` 会在接口层被拒绝。
 
 ### 5.7.2 参数/指标 ID → 网页显示名 → 响应字段名
 

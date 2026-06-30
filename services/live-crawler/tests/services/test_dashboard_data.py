@@ -119,6 +119,45 @@ def test_trend_chart_time_range_maps_to_start_time(monkeypatch, time_range, expe
 
 
 @pytest.mark.parametrize(
+    ("time_range", "expected_granularity"),
+    [
+        (DashboardTimeRange.full, None),
+        (DashboardTimeRange.last_5m, 5),
+    ],
+)
+def test_product_list_time_range_maps_to_granularity(monkeypatch, time_range, expected_granularity):
+    session = FakeSession()
+    seen = {}
+
+    monkeypatch.setattr(
+        dashboard_data,
+        "setup_session",
+        lambda collection_id, *, skip_verification=False: (FakeCred(), session, None),
+    )
+    monkeypatch.setattr(
+        dashboard_data,
+        "_format_message",
+        lambda url, request_body, response_body, cookies, socket_user_id: {},
+    )
+
+    def fake_fetcher(got_session, got_cred, room_id, granularity):
+        seen["args"] = (got_session, room_id, granularity)
+        return _fetch_result()
+
+    monkeypatch.setitem(dashboard_data.DASHBOARD_FETCHERS, DashboardDataType.product_list, fake_fetcher)
+
+    dashboard_data.fetch_dashboard_data(_req(DashboardDataType.product_list, time_range))
+
+    assert seen["args"] == (session, "room-1", expected_granularity)
+    assert session.closed is True
+
+
+def test_product_list_rejects_last_30m_time_range():
+    with pytest.raises(ValueError, match="product_list only supports"):
+        _req(DashboardDataType.product_list, DashboardTimeRange.last_30m)
+
+
+@pytest.mark.parametrize(
     ("exc", "code", "reason"),
     [
         (LoginRequired("login expired"), 5001, "login_required"),
