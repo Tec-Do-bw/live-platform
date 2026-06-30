@@ -32,3 +32,29 @@
 |------|------|----------|
 | `stop_browser()` | 仅关闭浏览器，保留环境 | API 关闭、WebSocket 断开、登录完成、应用关闭 |
 | `cleanup_browser()` | 关闭并删除环境 | **仅**用于创建失败时的异常回滚 |
+
+## Shopee 登录检测机制（2026-06-09）
+
+### 混合监听架构
+
+`_listen_once` 采用 **被动安全网 + 主动快速路径** 双轨架构：
+
+1. **被动监听**：持续收集 `SHOPEE_PATTERN` 中 6 个接口的网络包（包括跨境店 `get_merchant_shop_list`）
+2. **主动验证**：URL 离开登录页后每 5s 调用 `_fetch_shopee_shop_ids` 通过 JS 注入主动验证登录态
+3. **证据合并**：双路径获取的 `shop_ids` 合并，任一路径命中 `validate_id` 即退出
+
+**优势**：用户快速填写完表单后无需等待后续页面触发接口，主动验证立即响应；网络包被动收集作为兜底，防止 JS 注入失败遗漏。
+
+### 主动验证方法
+
+- **`_fetch_shopee_shop_ids`**：跨境/本土店入口，根据 `cb_option` 分流
+- **`_fetch_cn_shop_ids`**：跨境店通过 `get_session` + `get_merchant_shop_list` 获取店铺列表
+- **`_fetch_local_shop_ids`**：本土店通过 `api/v2/login` + `get_shop_list` 获取店铺列表
+- **`_poll_window_var`**：Poll 等待 JS fetch 结果写入 window 变量（10s 超时）
+
+### 测试覆盖
+
+- 单元测试：`tests/services/test_login_monitor_shopee.py`（7 个用例）
+  - 跨境店主动验证：成功/仅 current/未登录
+  - 本土店主动验证：成功/未登录
+  - Poll 辅助方法：成功/超时

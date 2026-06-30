@@ -17,6 +17,8 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Callable
 import re
+import config
+
 
 # 配置日志
 logger.add(
@@ -29,6 +31,27 @@ logger.add(
 )
 
 app = FastAPI()
+online_room_list = {}
+MainHelperObj = None
+_redis_room_source = None
+
+
+def build_live_url_candidates(port_info: dict) -> list[str]:
+    """从主 FLV 和备选 play_urls 中生成去重后的可拉流 URL。"""
+    candidates = []
+    raw_urls = [port_info.get("flv_url") or port_info.get("flvUrl")]
+    raw_urls.extend(port_info.get("play_urls") or port_info.get("playUrls") or [])
+
+    seen = set()
+    for raw_url in raw_urls:
+        url = str(raw_url or "").strip()
+        if not url or url == "error" or "only_audio=1" in url:
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        candidates.append(url)
+    return candidates
 
 
 # ========== FFmpeg 稳定推流模块 ==========
@@ -77,6 +100,7 @@ class FFmpegStreamManager:
         self.stream_start_time = 0
         self._stop_flag = False
         self._lock = threading.Lock()
+        self.last_ffmpeg_lines = []
 
     def build_ffmpeg_command(self, live_url: str, output_filename: str, segment_time: int = 8,
                              platform: str = "tiktok") -> list:
@@ -141,14 +165,15 @@ class FFmpegStreamManager:
 
         # ===== 编码参数 =====
         command.extend([
+            # 只取首个视频和首个音频，避免 TikTok FLV 中的 data/unknown stream 触发 TS mux 失败
+            '-map', '0:v:0?',
+            '-map', '0:a:0?',
+            '-dn',
+            '-sn',
             '-c:v', 'copy',
             '-c:a', 'copy',
             # 避免时间戳问题
             '-avoid_negative_ts', 'make_zero',
-            # 复制未知流
-            '-copy_unknown',
-            # 映射所有流
-            '-map', '0',
             # 设置复用队列大小（防止Shopee帧率卡顿）
             '-max_muxing_queue_size', max_muxing_queue_size,
         ])
@@ -200,6 +225,10 @@ class FFmpegStreamManager:
                 if not line_str:
                     continue
 
+                self.last_ffmpeg_lines.append(line_str)
+                if len(self.last_ffmpeg_lines) > 20:
+                    self.last_ffmpeg_lines = self.last_ffmpeg_lines[-20:]
+
                 # 解析进度信息
                 if 'frame=' in line_str or 'size=' in line_str:
                     progress = self._parse_ffmpeg_progress(line_str)
@@ -219,18 +248,11 @@ class FFmpegStreamManager:
                             pass
 
                 # 检测错误和警告
-                elif 'error' in line_str.lower():
-                    # logger.error(f"[{room_id}] FFmpeg错误: {line_str}")
-                    pass
-                elif 'warning' in line_str.lower():
-                    # logger.warning(f"[{room_id}] FFmpeg警告: {line_str}")
-                    pass
-                elif 'Connection refused' in line_str or 'Connection timed out' in line_str:
-                    # logger.error(f"[{room_id}] 网络连接问题: {line_str}")
-                    pass
-                elif 'End of file' in line_str or 'Input/output error' in line_str:
-                    logger.warning(f"[{room_id}] 直播流结束或IO错误: {line_str}")
-                    pass
+                elif any(keyword in line_str.lower() for keyword in (
+                    "error", "failed", "invalid", "connection", "server returned",
+                    "end of file", "input/output"
+                )):
+                    logger.warning(f"[{room_id}] FFmpeg输出: {line_str}")
 
         except Exception as e:
             logger.error(f"[{room_id}] 监控FFmpeg输出异常: {e}")
@@ -271,7 +293,9 @@ class FFmpegStreamManager:
 
     def start_stream(self, live_url: str, output_filename: str, output_dir: str,
                      segment_time: int = 8, room_id: str = "unknown",
-                     on_status_change: Callable = None, platform: str = "tiktok") -> subprocess.Popen:
+                     on_status_change: Callable = None, platform: str = "tiktok",
+                     on_retry_refresh: Callable = None,
+                     on_heartbeat: Callable = None) -> subprocess.Popen:
         """
         启动推流，带自动重连机制
 
@@ -283,6 +307,8 @@ class FFmpegStreamManager:
         - room_id: 房间ID(用于日志)
         - on_status_change: 状态变化回调函数
         - platform: 平台类型 ("tiktok" 或 "shopee")
+        - on_retry_refresh: 重连前刷新直播源的回调函数
+        - on_heartbeat: 推流心跳回调函数
 
         返回: subprocess.Popen 进程对象
         """
@@ -303,6 +329,7 @@ class FFmpegStreamManager:
 
                 # 构建FFmpeg命令（根据平台使用不同参数）
                 command = self.build_ffmpeg_command(live_url, output_filename, segment_time, platform)
+                self.last_ffmpeg_lines = []
                 logger.info(f"[{room_id}] 启动FFmpeg推流 (重试次数: {self.retry_count}, 平台: {platform})")
                 logger.debug(f"[{room_id}] FFmpeg命令: {' '.join(command)}")
 
@@ -311,7 +338,7 @@ class FFmpegStreamManager:
                     command,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
-                    bufsize=1
+                    bufsize=0
                 )
 
                 # 启动输出监控线程
@@ -337,6 +364,9 @@ class FFmpegStreamManager:
                     if self.process.poll() is not None:
                         exit_code = self.process.returncode
                         logger.warning(f"[{room_id}] FFmpeg进程退出, 退出码: {exit_code}")
+                        if self.last_ffmpeg_lines:
+                            recent_output = " | ".join(self.last_ffmpeg_lines[-5:])
+                            logger.warning(f"[{room_id}] FFmpeg退出前输出: {recent_output}")
                         break
 
                     # 稳定运行检查：如果运行超过60秒，才认为是一次成功的连接，重置重试计数
@@ -349,6 +379,24 @@ class FFmpegStreamManager:
                     current_time = time.time()
                     if current_time - last_health_check >= self.config.heartbeat_interval:
                         last_health_check = current_time
+
+                        if on_heartbeat:
+                            try:
+                                heartbeat_ok = on_heartbeat(room_id, self.process.pid if self.process else "")
+                            except Exception as e:
+                                logger.warning(f"[{room_id}] 心跳回调失败: {e}")
+                                heartbeat_ok = False
+                            if heartbeat_ok is False:
+                                logger.warning(f"[{room_id}] 心跳回调要求停止推流")
+                                self._stop_flag = True
+                                if self.process and self.process.poll() is None:
+                                    self.process.terminate()
+                                    try:
+                                        self.process.wait(timeout=5)
+                                    except subprocess.TimeoutExpired:
+                                        self.process.kill()
+                                        self.process.wait()
+                                break
 
                         if not self._check_stream_health(output_dir):
                             logger.warning(f"[{room_id}] 推流健康检查失败，准备重连")
@@ -365,6 +413,19 @@ class FFmpegStreamManager:
                 if self._stop_flag:
                     update_status(StreamStatus.STOPPED)
                     break
+
+                if on_retry_refresh:
+                    try:
+                        should_continue, refreshed_live_url = on_retry_refresh(room_id, live_url)
+                        if not should_continue:
+                            logger.info(f"[{room_id}] 直播源已失效或下播，停止重连")
+                            update_status(StreamStatus.STOPPED)
+                            break
+                        if refreshed_live_url and refreshed_live_url != live_url:
+                            logger.info(f"[{room_id}] 直播源已刷新，使用新的FLV URL重连")
+                            live_url = refreshed_live_url
+                    except Exception as e:
+                        logger.warning(f"[{room_id}] 重连前刷新直播源失败，继续使用当前URL: {e}")
 
             except Exception as e:
                 logger.error(f"[{room_id}] 推流异常: {e}")
@@ -417,11 +478,6 @@ class FFmpegStreamManager:
         }
 
 
-# ========== 主备节点配置 ==========
-PRIMARY_NODE_URL = os.environ.get('PRIMARY_NODE_URL', 'http://47.236.42.104:8080')
-BACKUP_NODE_URL = os.environ.get('BACKUP_NODE_URL', 'http://47.237.6.199:8080')  # 备用节点URL
-
-
 # 心跳接口
 @app.get("/check_status")
 def read_root():
@@ -450,9 +506,10 @@ def request_with_fallback(method, endpoint, json_data=None, timeout=5):
 
     返回: 响应对象，如果两个节点都失败则返回 None
     """
-    nodes = [PRIMARY_NODE_URL]
-    if BACKUP_NODE_URL:
-        nodes.append(BACKUP_NODE_URL)
+    nodes = [config.primary_node_url()]
+    backup = config.backup_node_url()
+    if backup and backup != nodes[0]:
+        nodes.append(backup)
 
     for node_url in nodes:
         try:
@@ -475,49 +532,6 @@ def request_with_fallback(method, endpoint, json_data=None, timeout=5):
                 return None
 
     return None
-
-
- # apollo获取配置
-def fetch_apollo_config(istest=0):
-    APOLLO_URL = str(os.environ.get('APOLLO_URL')).strip()
-    APOLLOID = str(os.environ.get('APOLLOID')).strip()
-
-    # 判断是不是测试环境
-    if 'develop' in APOLLO_URL:
-        istest = 1
-
-    # if istest == 1:
-    #     APOLLO_URL = 'http://dev-apollo.tec-develop.com'
-
-    if istest != 1:
-        # http://10.225.17.67:30080（windows机子需要单独做映射）
-        if os.name == 'nt':
-            APOLLO_URL = 'http://10.225.17.67:30080'
-
-    APOLLOID = 'live-spider'
-
-    if istest == 1:
-        url = "{}/configs/{}/dev01/application".format(str(APOLLO_URL), str(APOLLOID))
-        print("测试环境", url)
-    else:
-        url = "{}/configs/{}/PRO/application".format(str(APOLLO_URL), str(APOLLOID))
-        print("生产环境", url)
-
-    # 配置你的 Apollo 服务详情
-    config_data = {}
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # 检查响应是否成功
-        config_data = response.json()
-    except Exception as e:
-        print(f"获取apollo配置失败: {e}")
-
-    if config_data:
-        configurations = config_data["configurations"]
-        return configurations
-    else:
-        return {}
-
 
 
 # 获取当前文件所在文件夹绝对路径
@@ -590,9 +604,8 @@ def count_files_in_subdirectories(folder_path="", iscount=False):
 
 # kafka相关操作
 class KafkaHelper:
-    def __init__(self, istest=1):
-        configurations = fetch_apollo_config(istest)
-        kafka_server = list(eval(configurations["kafkaPro"]))
+    def __init__(self):
+        kafka_server = config.kafka_servers()
         self.producer = KafkaProducer(
             bootstrap_servers=kafka_server,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -606,13 +619,12 @@ class KafkaHelper:
 
 # 阿里云OSS相关操作
 class AiyunOBSHelper:
-    def __init__(self, istest=1):
-        configurations = fetch_apollo_config(istest)
-        # print("configurations-->",configurations)
-        self.endpoint = configurations['endpoint']
-        self.bucket_name = configurations['bucket_name']
-        self.access_key_id = configurations['access_key_id']
-        self.access_key_secret = configurations['access_key_secret']
+    def __init__(self):
+        oss_cfg = config.oss_config()
+        self.endpoint = oss_cfg["endpoint"]
+        self.bucket_name = oss_cfg["bucket_name"]
+        self.access_key_id = oss_cfg["access_key_id"]
+        self.access_key_secret = oss_cfg["access_key_secret"]
 
         # 创建Bucket实例
         self.auth = oss2.Auth(self.access_key_id, self.access_key_secret)
@@ -844,10 +856,10 @@ class FileHelper:
 
 # 入kafaka 格式矫正
 class MainHelper:
-    def __init__(self, topic_name='liveTs', istest=1):
+    def __init__(self, topic_name='liveTs'):
         self.FileHelperObj = FileHelper()
-        self.AliYOBSHelperObj = AiyunOBSHelper(istest)
-        self.KafkaHelperObj = KafkaHelper(istest)
+        self.AliYOBSHelperObj = AiyunOBSHelper()
+        self.KafkaHelperObj = KafkaHelper()
         self.topic_name = topic_name
 
         # 文件处理状态追踪 (防止重复处理)
@@ -1043,6 +1055,59 @@ class MainHelper:
 
             except Exception as e:
                 logger.error(f"发送Kafka异常--> {e}")
+def is_redis_room_source_enabled():
+    return config.is_redis_room_source()
+
+
+def get_worker_id():
+    return config.worker_id()
+
+
+def get_redis_room_source():
+    global _redis_room_source
+    if _redis_room_source is None:
+        from redis_room_source import RedisRoomSource
+
+        _redis_room_source = RedisRoomSource()
+    return _redis_room_source
+
+
+def build_redis_port_info_init(status, worker_id):
+    collection_id = status["collectionId"]
+    live_room_id = status.get("roomId") or collection_id
+    metadata = dict(status.get("metadata") or {})
+    port_info = metadata
+    port_info["flv_url"] = status["flvUrl"]
+    port_info["roomId"] = port_info.get("roomId") or live_room_id
+    port_info["filePath"] = port_info.get("filePath") or collection_id
+    port_info["startTime"] = port_info.get("startTime") or str(int(time.time()))
+    port_info["id"] = port_info.get("id") or collection_id
+    port_info["collection_id"] = collection_id
+    port_info["platform"] = status.get("platform") or port_info.get("platform") or "tiktok"
+
+    try:
+        local_ip = socket.gethostbyname(socket.gethostname())
+    except Exception:
+        local_ip = ""
+
+    return {
+        "room_id": collection_id,
+        "collection_id": collection_id,
+        "room_url": status.get("roomUrl", ""),
+        "allocation_status": 1,
+        "status_update_time": int(time.time()),
+        "ip": local_ip,
+        "redis_owned": True,
+        "stream_worker_id": worker_id,
+        "live_info": port_info,
+    }
+
+
+def start_producer_thread(port_info_init):
+    producer_thread = threading.Thread(target=ProducerTask, args=(port_info_init,))
+    producer_thread.daemon = False
+    producer_thread.start()
+    return producer_thread
 
 
 def ProducerTask(port_info_init):
@@ -1057,6 +1122,9 @@ def ProducerTask(port_info_init):
     """
     port_info = port_info_init.get("live_info")
     room_id = port_info_init["room_id"]
+    collection_id = port_info_init.get("collection_id") or room_id
+    worker_id = port_info_init.get("stream_worker_id") or get_worker_id()
+    redis_source = get_redis_room_source() if port_info_init.get("redis_owned") and is_redis_room_source_enabled() else None
 
     # 获取当前文件所在文件夹路径
     directory = get_current_directory()
@@ -1073,6 +1141,10 @@ def ProducerTask(port_info_init):
     port_info["init_startTime"] = port_info["startTime"]
 
     live_url = port_info["flv_url"]
+    live_url_candidates = build_live_url_candidates(port_info)
+    if live_url and live_url not in live_url_candidates:
+        live_url_candidates.insert(0, live_url)
+    live_url_index = {"value": live_url_candidates.index(live_url) if live_url in live_url_candidates else 0}
     CreatTime = str(int(time.time()))
 
     port_info["CreatTime"] = CreatTime
@@ -1081,7 +1153,8 @@ def ProducerTask(port_info_init):
     output_filename = output_dir_init + '/' + filePath + '_' + CreatTime + '_%00005d.ts'
 
     # 判断平台类型 (根据 session 中是否包含 shop_id 来区分)
-    platform = "shopee" if 'shop_id' in port_info.get("session", {}) else "tiktok"
+    platform = port_info.get("platform") or ("shopee" if 'shop_id' in port_info.get("session", {}) else "tiktok")
+    port_info["platform"] = platform
 
     logger.info(f"[{room_id}] 开始推流任务")
     logger.info(f"[{room_id}] 直播源: {live_url}")
@@ -1090,14 +1163,14 @@ def ProducerTask(port_info_init):
 
     # 创建推流配置
     stream_config = StreamConfig(
-        max_retries=5,  # 最大重试5次
-        retry_interval=3,  # 初始重试间隔3秒
-        retry_backoff=1.5,  # 重试间隔递增因子
-        max_retry_interval=30,  # 最大重试间隔30秒
-        analyzeduration=5000000,  # 5秒分析时长
-        probesize=10000000,  # 10MB探测大小
-        heartbeat_interval=30,  # 30秒心跳检测
-        no_data_timeout=60  # 60秒无数据超时
+        max_retries=config.stream_max_retries(),
+        retry_interval=config.stream_retry_interval_seconds(),
+        retry_backoff=config.stream_retry_backoff(),
+        max_retry_interval=config.stream_max_retry_interval_seconds(),
+        analyzeduration=config.stream_analyze_duration_us(),
+        probesize=config.stream_probe_size_bytes(),
+        heartbeat_interval=config.stream_heartbeat_interval_seconds(),
+        no_data_timeout=config.stream_no_data_timeout_seconds(),
     )
 
     # 创建推流管理器
@@ -1110,8 +1183,95 @@ def ProducerTask(port_info_init):
             if rid in online_room_list:
                 online_room_list[rid]["stream_status"] = status.value
                 online_room_list[rid]["status_update_time"] = int(time.time())
+            if redis_source:
+                redis_source.write_recording_status(
+                    collection_id,
+                    {
+                        "collectionId": collection_id,
+                        "workerId": worker_id,
+                        "ip": port_info_init.get("ip", ""),
+                        "status": status.value,
+                        "ffmpegPid": stream_manager.process.pid if stream_manager.process else "",
+                        "flvUrlHash": md5_encrypt(port_info.get("flv_url", "")),
+                        "startedAt": port_info.get("CreatTime", ""),
+                        "lastHeartbeatAt": int(time.time()),
+                        "lastSegmentAt": 0,
+                        "lastError": "",
+                    },
+                )
         except Exception as e:
             logger.error(f"[{rid}] 更新状态失败: {e}")
+
+    def on_stream_heartbeat(rid: str, pid):
+        if not redis_source:
+            return
+        renewed = redis_source.renew(collection_id, worker_id)
+        if not renewed:
+            logger.warning(f"[{rid}] Redis lease续租失败，可能已被其他worker接管")
+            return False
+        redis_source.write_recording_status(
+            collection_id,
+            {
+                "collectionId": collection_id,
+                "workerId": worker_id,
+                "ip": port_info_init.get("ip", ""),
+                "status": stream_manager.status.value,
+                "ffmpegPid": pid,
+                "flvUrlHash": md5_encrypt(port_info.get("flv_url", "")),
+                "startedAt": port_info.get("CreatTime", ""),
+                "lastHeartbeatAt": int(time.time()),
+                "lastSegmentAt": 0,
+                "lastError": "",
+            },
+        )
+        return True
+
+    def on_retry_refresh(rid: str, current_live_url: str):
+        nonlocal live_url_candidates
+
+        def next_candidate_url():
+            if len(live_url_candidates) <= 1:
+                return current_live_url
+            try:
+                current_index = live_url_candidates.index(current_live_url)
+            except ValueError:
+                current_index = live_url_index["value"]
+            next_index = (current_index + 1) % len(live_url_candidates)
+            live_url_index["value"] = next_index
+            return live_url_candidates[next_index]
+
+        if not redis_source:
+            fallback_url = next_candidate_url()
+            if fallback_url != current_live_url:
+                port_info["flv_url"] = fallback_url
+                logger.info(f"[{rid}] 切换备用直播源: {fallback_url}")
+            return True, fallback_url
+
+        status = redis_source.get_status(collection_id)
+        if not status:
+            redis_source.release(collection_id, worker_id)
+            return False, None
+
+        metadata = status.get("metadata") or {}
+        refreshed_candidates = build_live_url_candidates(
+            {
+                "flv_url": status.get("flvUrl"),
+                "play_urls": metadata.get("play_urls") or metadata.get("playUrls") or port_info.get("play_urls"),
+            }
+        )
+        if refreshed_candidates:
+            live_url_candidates = refreshed_candidates
+
+        refreshed_live_url = status.get("flvUrl", "")
+        if refreshed_live_url and refreshed_live_url != current_live_url:
+            port_info["flv_url"] = refreshed_live_url
+            return True, refreshed_live_url
+
+        fallback_url = next_candidate_url()
+        if fallback_url != current_live_url:
+            port_info["flv_url"] = fallback_url
+            logger.info(f"[{rid}] 切换备用直播源: {fallback_url}")
+        return True, fallback_url
 
     # 启动上传处理线程
     upload_stop_flag = threading.Event()
@@ -1138,7 +1298,9 @@ def ProducerTask(port_info_init):
             segment_time=port_info["interval"],
             room_id=room_id,
             on_status_change=on_status_change,
-            platform=platform
+            platform=platform,
+            on_retry_refresh=on_retry_refresh,
+            on_heartbeat=on_stream_heartbeat,
         )
 
         # 推流结束后的统计
@@ -1170,13 +1332,77 @@ def ProducerTask(port_info_init):
             except Exception as e:
                 logger.error(f"[{room_id}] 移除房间失败: {e}")
 
+        if redis_source:
+            try:
+                redis_source.write_recording_status(
+                    collection_id,
+                    {
+                        "collectionId": collection_id,
+                        "workerId": worker_id,
+                        "ip": port_info_init.get("ip", ""),
+                        "status": "stopped",
+                        "ffmpegPid": "",
+                        "flvUrlHash": md5_encrypt(port_info.get("flv_url", "")),
+                        "startedAt": port_info.get("CreatTime", ""),
+                        "lastHeartbeatAt": int(time.time()),
+                        "lastSegmentAt": 0,
+                        "lastError": "",
+                    },
+                )
+                redis_source.release(collection_id, worker_id)
+            except Exception as e:
+                logger.warning(f"[{room_id}] Redis lease释放失败: {e}")
+
         logger.info(f"[{room_id}] 推流任务清理完成")
 
     # 如果没有达到服务器承载上线数据liveRoomNumber，每次获取一个房间信息
 
 
+def get_room_info_from_redis(liveRoomNumber=4):
+    """Redis模式下获取房间并认领录制lease。"""
+    current_room_count = len(online_room_list)
+    if current_room_count >= liveRoomNumber:
+        return
+
+    redis_source = get_redis_room_source()
+    worker_id = get_worker_id()
+    needed = liveRoomNumber - current_room_count
+    candidates = redis_source.list_live_candidates(limit=max(needed * 2, needed))
+    for candidate in candidates:
+        collection_id = candidate["collectionId"]
+        if collection_id in online_room_list:
+            continue
+        if not redis_source.claim(collection_id, worker_id):
+            continue
+
+        status = redis_source.get_status(collection_id)
+        if not status:
+            redis_source.release(collection_id, worker_id)
+            continue
+
+        port_info_init = build_redis_port_info_init(status, worker_id)
+        online_room_list[collection_id] = port_info_init
+        logger.info(f"Redis模式获取到新房间: {collection_id} roomId={status.get('roomId')}")
+
+        try:
+            start_producer_thread(port_info_init)
+        except Exception as e:
+            logger.error(f"Redis模式启动推流线程失败 | collection_id={collection_id} error={e}")
+            if collection_id in online_room_list:
+                del online_room_list[collection_id]
+            redis_source.release(collection_id, worker_id)
+            continue
+
+        if len(online_room_list.keys()) >= liveRoomNumber:
+            break
+
+
 def get_room_info(liveRoomNumber=4):
     """获取房间信息的函数"""
+    if is_redis_room_source_enabled():
+        get_room_info_from_redis(liveRoomNumber)
+        return
+
     current_room_count = len(online_room_list)
     if current_room_count < liveRoomNumber:
         for i in range(liveRoomNumber - current_room_count):
@@ -1199,9 +1425,7 @@ def get_room_info(liveRoomNumber=4):
                     # 每次获取到新的直播间进行启动一条新的监控线程
                     port_info_init = live_room_info["data"]
                     # ProducerTask(port_info_init)
-                    producer_thread = threading.Thread(target=ProducerTask, args=(port_info_init,))
-                    producer_thread.daemon = False
-                    producer_thread.start()
+                    start_producer_thread(port_info_init)
 
                     # 如果已经达到目标数量，提前退出(差几个直播间就获取几次)
                     if len(online_room_list.keys()) >= liveRoomNumber:
@@ -1213,6 +1437,9 @@ def get_room_info(liveRoomNumber=4):
 # 定时上报功能
 def report_room_info(online_room_list):
     """定时上报房间信息"""
+    if is_redis_room_source_enabled():
+        return
+
     if len(online_room_list) > 0:
         try:
             logger.info(f"上报房间信息: {online_room_list}")
@@ -1261,10 +1488,8 @@ if __name__ == "__main__":
         os.makedirs(log_dir)
         logger.info(f"创建日志目录: {log_dir}")
 
-    istest = 0
-    config_apollo = fetch_apollo_config(istest)
-    topic_name = config_apollo.get("topic_name", "liveTs")
-    liveRoomNumber = int(config_apollo.get("cutliveNumber",4))
+    topic_name = config.kafka_topic()
+    liveRoomNumber = config.cut_live_number()
     MainHelperObj = MainHelper(topic_name=topic_name)
     online_room_list = dict()
 

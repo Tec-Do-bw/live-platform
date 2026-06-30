@@ -20,14 +20,14 @@ import sys
 import os
 
 # 导入工具函数
-from utils.serverTool import fetch_apollo_config
+import config
 from check_cj_data import check_CJ_data
 
-# ========== 节点配置（从环境变量读取）==========
-NODE_ID = os.environ.get('NODE_ID', 'node1')
-NODE_IP = os.environ.get('NODE_IP', '127.0.0.1')
-PRIORITY = int(os.environ.get('PRIORITY', '100'))
-BACKUP_NODE_URL = os.environ.get('BACKUP_NODE_URL', '')
+# ========== 节点配置（已迁移到 Apollo，config 门面）==========
+NODE_ID = config.node_id()
+NODE_IP = config.node_ip()
+PRIORITY = config.priority()
+BACKUP_NODE_URL = config.backup_node_url()
 
 # 创建路由器（不使用prefix，保持原有路由地址）
 router = APIRouter()
@@ -66,10 +66,10 @@ def save_socket_cli_log(data):
 
 # kafka相关操作
 class KafkaHelper:
-    def __init__(self, istest=1):
+    def __init__(self):
         try:
-            configurations = fetch_apollo_config(istest)
-            kafka_server = list(eval(configurations["kafkaPro"]))
+            # Kafka broker 列表已迁移到 Apollo（config 门面），无需 eval
+            kafka_server = config.kafka_servers()
             self.producer = KafkaProducer(
                 bootstrap_servers=kafka_server,
                 value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -326,10 +326,8 @@ def socketOnlineUserID(num: str = Query("1", description="推送的条数")):
 @router.get("/get_check_CJ_data")
 def get_check_CJ_data_route():
     """获取CJ数据检查结果"""
-    # 从环境变量或配置中获取istest参数
-    # 这里默认使用1（测试环境）
-    istest = int(os.environ.get("ISTEST", "1"))
-    data = check_CJ_data(istest)
+    # 环境判断已迁移到 Apollo 引导变量 DEPLOY_ENV（config.is_test_env）
+    data = check_CJ_data(config.is_test_env())
     return {"code": 200, "message": "sucess", "data": data}
 
 
@@ -385,10 +383,10 @@ async def CJListenUrl():
 
 
 # 初始化函数，在应用启动时调用
-def init_websocket_routes(istest=1):
+def init_websocket_routes():
     """初始化WebSocket路由所需的全局资源"""
     global pushKfk
-    pushKfk = KafkaHelper(istest)
+    pushKfk = KafkaHelper()
     print("✅ WebSocket路由模块已初始化")
     return pushKfk
 

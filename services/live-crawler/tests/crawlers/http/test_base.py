@@ -16,6 +16,9 @@ def _make_crawler_class():
         def get_platform_name(self):
             return 'test_http'
 
+        def get_data_source(self):
+            return 'live_crawler_test_http'
+
         def build_api_sequence(self, cookies, is_full):
             return [
                 ApiSequence(
@@ -40,6 +43,9 @@ def _make_multi_sequence_class():
     class MultiSeqCrawler(BaseHttpCrawler):
         def get_platform_name(self):
             return 'test_http'
+
+        def get_data_source(self):
+            return 'live_crawler_test_http'
 
         def build_api_sequence(self, cookies, is_full):
             def on_list_completed(results):

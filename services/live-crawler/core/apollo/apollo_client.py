@@ -67,8 +67,8 @@ class ApolloClient(object):
             else:
                 return None
         except Exception as e:
-            # logging.getLogger(__name__).error(str(e))
-            return None
+            logging.getLogger(__name__).error(str(e))
+            # return None
 
     def get_value(self, key, default_val=None, namespace='application'):
         try:

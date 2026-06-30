@@ -1,16 +1,16 @@
 """Cookie 管理 API 路由，供 adspower-server 远程写入 Cookie。"""
 
-import os
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
+from core.config import Settings
 from services.cookie_manager import save_cookies
 from utils.logger import logger
 
 router = APIRouter(prefix='/api', tags=['cookies'])
 
-# Cookie API 访问令牌（从环境变量读取，默认值仅用于开发环境）
-COOKIE_API_TOKEN = os.getenv("COOKIE_API_TOKEN", "sk-5eajkJEpzRQL4pvMpqxxoffm3hgFi7FCNDs2OXfWIJuOipvx")
+# Cookie API 访问令牌（统一从 core.config.Settings.COOKIE_API_CONFIG 读取）
+COOKIE_API_TOKEN = Settings.COOKIE_API_CONFIG.get("token", "")
 
 
 class SaveCookieRequest(BaseModel):

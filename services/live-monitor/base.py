@@ -11,6 +11,7 @@ from DrissionPage.common import Actions
 from kafka import KafkaProducer
 import threading
 import psutil
+import config
 
 # 多线程控制
 class MyThread(threading.Thread):
@@ -357,8 +358,8 @@ class OperateHelper:
 # kafka相关操作/推送到kafka
 class KafkaHelper:
     def __init__(self):
-        configurations = fetch_apollo_config()
-        kafka_server = list(eval(configurations["kafkaAddress"]))
+        # Kafka broker 列表由 config 门面统一从 Apollo 读取
+        kafka_server = config.kafka_servers()
         self.producer = KafkaProducer(
             bootstrap_servers=kafka_server,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -367,39 +368,6 @@ class KafkaHelper:
     def sendToKafka(self,data,topic_name=''):
         self.producer.send(topic_name, value=data)
         self.producer.flush()
-
-
-#apollo获取配置
-def fetch_apollo_config():
-    istest = 0
-    APOLLO_URL = str(os.environ.get('APOLLO_URL',None)).strip()
-    APOLLOID = str(os.environ.get('APOLLOID',None)).strip()
-    print(APOLLO_URL,APOLLOID)
-    APOLLOID = None
-    APOLLO_URL = None
-    #本地直接测试
-    if APOLLO_URL is None and APOLLOID is None:
-        APOLLO_URL = 'http://dev-apollo.tec-develop.com'
-        APOLLOID = 'app-spider'
-        istest = 1
-    #真测试环境    
-    if APOLLO_URL=="http://dev-apollo.tec-develop.com":
-        istest = 1
-        
-    if istest == 1:
-        url = "{}/configs/{}/DEV/app-spider".format(str(APOLLO_URL),str(APOLLOID))
-    else:
-        url = "{}/configs/{}/PRO-HWSG/app-spider".format(str(APOLLO_URL),str(APOLLOID))
-        
-    config_data = {}
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # 检查响应是否成功
-        config_data = response.json()
-    except Exception as err:
-        print(f"An error occurred: {err}")
-    configurations = config_data["configurations"]
-    return  configurations
 
 
 # 查找已经打开的调试端口

@@ -3,7 +3,7 @@
 import json
 import pytest
 from services.cookie_manager import get_cookies, save_cookies, get_account_credentials
-from monitor.db import get_connection, init_db
+from monitor import get_connection, init_db
 
 
 @pytest.fixture

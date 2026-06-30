@@ -37,7 +37,8 @@ class LoginMonitorService:
         "subaccount/get_shop_list",
         "selleraccount/shop_info",
         "shop_info/get_shop_inactive_status",
-        "cnsc/selleraccount/get_session"
+        "cnsc/selleraccount/get_session",
+        "cnsc/selleraccount/get_merchant_shop_list",
     ]
 
     # TikTok 登录验证 Cookie Key
@@ -86,32 +87,19 @@ class LoginMonitorService:
             await self._handle_result(session, status="error", reason="timeout", shop_id=None)
             return
 
-        login_shop_id = result.get("login_shop_id")
-        shop_list_ids = result.get("shop_list_ids", [])
-        api_login_verified = result.get("api_login_verified", False)
+        login_ok = result.get("login_ok", False)
+        shop_ids = result.get("shop_ids", set())
 
-        # 验证逻辑：任一接口匹配成功即为 success
         validate_id = str(session.validate_id)
 
-        if api_login_verified:
-            # 检查 login 接口
-            if login_shop_id and str(login_shop_id) == validate_id:
-                # 立即设置状态，防止竞态条件导致 closed 回调
-                session.login_status = "success"
-                await self._handle_result(session, status="success", reason="", shop_id=login_shop_id)
-                return
-
-            # 检查 get_shop_list 接口
-            if validate_id in [str(sid) for sid in shop_list_ids]:
-                # 立即设置状态，防止竞态条件导致 closed 回调
+        if login_ok:
+            if validate_id in {str(sid) for sid in shop_ids}:
                 session.login_status = "success"
                 await self._handle_result(session, status="success", reason="", shop_id=int(validate_id) if validate_id.isdigit() else None)
                 return
 
-        # 两者都不匹配
-        # 立即设置状态，防止竞态条件导致 closed 回调
         session.login_status = "error"
-        reported_shop_id = login_shop_id if login_shop_id else (shop_list_ids[0] if shop_list_ids else None)
+        reported_shop_id = list(shop_ids)[0] if shop_ids else None
         await self._handle_result(session, status="error", reason="shop_mismatch", shop_id=reported_shop_id)
 
     async def _run_tiktok(self, session: Session) -> None:
@@ -135,6 +123,8 @@ class LoginMonitorService:
             # 立即设置状态，防止竞态条件导致 closed 回调
             session.login_status = "success"
             await self._handle_result(session, status="success", reason="", shop_id=session.validate_id)
+            # 复登成功后通知 live-crawler 刷新 HTTP 采集凭据(等投屏浏览器关闭后再开,避免 profile 冲突)
+            self._schedule_tiktok_credential_refresh(session)
         else:
             # 店铺不匹配，返回实际登录的 shop_id
             # 立即设置状态，防止竞态条件导致 closed 回调
@@ -293,89 +283,102 @@ class LoginMonitorService:
         return None
 
     def _listen_once(self, session: Session) -> Optional[Dict[str, Any]]:
-        """循环监听，收集多个接口的响应数据，并增加 Cookie 兜底检测"""
+        """混合监听：被动安全网 + 主动快速路径。
+
+        被动监听持续收集接口响应包，URL 离开登录页后每 5s 触发一次主动验证，
+        双路径证据合并，任一命中 validate_id 即退出。
+
+        Returns:
+            {"login_ok": bool, "shop_ids": set[int]} 或 None（超时未拿到任何证据）
+        """
         tab = session.drissionpage_tab
         tab.listen.start(self.SHOPEE_PATTERN)
 
-        login_shop_id = None
-        shop_list_ids: List[int] = []
-        fallback_triggered = False  # 标记是否已触发兜底
-        last_cookie_check = 0.0  # 上次 Cookie 检查时间
-        cookie_check_interval = 5  # Cookie 检查间隔（秒）
+        deadline = time.time() + settings.LOGIN_TIMEOUT_SECONDS
+        login_ok = False
+        shop_ids: set[int] = set()
+        last_active_verify = 0.0
 
-        start_time = time.time()
-        timeout = settings.LOGIN_TIMEOUT_SECONDS
-
-        while time.time() - start_time < timeout:
-            # 周期性检查 Cookie（兜底机制）
-            current_time = time.time()
-            if current_time - last_cookie_check >= cookie_check_interval:
-                last_cookie_check = current_time
-
-                # 如果 Cookie 有效但没有 shop_id，且未触发过兜底
-                if (not login_shop_id
-                    and not shop_list_ids
-                    and not fallback_triggered
-                    and self._check_session_cookie(tab)):
-
-                    logger.info("检测到登录 Cookie 有效但未获取到 shop_id，触发兜底")
-                    self._trigger_shop_info(tab, session)
-                    fallback_triggered = True
-
-            remaining = timeout - (time.time() - start_time)
+        while time.time() < deadline:
+            # ① 被动排水：等待网络包
+            remaining = deadline - time.time()
             if remaining <= 0:
                 break
-            packet = tab.listen.wait(timeout=min(remaining, 2))
-            if not packet:
-                continue
+            packet = tab.listen.wait(timeout=min(remaining, 1.0))
 
-            url = getattr(packet, "url", "") or ""
-            response = getattr(packet, "response", None)
-            body = getattr(response, "body", None) if response else None
-            parsed_body = self._parse_body(body)
+            if packet:
+                url = getattr(packet, "url", "") or ""
+                response = getattr(packet, "response", None)
+                body = getattr(response, "body", None) if response else None
+                parsed_body = self._parse_body(body)
 
-            if "api/v2/login" in url:
-                shop_id = self._extract_shop_id(parsed_body)
-                if shop_id and shop_id != 0:
-                    login_shop_id = shop_id
-            elif "subaccount/get_shop_list" in url:
-                ids = self._extract_shop_ids_from_shop_list(parsed_body)
-                shop_list_ids.extend(ids)
-            elif "selleraccount/shop_info" in url or "shop_info/get_shop_inactive_status" in url:
-                # 新增接口处理：从 data.shop_id 提取
-                shop_id = self._extract_shop_id_from_data(parsed_body)
-                if shop_id and shop_id != 0:
-                    login_shop_id = shop_id
-                    logger.info("从兜底接口获取到 shop_id: {}", shop_id)
-            elif "cnsc/selleraccount/get_session" in url:
-                shop_id = self._extract_shop_id_from_cn_session(parsed_body)
-                if shop_id and shop_id != 0:
-                    login_shop_id = shop_id
-                    logger.info("从 CN get_session 接口获取到 shop_id: {}", shop_id)
+                if "api/v2/login" in url:
+                    shop_id = self._extract_shop_id(parsed_body)
+                    if shop_id and shop_id != 0:
+                        shop_ids.add(shop_id)
+                        login_ok = True
+                elif "subaccount/get_shop_list" in url:
+                    ids = self._extract_shop_ids_from_shop_list(parsed_body)
+                    shop_ids.update(ids)
+                    if ids:
+                        login_ok = True
+                elif "selleraccount/shop_info" in url or "shop_info/get_shop_inactive_status" in url:
+                    shop_id = self._extract_shop_id_from_data(parsed_body)
+                    if shop_id and shop_id != 0:
+                        shop_ids.add(shop_id)
+                        login_ok = True
+                elif "cnsc/selleraccount/get_session" in url:
+                    shop_id = self._extract_shop_id_from_cn_session(parsed_body)
+                    if shop_id and shop_id != 0:
+                        shop_ids.add(shop_id)
+                        login_ok = True
+                elif "cnsc/selleraccount/get_merchant_shop_list" in url:
+                    ids = self._extract_shop_ids_from_cn_merchant_list(parsed_body)
+                    shop_ids.update(ids)
+                    if ids:
+                        login_ok = True
 
-            # 如果任一接口已匹配成功，立即返回
-            if login_shop_id and str(login_shop_id) == str(session.validate_id):
+            # ② 主动验证：URL 离开登录页 + 5s 节流
+            try:
+                current_url = tab.url or ""
+                not_in_login_page = (
+                    "seller/login" not in current_url
+                    and "account/signin" not in current_url
+                    and "agentaccount.seller.shopee.com" not in current_url
+                )
+                if not_in_login_page and time.time() - last_active_verify > 5.0:
+                    last_active_verify = time.time()
+                    ok, sids = self._fetch_shopee_shop_ids(session)
+                    login_ok = login_ok or ok
+                    shop_ids.update(sids)
+            except Exception as e:
+                logger.debug("主动验证异常（继续被动监听）: {}", e)
+
+            # ③ 命中即退出
+            if login_ok and str(session.validate_id) in {str(i) for i in shop_ids}:
                 break
-            if str(session.validate_id) in [str(sid) for sid in shop_list_ids]:
-                break
-
-        # 始终通过 API 验证账号是否登录成功（作为登录成功的必要条件）
-        api_login_verified = False
-        api_success, _ = self._verify_shopee_login_by_api(tab, session)
-        if api_success:
-            api_login_verified = True
-            logger.info("通过 API 验证确认账号已登录成功")
 
         try:
             tab.listen.stop()
         except Exception as exc:
             logger.debug("停止监听失败: {}", exc)
 
-        return {
-            "login_shop_id": login_shop_id,
-            "shop_list_ids": shop_list_ids,
-            "api_login_verified": api_login_verified,
-        }
+        # 最终 API 验证兜底（防止被动监听误报）
+        if login_ok or shop_ids:
+            final_ok, final_ids = self._fetch_shopee_shop_ids(session)
+            if final_ok:
+                # 合并最终验证结果
+                shop_ids.update(final_ids)
+                login_ok = True
+                logger.info("最终 API 验证通过，shop_ids: {}", shop_ids)
+            else:
+                # 最终验证失败，判定为未登录
+                logger.warning("最终 API 验证失败，判定为未登录")
+                return None
+
+        if not login_ok and not shop_ids:
+            return None
+        return {"login_ok": login_ok, "shop_ids": shop_ids}
 
     def _parse_body(self, body: Any) -> Any:
         """解析响应体为字典或列表"""
@@ -458,6 +461,22 @@ class LoginMonitorService:
         if not isinstance(sub_info, dict):
             return None
         return self._to_int(sub_info.get("current_shop_id"))
+
+    def _extract_shop_ids_from_cn_merchant_list(self, body: Any) -> list[int]:
+        """从 get_merchant_shop_list 响应的 data.shops 数组中提取所有 shop_id"""
+        if not isinstance(body, dict):
+            return []
+        data = body.get("data")
+        if not isinstance(data, dict):
+            return []
+        shops = data.get("shops", [])
+        shop_ids = []
+        for shop in shops:
+            if isinstance(shop, dict) and "shop_id" in shop:
+                shop_id = self._to_int(shop.get("shop_id"))
+                if shop_id is not None:
+                    shop_ids.append(shop_id)
+        return shop_ids
 
     def _check_session_cookie(self, tab) -> bool:
         """检查 SPC_SC_SESSION Cookie 是否存在且有效"""
@@ -594,6 +613,166 @@ class LoginMonitorService:
             logger.warning("Shopee API 验证异常: {}", e)
             return False, None
 
+    def _fetch_shopee_shop_ids(self, session: Session) -> tuple[bool, set[int]]:
+        """主动验证登录态并获取 shop_id 集合。
+
+        通过 JS 注入调用验证接口 + 店铺列表接口，5s 节流后在 URL 离开登录页时调用。
+
+        Args:
+            session: 会话对象，包含 cb_option/country/drissionpage_tab
+
+        Returns:
+            (login_ok, shop_ids): 登录态是否有效 + 店铺 ID 集合
+        """
+        tab = session.drissionpage_tab
+
+        if session.cb_option == 1:
+            # 跨境店：CN get_session + get_merchant_shop_list
+            return self._fetch_cn_shop_ids(tab)
+        else:
+            # 本土店：api/v2/login + get_shop_list
+            return self._fetch_local_shop_ids(tab, session.country)
+
+    def _fetch_cn_shop_ids(self, tab) -> tuple[bool, set[int]]:
+        """跨境店主动验证：CN get_session + get_merchant_shop_list"""
+        try:
+            ts = int(time.time() * 1000)
+            session_key = f"__cn_session_{ts}"
+            list_key = f"__cn_list_{ts}"
+
+            js_code = f"""
+            window['{session_key}'] = null;
+            window['{list_key}'] = null;
+            fetch('https://seller.shopee.cn/api/cnsc/selleraccount/get_session/', {{
+                method: 'GET', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{session_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{session_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{session_key}'] = {{ error: String(e) }}; }});
+
+            fetch('https://seller.shopee.cn/api/cnsc/selleraccount/get_merchant_shop_list/', {{
+                method: 'GET', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{list_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{list_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{list_key}'] = {{ error: String(e) }}; }});
+            """
+
+            self._inject_js_with_retry(tab, js_code)
+
+            # Poll 等待结果
+            session_result = self._poll_window_var(tab, session_key, timeout=10.0)
+            list_result = self._poll_window_var(tab, list_key, timeout=10.0)
+
+            # 清理
+            try:
+                tab.run_js(f"delete window['{session_key}']; delete window['{list_key}'];")
+            except Exception:
+                pass
+
+            # 验证 get_session
+            if not session_result or 'error' in session_result:
+                return False, set()
+            session_data = session_result.get('response', {})
+            if session_data.get('code') != 0:
+                return False, set()
+
+            # 提取 current_shop_id
+            shop_ids = set()
+            sub_info = session_data.get('sub_account_info', {}) or {}
+            current_id = self._to_int(sub_info.get('current_shop_id'))
+            if current_id:
+                shop_ids.add(current_id)
+
+            # 提取 merchant_shop_list（可能无权限，不影响 login_ok）
+            if list_result and 'error' not in list_result:
+                list_data = list_result.get('response', {})
+                if list_data.get('code') == 0:
+                    shops = list_data.get('data', {}).get('shops', [])
+                    for shop in shops:
+                        sid = self._to_int(shop.get('shop_id'))
+                        if sid:
+                            shop_ids.add(sid)
+
+            return True, shop_ids
+        except Exception as e:
+            logger.warning("跨境店主动验证异常: {}", e)
+            return False, set()
+
+    def _fetch_local_shop_ids(self, tab, country: str) -> tuple[bool, set[int]]:
+        """本土店主动验证：api/v2/login + get_shop_list"""
+        try:
+            domain = get_shopee_seller_domain(country)
+            ts = int(time.time() * 1000)
+            login_key = f"__local_login_{ts}"
+            list_key = f"__local_list_{ts}"
+
+            js_code = f"""
+            window['{login_key}'] = null;
+            window['{list_key}'] = null;
+            fetch('https://{domain}/api/v2/login/', {{
+                method: 'GET', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{login_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{login_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{login_key}'] = {{ error: String(e) }}; }});
+
+            fetch('https://{domain}/api/selleraccount/subaccount/get_shop_list/', {{
+                method: 'POST', credentials: 'include'
+            }}).then(async r => {{
+                try {{ window['{list_key}'] = {{ status: r.status, response: await r.json() }}; }}
+                catch (e) {{ window['{list_key}'] = {{ error: String(e) }}; }}
+            }}).catch(e => {{ window['{list_key}'] = {{ error: String(e) }}; }});
+            """
+
+            self._inject_js_with_retry(tab, js_code)
+
+            login_result = self._poll_window_var(tab, login_key, timeout=10.0)
+            list_result = self._poll_window_var(tab, list_key, timeout=10.0)
+
+            try:
+                tab.run_js(f"delete window['{login_key}']; delete window['{list_key}'];")
+            except Exception:
+                pass
+
+            if not login_result or 'error' in login_result:
+                return False, set()
+            login_data = login_result.get('response', {})
+            if login_data.get('errcode') != 0:
+                return False, set()
+
+            shop_ids = set()
+            current_id = self._to_int(
+                login_data.get('shopid') or (login_data.get('user') or {}).get('shop_id')
+            )
+            if current_id:
+                shop_ids.add(current_id)
+
+            if list_result and 'error' not in list_result:
+                list_data = list_result.get('response', {})
+                if list_data.get('code') == 0:
+                    shops = list_data.get('shops', [])
+                    for shop in shops:
+                        sid = self._to_int(shop.get('shop_id'))
+                        if sid:
+                            shop_ids.add(sid)
+
+            return True, shop_ids
+        except Exception as e:
+            logger.warning("本土店主动验证异常: {}", e)
+            return False, set()
+
+    def _poll_window_var(self, tab, var_name: str, timeout: float = 10.0) -> dict | None:
+        """Poll 等待 window 变量赋值完成"""
+        import time
+        start = time.time()
+        while time.time() - start < timeout:
+            val = tab.run_js(f"return window['{var_name}'];")
+            if val is not None:
+                return val
+            time.sleep(0.5)
+        return None
+
     def _trigger_shop_info(self, tab, session: Session) -> None:
         """主动导航到页面触发 shop_id 接口"""
         try:
@@ -608,6 +787,78 @@ class LoginMonitorService:
             logger.info("已触发兜底页面: {}", trigger_url)
         except Exception as e:
             logger.warning("触发兜底页面失败: {}", e)
+
+    def _schedule_tiktok_credential_refresh(self, session: Session) -> None:
+        """调度 TikTok 复登后凭据刷新(异步,不阻塞登录回调)。
+
+        投屏浏览器登录成功后 LOGIN_SUCCESS_CLOSE_DELAY_SECONDS 秒会被关闭,
+        刷新必须等其关闭后再开新浏览器,否则同一 AdsPower profile 冲突。
+        """
+        if not settings.TIKTOK_REFRESH_ON_LOGIN:
+            return
+        if not session.profile_id:
+            logger.warning("TikTok 复登刷新跳过：缺少 profile_id, session={}", session.session_id)
+            return
+        asyncio.create_task(self._refresh_tiktok_credential(session))
+
+    async def _refresh_tiktok_credential(self, session: Session) -> None:
+        """等投屏浏览器确实关闭后,通知 live-crawler 刷新 TikTok 采集凭据。
+
+        投屏浏览器和养号刷新用同一个 AdsPower profile,不能同时打开。
+        轮询浏览器活跃状态(每 10s 一次,最长 15 分钟),确认 Inactive 才触发刷新;
+        超时未关闭则放弃本次刷新(由每日 cron 兜底),避免 profile 冲突。
+        """
+        account_id = session.profile_id
+
+        # 先给关浏览器流程一点起步时间,再开始轮询
+        await asyncio.sleep(settings.LOGIN_SUCCESS_CLOSE_DELAY_SECONDS + 2)
+
+        poll_interval = 10        # 每 10s 查一次状态
+        max_wait_seconds = 15 * 60  # 最长等 15 分钟
+        waited = 0
+        while waited < max_wait_seconds:
+            is_active = await self._adspower_service.check_browser_active(account_id)
+            if not is_active:
+                logger.info("投屏浏览器已关闭,触发 TikTok 凭据刷新: account_id={}", account_id)
+                break
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+        else:
+            # 超时仍未关闭:主动强制关闭浏览器,再继续刷新(避免 profile 冲突)
+            logger.warning(
+                "等待投屏浏览器关闭超时({}s),主动调用 stop_browser 强制关闭: account_id={}",
+                max_wait_seconds, account_id,
+            )
+            await self._adspower_service.stop_browser(account_id)
+            # 给关闭生效留时间,再确认一次
+            await asyncio.sleep(5)
+            if await self._adspower_service.check_browser_active(account_id):
+                logger.warning(
+                    "强制关闭后浏览器仍活跃,放弃本次 TikTok 复登刷新(由每日 cron 兜底): account_id={}",
+                    account_id,
+                )
+                return
+            logger.info("强制关闭成功,触发 TikTok 凭据刷新: account_id={}", account_id)
+
+        url = f"{settings.MONITOR_API_URL}/api/refresh_tiktok_credential"
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Token": settings.COOKIE_API_TOKEN,
+        }
+        # 不传 group_name/proxy: 由 refresher 从 AdsPower profile 查权威值,避免格式不一致
+        payload = {"account_id": account_id}
+
+        try:
+            # 刷新会开浏览器拦截,耗时较长,给足超时
+            async with httpx.AsyncClient(timeout=60*3) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code == 200:
+                    logger.info("TikTok 复登凭据刷新已触发: account_id={}, resp={}", account_id, resp.json())
+                else:
+                    logger.warning("TikTok 复登凭据刷新返回异常状态: status={}, account_id={}",
+                                   resp.status_code, account_id)
+        except Exception as exc:
+            logger.warning("TikTok 复登凭据刷新调用失败: account_id={}, err={}", account_id, exc)
 
     async def callback_close(self, session: Session, reason: str = "closed") -> None:
         """关闭时回调通知后端

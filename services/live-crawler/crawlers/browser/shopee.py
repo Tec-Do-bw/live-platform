@@ -12,12 +12,14 @@ import re
 import requests
 from pathlib import Path
 from typing import Any, Dict, List
-from datetime import datetime, timedelta, timezone
+from calendar import monthrange
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 
 from utils.logger import logger
 from crawlers.browser.base import BaseLiveCrawler
+from crawlers.constants import DataSource
 from utils.request import RequestSession
 from core.config import Settings
 from monitor import get_monitor
@@ -101,6 +103,10 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         """返回Shopee平台标识"""
         return 'shopee'
 
+    def get_data_source(self) -> str:
+        """返回数据源标识"""
+        return DataSource.SHOPEE
+
     def _get_country_yesterday(self) -> str:
         """获取对应国家时区的昨天日期（YYYY-MM-DD 格式）。"""
         if self._country_yesterday_cache is None:
@@ -112,15 +118,77 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         return self._country_yesterday_cache
 
     def _get_country_date_range(self) -> List[str]:
-        """生成逐日日期列表（YYYY-MM-DD 格式），增量7天/全量30天。"""
+        """生成逐日日期列表（YYYY-MM-DD 格式），增量7天/全量按配置。
+
+        全量优先级：SHOPEE_FULL_START_DATE > SHOPEE_FULL_WINDOW_DAYS（默认60天）。
+        """
         tz_offset = self.SHOPEE_TIMEZONE_MAP.get(self.country_domain, 8)
         country_tz = timezone(timedelta(hours=tz_offset))
         country_now = datetime.now(country_tz)
-        days = 30 if self.full_collection else 7
+
+        if not self.full_collection:
+            days = 7
+        else:
+            cfg = getattr(Settings, 'SHOPEE_FULL_CONFIG', {}) or {}
+            start_date_str = str(cfg.get('full_start_date', '')).strip()
+            if start_date_str:
+                try:
+                    start = date.fromisoformat(start_date_str)
+                except ValueError as exc:
+                    raise ValueError("SHOPEE_FULL_START_DATE 必须使用 YYYY-MM-DD 格式") from exc
+                days = (country_now.date() - start).days
+                if days <= 0:
+                    raise ValueError("SHOPEE_FULL_START_DATE 必须早于账号当地今天")
+            else:
+                days = int(cfg.get('full_window_days', 60))
+
         return [
             (country_now - timedelta(days=i)).strftime('%Y-%m-%d')
             for i in range(1, days + 1)
         ]
+
+    def _get_full_month_end_dates(self) -> List[str]:
+        """全量采集：返回从起始月到当前月的每月 endDate 列表（用于 liveList timeDim=1m）。
+
+        - 历史完整月：月末最后一天（例如 2026-04-30）
+        - 当前月：昨天（数据最新可用日）
+        优先级：SHOPEE_FULL_START_DATE > SHOPEE_FULL_WINDOW_MONTHS（默认2个月）。
+        """
+        tz_offset = self.SHOPEE_TIMEZONE_MAP.get(self.country_domain, 8)
+        country_tz = timezone(timedelta(hours=tz_offset))
+        country_now = datetime.now(country_tz)
+        yesterday = (country_now - timedelta(days=1)).date()
+        cur_year, cur_month = country_now.year, country_now.month
+
+        cfg = getattr(Settings, 'SHOPEE_FULL_CONFIG', {}) or {}
+        start_date_str = str(cfg.get('full_start_date', '')).strip()
+        if start_date_str:
+            try:
+                start = date.fromisoformat(start_date_str)
+            except ValueError as exc:
+                raise ValueError("SHOPEE_FULL_START_DATE 必须使用 YYYY-MM-DD 格式") from exc
+            start_year, start_month = start.year, start.month
+        else:
+            window_months = int(cfg.get('full_window_months', 2))
+            # 从当前月往前推 (window_months-1) 个月作为起始月
+            total_months = cur_year * 12 + cur_month - 1  # 0-based 月份总数
+            start_total = total_months - (window_months - 1)
+            start_year = start_total // 12
+            start_month = start_total % 12 + 1
+
+        result: List[str] = []
+        y, m = start_year, start_month
+        while (y, m) <= (cur_year, cur_month):
+            if (y, m) == (cur_year, cur_month):
+                # 当月用昨天，避免请求未来日期
+                result.append(yesterday.strftime('%Y-%m-%d'))
+            else:
+                last_day = monthrange(y, m)[1]
+                result.append(f'{y}-{m:02d}-{last_day:02d}')
+            m += 1
+            if m > 12:
+                m, y = 1, y + 1
+        return result
 
     def _get_timezone_string(self) -> str:
         """获取时区字符串（如 +0800）。"""
@@ -374,8 +442,9 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
                 self.media_shop_id = sub_account_info.get('current_shop_id')
                 self.username = userinfo_response['data']['userName']
             else:
-                self.media_user_id = response_json.get('id')
-                self.media_shop_id = response_json.get('shopid')
+                user_info = response_json.get('user', {}) or {}
+                self.media_user_id = response_json.get('id') or user_info.get('user_id')
+                self.media_shop_id = response_json.get('shopid') or user_info.get('shop_id')
                 self.username = response_json.get('username')
 
             if self.media_user_id and self.media_shop_id:
@@ -806,8 +875,174 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
         logger.info(f'当前店铺 {self.media_shop_id} 与目标 {validate_id} 不符，尝试切换')
         return self._switch_to_shop(str(validate_id), original_url)
 
+    def _switch_to_shop_by_http(self, target_shop_id: str, region: str) -> bool:
+        """跨境店通过 HTTP API 切换店铺（非浏览器点击）
+
+        Steps:
+            ① POST switch_merchant_shop/  切换店铺
+            ② POST set_language/          设置语言（必需）
+            ③ GET  get_session/           校验 current_shop_id == target
+
+        Args:
+            target_shop_id: 目标店铺 ID
+            region: 店铺所在国家（大写，如 MY/TH/VN）
+
+        Returns:
+            True: 切换成功
+            False: 失败（HTTP 403 表示 Cookie 过期）
+        """
+        if not self.is_cross_border:
+            logger.error("HTTP 切换仅适用于跨境店")
+            return False
+
+        try:
+            # 读取 Cookie 用于 query params
+            cookies_list = self.tab.cookies(all_info=True)
+            cookie_dict = {c.get('name'): c.get('value') for c in cookies_list}
+            spc_cds = cookie_dict.get('SPC_CDS')
+            if not spc_cds:
+                logger.error("缺少 SPC_CDS Cookie，无法切换店铺")
+                return False
+
+            # 构造公共 query 参数
+            switch_url = (
+                f"https://seller.shopee.cn/api/cnsc/selleraccount/switch_merchant_shop/"
+                f"?cnsc_shop_id={self.media_shop_id}&cbsc_shop_region={region.upper()}"
+                f"&SPC_CDS={spc_cds}&SPC_CDS_VER=2"
+            )
+            lang_url = (
+                f"https://seller.shopee.cn/api/cnsc/selleraccount/set_language/"
+                f"?cnsc_shop_id={self.media_shop_id}&cbsc_shop_region={region.upper()}"
+                f"&SPC_CDS={spc_cds}&SPC_CDS_VER=2"
+            )
+
+            # ① 切换店铺
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': switch_url,
+                    'method': 'POST',
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({'shop_id': int(target_shop_id)}),
+                    'credentials': 'include',
+                }],
+                max_retries=0,
+            )
+
+            if not results or not results[0]:
+                logger.error("切换店铺接口超时")
+                return False
+
+            switch_result = results[0]
+            if 'error' in switch_result:
+                error_msg = switch_result['error']
+                if 'status_403' in error_msg:
+                    logger.warning("Cookie 已过期（HTTP 403），需重新登录")
+                    self.send_login_callback("logout", reason="cookie_expired")
+                    return False
+                logger.error(f"切换店铺接口失败: {error_msg}")
+                return False
+
+            # ② 设置语言（必需）
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': lang_url,
+                    'method': 'POST',
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({'language': 'zh-CN'}),
+                    'credentials': 'include',
+                }],
+                max_retries=0,
+            )
+
+            if not results or not results[0] or 'error' in results[0]:
+                logger.warning("设置语言失败，但不阻塞切换流程")
+
+            # ③ 校验：重新获取 get_session，检查 current_shop_id
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': 'https://seller.shopee.cn/api/cnsc/selleraccount/get_session/',
+                    'method': 'GET',
+                    'credentials': 'include',
+                }],
+                max_retries=1,
+            )
+
+            if not results or not results[0] or 'error' in results[0]:
+                logger.error("校验切换结果失败：get_session 接口异常")
+                return False
+
+            session_data = results[0].get('response', {})
+            new_current = (session_data.get('sub_account_info') or {}).get('current_shop_id')
+
+            if str(new_current) != str(target_shop_id):
+                logger.error(f"切换后店铺 ID 仍不匹配: {new_current} != {target_shop_id}")
+                return False
+
+            # 直接更新 media_shop_id，避免外层重复调用 _fetch_login_info_via_js
+            self.media_shop_id = str(new_current)
+            logger.info(f"跨境店 HTTP 切换成功: {target_shop_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"跨境店 HTTP 切换异常: {e}")
+            return False
+
+    def _get_shop_region_from_list(self, shop_id: str) -> str | None:
+        """从跨境店多店列表中查询指定店铺的 region"""
+        try:
+            results = self.browser_api.run_js_fetch(
+                self.tab,
+                [{
+                    'url': 'https://seller.shopee.cn/api/cnsc/selleraccount/get_merchant_shop_list/',
+                    'method': 'GET',
+                    'credentials': 'include',
+                }],
+                max_retries=1,
+            )
+
+            if not results or not results[0] or 'error' in results[0]:
+                return None
+
+            list_data = results[0].get('response', {})
+            shops = list_data.get('data', {}).get('shops', [])
+            for shop in shops:
+                if str(shop.get('shop_id')) == str(shop_id):
+                    return shop.get('region')
+            return None
+        except Exception as e:
+            logger.warning(f"查询店铺 region 失败: {e}")
+            return None
+
     def _switch_to_shop(self, target_shop_id: str, original_url: str) -> bool:
-        """导航到店铺列表页，点击目标店铺的 Details 按钮完成切换
+        """切换店铺入口：跨境店走 HTTP API，本土店走浏览器点击
+
+        Args:
+            target_shop_id: 目标店铺 ID
+            original_url: 原始采集页面 URL，切换后需要回到此页面
+        """
+        if self.is_cross_border:
+            # 跨境店：HTTP API 切换
+            region = self._get_shop_region_from_list(target_shop_id)
+            if not region:
+                # 从 remark 或域名兜底推断
+                region = (self._get_country_from_remark() or self.country_domain).upper()
+
+            success = self._switch_to_shop_by_http(target_shop_id, region)
+            if success:
+                # HTTP 切换内部已更新 media_shop_id，无需重复获取
+                self._sync_remark_country_if_needed(target_shop_id)
+                logger.info(f'导航回原始采集页面: {original_url}')
+                self._open_collection_page(original_url)
+            return success
+        else:
+            # 本土店：保持原有浏览器点击逻辑
+            return self._switch_to_shop_by_browser(target_shop_id, original_url)
+
+    def _switch_to_shop_by_browser(self, target_shop_id: str, original_url: str) -> bool:
+        """本土店通过浏览器点击 Details 按钮切换店铺（保持原逻辑）
 
         Args:
             target_shop_id: 目标店铺 ID
@@ -863,10 +1098,20 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             logger.error(f'店铺切换异常: {e}')
             return False
 
-    def _build_live_list_params(self, page: int = 1) -> Dict[str, str]:
-        """构造 liveList/v2 请求参数。"""
-        time_dim = '30d' if self.full_collection else '7d'
-        end_date = self._get_country_yesterday()
+    def _build_live_list_params(
+        self,
+        page: int = 1,
+        end_date: str | None = None,
+        time_dim: str | None = None,
+    ) -> Dict[str, str]:
+        """构造 liveList/v2 请求参数。
+
+        全量采集改为按月请求（timeDim=1m），调用方可通过 end_date/time_dim 覆盖默认值。
+        """
+        if time_dim is None:
+            time_dim = '7d' if not self.full_collection else '1m'
+        if end_date is None:
+            end_date = self._get_country_yesterday()
         return {
             'page': str(page),
             'pageSize': '100',
@@ -916,16 +1161,19 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             logger.error(f'_fetch_session_list_via_js 执行失败: {e}')
             return None
 
-    def _fetch_live_list_pages_via_js(self, headers: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """按页抓取 liveList/v2，增量抓第一页，全量抓到结束。"""
+    def _fetch_live_list_one_month(
+        self,
+        end_date: str,
+        fetch_headers: Dict[str, Any],
+        max_pages: int,
+    ) -> List[Dict[str, Any]]:
+        """抓取单个月份的 liveList/v2 全部分页（timeDim=1m）。"""
         results: List[Dict[str, Any]] = []
-        fetch_headers = self._build_request_headers(headers)
-        page = 1
         page_size = int(self._build_live_list_params().get('pageSize', '100'))
-        max_pages = self.config.get('live_list_max_pages', 50)
+        page = 1
 
         while page <= max_pages:
-            live_list_params = self._build_live_list_params(page=page)
+            live_list_params = self._build_live_list_params(page=page, end_date=end_date, time_dim='1m')
             request = {
                 'url': f"{self._get_base_url()}/api/supply/lm/sellercenter/liveList/v2?{urlencode(live_list_params)}",
                 'method': 'GET',
@@ -934,14 +1182,11 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             }
             fetch_results = self.browser_api.run_js_fetch(self.tab, [request], max_retries=2)
             if not fetch_results or not fetch_results[0] or not fetch_results[0].get('response'):
-                logger.warning(f'liveList/v2 第 {page} 页请求失败')
+                logger.warning(f'liveList/v2 月份={end_date} 第 {page} 页请求失败')
                 break
 
             result = fetch_results[0]
             results.append(result)
-
-            if not self.full_collection:
-                break
 
             response_json = self._parse_json_response(result.get('response'))
             response_data = response_json.get('data', {})
@@ -964,6 +1209,40 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             page += 1
 
         return results
+
+    def _fetch_live_list_pages_via_js(self, headers: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """按页抓取 liveList/v2。
+
+        - 增量：timeDim=7d，仅抓第一页
+        - 全量：timeDim=1m，按月循环（月份范围由 SHOPEE_FULL_CONFIG 决定）
+        """
+        fetch_headers = self._build_request_headers(headers)
+        max_pages = self.config.get('live_list_max_pages', 50)
+
+        if not self.full_collection:
+            # 增量：单页 7d
+            live_list_params = self._build_live_list_params(page=1)
+            request = {
+                'url': f"{self._get_base_url()}/api/supply/lm/sellercenter/liveList/v2?{urlencode(live_list_params)}",
+                'method': 'GET',
+                'headers': fetch_headers,
+                'credentials': 'include',
+            }
+            fetch_results = self.browser_api.run_js_fetch(self.tab, [request], max_retries=2)
+            if fetch_results and fetch_results[0] and fetch_results[0].get('response'):
+                return [fetch_results[0]]
+            logger.warning('liveList/v2 增量请求失败')
+            return []
+
+        # 全量：按月循环
+        month_end_dates = self._get_full_month_end_dates()
+        logger.info(f'全量采集 liveList/v2，共 {len(month_end_dates)} 个月份: {month_end_dates}')
+        all_results: List[Dict[str, Any]] = []
+        for end_date in month_end_dates:
+            month_results = self._fetch_live_list_one_month(end_date, fetch_headers, max_pages)
+            logger.info(f'月份 {end_date}: 获取 {len(month_results)} 页')
+            all_results.extend(month_results)
+        return all_results
 
     def _fetch_overview_requests_via_js(self, headers: Dict[str, Any]) -> List[Dict[str, Any]]:
         """抓取 overview 与 metricTrend 概览接口（逐日请求）。"""
@@ -1369,6 +1648,7 @@ class ShopeeLiveCrawler(BaseLiveCrawler):
             "extra": extra_str,
             "sign": Settings.DATA_SERVER_CONFIG['api_sign'],
             "userType": 6.0,
+            "dataSource": DataSource.SHOPEE,
             "updateTime": int(time.time() * 1000),
             "request": {
                 "response": response_str,

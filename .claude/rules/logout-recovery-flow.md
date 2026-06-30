@@ -1,6 +1,7 @@
 ---
 paths:
   - "services/live-crawler/crawlers/browser/base.py"
+  - "services/live-crawler/crawlers/http/tiktok/adapter.py"
   - "services/live-crawler/scheduler/task_scheduler.py"
   - "services/live-crawler/monitor/login_status_manager.py"
   - "services/live-crawler/services/login_callback.py"
@@ -33,9 +34,11 @@ paths:
 
 ### 实现要点
 
-1. **BaseLiveCrawler.send_login_callback**
+1. **BaseLiveCrawler.send_login_callback**（浏览器版）
    - 在写入 login 事件前调用 `get_account_status()`
    - 若当前状态为 logout，设置 `self.full_collection = True` 和 `self._login_recovery = True`
+
+   **TikTok HTTP 版**（`crawlers/http/tiktok/adapter.py`）：`setup_session` 验证通过后调 `send_login_callback("success")`，读返回的 `callback.get("login_recovery")`，为真则 `self._login_recovery = True` + `self.full_collection = True`（adapter.py:87-89）。判活与回调契约见 [[tiktok-http-lifecycle]]。
 
 2. **main.py / task_scheduler.py**
    - 在 `start_crawl()` 后检测 `result['login_recovery']`

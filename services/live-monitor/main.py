@@ -5,7 +5,6 @@ from fastapi import FastAPI, Request
 from fastapi import Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from datetime import datetime
 import uvicorn
 import os
@@ -21,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import secrets
 import importlib
 from utils.api_response import (
+    ApiOutcome,
     classify_tiktok_result,
     classify_shopee_result,
     classify_lazada_result,
@@ -28,6 +28,7 @@ from utils.api_response import (
     error_response,
     ErrorReason,
 )
+from utils.redis_bridge import LiveRedisRepository, infer_platform, normalize_seed_row
 
 
 def get_requests_config():
@@ -54,8 +55,82 @@ logger = Logings().get_logger()
 # ✅ 导入数据库连接池
 from utils.db_pool import db_pool
 
+_live_redis_repository = None
+
+
+def _get_live_redis_repository():
+    global _live_redis_repository
+    if _live_redis_repository is None:
+        _live_redis_repository = LiveRedisRepository()
+    return _live_redis_repository
+
+
+def _write_redis_config(seed: dict):
+    try:
+        repo = _get_live_redis_repository()
+        repo.upsert_config(
+            collection_id=seed["collection_id"],
+            room_url=seed["room_url"],
+            platform=seed["platform"],
+            legacy_room_id=seed["legacy_room_id"],
+            source_node=NODE_ID,
+        )
+    except Exception as e:
+        logger.warning(f"Redis种子写入失败（不影响内存链路）| collection_id={seed.get('collection_id')} error={e}")
+
+
+def _disable_redis_config(room_id: str, room_info: dict):
+    room_url = room_info.get("room_url", "")
+    collection_id = room_info.get("collection_id") or room_id
+    try:
+        repo = _get_live_redis_repository()
+        repo.upsert_config(
+            collection_id=collection_id,
+            room_url=room_url,
+            platform=room_info.get("platform") or infer_platform(room_url),
+            legacy_room_id=room_id,
+            enabled=False,
+            source_node=NODE_ID,
+        )
+    except Exception as e:
+        logger.warning(f"Redis种子禁用失败（不影响内存链路）| collection_id={collection_id} error={e}")
+
+
+def _classify_room_status(room_url: str, port_info: dict | None) -> tuple[str, ApiOutcome]:
+    platform = infer_platform(room_url)
+    if port_info is None:
+        return platform, ApiOutcome(5099, None, ErrorReason.INTERNAL_ERROR, "直播状态检测失败")
+    if platform == "shopee":
+        return platform, classify_shopee_result(port_info, room_url)
+    if platform == "lazada":
+        return platform, classify_lazada_result(port_info, room_url)
+    if platform == "tiktok":
+        return platform, classify_tiktok_result(port_info, room_url)
+    return platform, ApiOutcome(5099, None, ErrorReason.INTERNAL_ERROR, f"不支持的平台: {platform}")
+
+
+def _write_redis_status(room_id: str, room_info: dict, port_info: dict | None):
+    room_url = room_info.get("room_url", "")
+    platform, outcome = _classify_room_status(room_url, port_info)
+    collection_id = room_info.get("collection_id") or room_id
+    try:
+        repo = _get_live_redis_repository()
+        repo.write_status(
+            collection_id=collection_id,
+            platform=room_info.get("platform") or platform,
+            room_url=room_url,
+            outcome=outcome,
+            port_info=outcome.port_info,
+            source_node=NODE_ID,
+        )
+    except Exception as e:
+        logger.warning(f"Redis直播状态写入失败（不影响内存链路）| collection_id={collection_id} error={e}")
+
+
 # ✅ 全局锁保护 all_Live_Room_dict，防止并发竞态条件
 room_dict_lock = threading.Lock()
+all_Live_Room_dict = {}
+database = ""
 
 # ✅ 调度器线程监控相关变量
 scheduler_thread = None  # 调度器线程引用
@@ -75,7 +150,6 @@ except ImportError:
 from routes.docs import router as docs_router
 from routes.activation import router as activation_router
 from routes.websocket_routes import router as websocket_router, start_background_tasks, manager
-from utils.serverTool import fetch_apollo_config
 from utils.TiktokTool import TiktokTool
 from utils.ShopeeTool import ShopeeTool
 from utils.LazadaTool import LazadaTool
@@ -88,12 +162,15 @@ from check_cj_data import check_CJ_data
 # ⚠️ 部署时需要修改以下参数
 # 主机1: NODE_ID='node1', NODE_IP='47.237.6.199', PRIORITY=100
 # 主机2: NODE_ID='node2', NODE_IP='47.236.42.104', PRIORITY=50
+# 节点配置已迁移到 Apollo（config.py 门面）
 
-NODE_ID = os.environ.get('NODE_ID', 'node1')  # 节点ID
-NODE_IP = os.environ.get('NODE_IP', '127.0.0.1')  # 节点IP
-PRIORITY = int(os.environ.get('PRIORITY', '100'))  # 节点优先级
-BACKUP_NODE_URL = os.environ.get('BACKUP_NODE_URL', '')  # 备用节点URL
-ISTEST = int(os.environ.get('ISTEST', '1'))
+import config
+
+NODE_ID = config.node_id()
+NODE_IP = config.node_ip()
+PRIORITY = config.priority()
+BACKUP_NODE_URL = config.backup_node_url()
+# 旧环境变量已删除，改用 config.is_test_env()
 
 logger.info(f"节点配置 | NODE_ID={NODE_ID}, NODE_IP={NODE_IP}, PRIORITY={PRIORITY}, BACKUP_NODE_URL={BACKUP_NODE_URL}")
 OP = None
@@ -140,16 +217,10 @@ app.add_middleware(
     max_age=86400,  # 会话有效期，单位为秒，这里设置为24小时
 )
 
-# 注册路由
 app.include_router(docs_router)
 app.include_router(activation_router)
 # app.include_router(websocket_router)
 
-
-# 配置静态文件服务
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # 解决跨域问题（浏览器插件也需要）
 app.add_middleware(
@@ -353,6 +424,8 @@ def get_error_room_url():
     # 获取当前文件所在目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
     error_url_path = os.path.join(current_dir, "errorUrl.txt")
+    if not os.path.exists(error_url_path):
+        return []
     with open(error_url_path, "r", encoding="utf-8") as f:
         live_error_room_url = [line.strip() for line in f]
     return live_error_room_url
@@ -632,21 +705,39 @@ async def report_roominfo(request: Request):
 
 
 def select_Info():
-    sql = "select room_id,room_url,allocation_status from live_streaming_room where local_status = 1 "
+    sql = "select room_id,room_url,allocation_status,collection_id,platform from live_streaming_room where local_status = 1 "
+    legacy_sql = "select room_id,room_url,allocation_status from live_streaming_room where local_status = 1 "
 
     logger.info(f"开始从数据库同步直播间列表 | database={database}")
 
-    # ✅ 直接使用连接池查询
-    result = db_pool.execute_query(sql)
+    try:
+        result = db_pool.execute_query(sql)
+    except Exception as e:
+        logger.warning(f"新种子字段查询失败，回退旧字段查询 | error={e}")
+        try:
+            result = db_pool.execute_query(legacy_sql)
+        except Exception as fallback_error:
+            logger.error(f"数据库同步失败，跳过本轮内存和Redis更新 | error={fallback_error}", exc_info=True)
+            return
+
     # 处理数据库查询结果，更新all_Live_Room_dict
-    if result:
-        # ✅ 加锁保护：更新all_Live_Room_dict
-        with room_dict_lock:
-            # 获取当前result中的room_id列表
-            current_room_ids = set()
+    normalized_rows = []
+    for row in result or []:
+        try:
+            normalized_rows.append(normalize_seed_row(row))
+        except Exception as e:
+            logger.warning(f"直播间种子行解析失败，跳过 | row={row} error={e}")
+
+    # ✅ 加锁保护：更新all_Live_Room_dict
+    with room_dict_lock:
+        current_room_ids = set()
+        stale_room_items = []
+
+        if normalized_rows:
             # result = [('15eaf18d772d4113ba6ab298581d438d', 'https://ph.shp.ee/DT7Tpev', '0')]
-            for row in result:
-                room_id, room_url, allocation_status = row
+            for seed in normalized_rows:
+                room_id = seed["legacy_room_id"] or seed["collection_id"]
+                room_url = seed["room_url"]
                 current_room_ids.add(room_id)
 
                 # ✅ 如果room_id不存在于all_Live_Room_dict中，则添加
@@ -656,19 +747,36 @@ def select_Info():
                         "allocation_status": "0",
                         "status_update_time": 0,
                         "ip": "",
-                        "live_info": {}
+                        "live_info": {},
+                        "collection_id": seed["collection_id"],
+                        "platform": seed["platform"],
                     }
                     logger.debug(f"新增监控房间 | room_id={room_id} url={room_url}")
+                else:
+                    all_Live_Room_dict[room_id]["room_url"] = room_url
+                    all_Live_Room_dict[room_id]["collection_id"] = seed["collection_id"]
+                    all_Live_Room_dict[room_id]["platform"] = seed["platform"]
 
             # ✅ 删除all_Live_Room_dict中不存在于新result中的对象(已经不在监控的移除)
             keys_to_remove = []
-            for room_id in all_Live_Room_dict.keys():
+            for room_id in list(all_Live_Room_dict.keys()):
                 if room_id not in current_room_ids:
                     keys_to_remove.append(room_id)
 
             for room_id in keys_to_remove:
+                stale_room_items.append((room_id, dict(all_Live_Room_dict.get(room_id, {}))))
                 del all_Live_Room_dict[room_id]
                 logger.info(f"移除监控房间 | room_id={room_id}")
+        else:
+            stale_room_items = [(room_id, dict(room_info)) for room_id, room_info in all_Live_Room_dict.items()]
+            all_Live_Room_dict.clear()
+            if stale_room_items:
+                logger.info(f"数据库同步后无可监控房间，清空内存状态 | count={len(stale_room_items)}")
+
+    for seed in normalized_rows:
+        _write_redis_config(seed)
+    for room_id, room_info in stale_room_items:
+        _disable_redis_config(room_id, room_info)
 
     # print("更新后的all_Live_Room_dict:", all_Live_Room_dict)
     logger.info(f"数据库同步完成 | 当前监控房间数={len(all_Live_Room_dict)}")
@@ -749,6 +857,7 @@ def check_live_status(cookie_list):
     success_count = 0
     fail_count = 0
     check_results = {}  # 存储检查结果
+    status_updates = {}  # 存储需要写入Redis的状态结果
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 提交所有检查任务
@@ -769,6 +878,7 @@ def check_live_status(cookie_list):
             try:
                 # ✅ 添加180秒超时，防止单个任务阻塞整个线程池
                 returned_room_id, port_info, success = future.result(timeout=180)
+                status_updates[returned_room_id] = port_info if success else None
                 if success and port_info:
                     check_results[returned_room_id] = port_info
                     success_count += 1
@@ -776,9 +886,11 @@ def check_live_status(cookie_list):
                     fail_count += 1
             except TimeoutError:
                 logger.error(f"⚠️ 检测房间超时(60s) | room_id={room_id}")
+                status_updates[room_id] = None
                 fail_count += 1
             except Exception as e:
                 logger.error(f"处理检测结果失败 | room_id={room_id} error={e}")
+                status_updates[room_id] = None
                 fail_count += 1
     
     # ✅ 释放锁后的网络IO完成，现在加锁更新结果
@@ -786,6 +898,11 @@ def check_live_status(cookie_list):
         for room_id, port_info in check_results.items():
             if room_id in all_Live_Room_dict:
                 all_Live_Room_dict[room_id]["live_info"] = port_info
+
+    for room_id, port_info in status_updates.items():
+        room_info = all_Live_Room_dict.get(room_id)
+        if room_info:
+            _write_redis_status(room_id, room_info, port_info)
     
     # 统计当前正在采集的房间数
     collecting_count = 0
@@ -818,7 +935,7 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
-def start_select_info_scheduler(ISTEST):
+def start_select_info_scheduler():
     """
     启动定时任务,每5分钟执行一次select_Info
     ✅ 支持主备切换：只有主节点执行任务，备节点监控主节点健康状态
@@ -981,7 +1098,7 @@ def start_scheduler_monitor():
                     except:
                         pass
                     
-                    start_select_info_scheduler(ISTEST)
+                    start_select_info_scheduler()
                     logger.info("✅ 调度器线程已重启")
                     
             except Exception as e:
@@ -1044,14 +1161,14 @@ if __name__ == '__main__':
 
     # ###############以下是真正服务####################
     logger.info("获取Apollo配置...")
-    config_data = fetch_apollo_config(ISTEST)
-    # print(config_data)
+    # MySQL 连接参数已迁移到 Apollo（config 门面）
     getLiveCookiessql = "SELECT cookies FROM live_account_info where cookies like '%true%'  order by id desc limit 20"
-    host = config_data.get("devSqlHost")
-    user = config_data.get("devSqlUser")
-    password = config_data.get("devSqlPassword")
-    database = config_data.get("database")
-    port = int(config_data.get("devSqlPort"))
+    db_cfg = config.mysql_config()
+    host = db_cfg["host"]
+    user = db_cfg["user"]
+    password = db_cfg["password"]
+    database = db_cfg["database"]
+    port = db_cfg["port"]
 
     # ✅ 初始化数据库连接池（不打印密码）
     logger.info(f"初始化数据库连接池 | host={host} database={database} port={port}")
@@ -1073,13 +1190,13 @@ if __name__ == '__main__':
 
         sys.exit(1)
 
-    # ✅ 代理池配置
+    # ✅ 代理池配置（已迁移到 Apollo）
     try:
-        if ISTEST == 1:
-            ipList = ['senspower:T9u_SCK5Bezq@31.59.112.68:2333','senspower:T9u_SCK5Bezq@82.29.150.155:2333','senspower:T9u_SCK5Bezq@31.59.112.103:2333','senspower:T9u_SCK5Bezq@31.59.112.85:2333','senspower:T9u_SCK5Bezq@82.29.150.35:2333','senspower:T9u_SCK5Bezq@82.29.150.254:2333','senspower:T9u_SCK5Bezq@31.59.112.233:2333','senspower:T9u_SCK5Bezq@82.29.150.192:2333','senspower:T9u_SCK5Bezq@31.59.112.166:2333','senspower:T9u_SCK5Bezq@31.59.112.202:2333','senspower:T9u_SCK5Bezq@31.59.112.220:2333','senspower:T9u_SCK5Bezq@82.29.150.187:2333','senspower:T9u_SCK5Bezq@82.29.150.102:2333','senspower:T9u_SCK5Bezq@31.59.112.213:2333','senspower:T9u_SCK5Bezq@167.148.104.151:2333','senspower:T9u_SCK5Bezq@167.148.104.72:2333','senspower:T9u_SCK5Bezq@167.148.104.79:2333','senspower:T9u_SCK5Bezq@167.148.104.252:2333','senspower:T9u_SCK5Bezq@167.148.104.54:2333','senspower:T9u_SCK5Bezq@167.148.104.182:2333','senspower:T9u_SCK5Bezq@167.148.104.172:2333','senspower:T9u_SCK5Bezq@167.148.104.76:2333','senspower:T9u_SCK5Bezq@167.148.104.254:2333','senspower:T9u_SCK5Bezq@167.148.104.225:2333','senspower:T9u_SCK5Bezq@199.182.96.180:2333','senspower:T9u_SCK5Bezq@199.182.96.171:2333','senspower:T9u_SCK5Bezq@199.182.96.95:2333','senspower:T9u_SCK5Bezq@199.182.96.132:2333','senspower:T9u_SCK5Bezq@199.182.96.155:2333','senspower:T9u_SCK5Bezq@199.182.96.31:2333','senspower:T9u_SCK5Bezq@199.182.96.28:2333','senspower:T9u_SCK5Bezq@199.182.96.46:2333','senspower:T9u_SCK5Bezq@199.182.96.59:2333','senspower:T9u_SCK5Bezq@199.182.96.220:2333','senspower:T9u_SCK5Bezq@199.182.96.249:2333','senspower:T9u_SCK5Bezq@199.182.96.55:2333','senspower:T9u_SCK5Bezq@199.182.96.13:2333','senspower:T9u_SCK5Bezq@172.121.61.57:2333','senspower:T9u_SCK5Bezq@172.121.61.119:2333','senspower:T9u_SCK5Bezq@172.121.61.154:2333','senspower:T9u_SCK5Bezq@172.120.245.229:2333','senspower:T9u_SCK5Bezq@172.121.61.47:2333','senspower:T9u_SCK5Bezq@172.120.245.3:2333','senspower:T9u_SCK5Bezq@172.121.61.48:2333','senspower:T9u_SCK5Bezq@172.121.61.86:2333','senspower:T9u_SCK5Bezq@172.121.61.8:2333','senspower:T9u_SCK5Bezq@172.120.245.187:2333','senspower:T9u_SCK5Bezq@172.120.245.65:2333','senspower:T9u_SCK5Bezq@172.121.61.146:2333','senspower:T9u_SCK5Bezq@172.121.53.220:2333','senspower:T9u_SCK5Bezq@172.121.53.147:2333','senspower:T9u_SCK5Bezq@172.121.53.246:2333','senspower:T9u_SCK5Bezq@172.121.53.91:2333','senspower:T9u_SCK5Bezq@172.121.53.161:2333','senspower:T9u_SCK5Bezq@172.121.53.4:2333','senspower:T9u_SCK5Bezq@172.120.245.211:2333','senspower:T9u_SCK5Bezq@172.120.245.160:2333','senspower:T9u_SCK5Bezq@172.120.245.121:2333','senspower:T9u_SCK5Bezq@172.120.245.141:2333','senspower:T9u_SCK5Bezq@172.120.245.87:2333','senspower:T9u_SCK5Bezq@172.121.53.14:2333','senspower:T9u_SCK5Bezq@172.121.53.122:2333','senspower:T9u_SCK5Bezq@172.121.53.47:2333','senspower:T9u_SCK5Bezq@172.121.61.237:2333','senspower:T9u_SCK5Bezq@172.120.245.223:2333','senspower:T9u_SCK5Bezq@172.121.53.176:2333','senspower:T9u_SCK5Bezq@172.120.245.240:2333','senspower:T9u_SCK5Bezq@172.121.61.43:2333','senspower:T9u_SCK5Bezq@172.121.61.63:2333','senspower:T9u_SCK5Bezq@172.120.245.220:2333','senspower:T9u_SCK5Bezq@172.121.53.178:2333','senspower:T9u_SCK5Bezq@172.121.53.123:2333','senspower:T9u_SCK5Bezq@172.120.245.118:2333','senspower:T9u_SCK5Bezq@172.121.61.58:2333','senspower:T9u_SCK5Bezq@172.121.61.250:2333','senspower:T9u_SCK5Bezq@172.121.61.245:2333','senspower:T9u_SCK5Bezq@172.121.53.254:2333','senspower:T9u_SCK5Bezq@172.121.53.102:2333','senspower:T9u_SCK5Bezq@172.120.245.173:2333','senspower:T9u_SCK5Bezq@96.62.57.90:2333','senspower:T9u_SCK5Bezq@96.62.151.62:2333','senspower:T9u_SCK5Bezq@96.62.149.229:2333','senspower:T9u_SCK5Bezq@96.62.151.66:2333','senspower:T9u_SCK5Bezq@96.62.149.252:2333','senspower:T9u_SCK5Bezq@96.62.151.130:2333','senspower:T9u_SCK5Bezq@96.62.151.99:2333','senspower:T9u_SCK5Bezq@96.62.151.182:2333','senspower:T9u_SCK5Bezq@96.62.149.159:2333','senspower:T9u_SCK5Bezq@96.62.57.84:2333','senspower:T9u_SCK5Bezq@96.62.149.186:2333','senspower:T9u_SCK5Bezq@96.62.149.68:2333','senspower:T9u_SCK5Bezq@96.62.151.128:2333','senspower:T9u_SCK5Bezq@96.62.149.94:2333','senspower:T9u_SCK5Bezq@96.62.57.187:2333','senspower:T9u_SCK5Bezq@96.62.151.228:2333','senspower:T9u_SCK5Bezq@96.62.151.125:2333','senspower:T9u_SCK5Bezq@96.62.149.15:2333','senspower:T9u_SCK5Bezq@96.62.149.156:2333','senspower:T9u_SCK5Bezq@96.62.151.184:2333','senspower:T9u_SCK5Bezq@96.62.151.147:2333','senspower:T9u_SCK5Bezq@96.62.149.63:2333','senspower:T9u_SCK5Bezq@96.62.149.23:2333','senspower:T9u_SCK5Bezq@96.62.149.33:2333','senspower:T9u_SCK5Bezq@96.62.149.231:2333','senspower:T9u_SCK5Bezq@96.62.149.46:2333','senspower:T9u_SCK5Bezq@96.62.57.226:2333','senspower:T9u_SCK5Bezq@96.62.149.40:2333','senspower:T9u_SCK5Bezq@96.62.151.249:2333','senspower:T9u_SCK5Bezq@96.62.149.222:2333','senspower:T9u_SCK5Bezq@96.62.151.21:2333','senspower:T9u_SCK5Bezq@96.62.151.142:2333','senspower:T9u_SCK5Bezq@68.64.159.78:2333','senspower:T9u_SCK5Bezq@68.64.159.74:2333','senspower:T9u_SCK5Bezq@68.64.159.68:2333','senspower:T9u_SCK5Bezq@68.64.159.128:2333','senspower:T9u_SCK5Bezq@68.64.159.18:2333','senspower:T9u_SCK5Bezq@68.64.159.48:2333','senspower:T9u_SCK5Bezq@68.64.159.72:2333','senspower:T9u_SCK5Bezq@68.64.159.217:2333','senspower:T9u_SCK5Bezq@68.64.159.15:2333','senspower:T9u_SCK5Bezq@68.64.159.84:2333','senspower:T9u_SCK5Bezq@68.64.159.178:2333','senspower:T9u_SCK5Bezq@68.64.159.119:2333','senspower:T9u_SCK5Bezq@68.64.159.156:2333','senspower:T9u_SCK5Bezq@68.64.159.124:2333','senspower:T9u_SCK5Bezq@68.64.159.76:2333','senspower:T9u_SCK5Bezq@68.64.159.93:2333','senspower:T9u_SCK5Bezq@68.64.159.136:2333','senspower:T9u_SCK5Bezq@68.64.159.218:2333','senspower:T9u_SCK5Bezq@68.64.159.172:2333','senspower:T9u_SCK5Bezq@68.64.159.89:2333','senspower:T9u_SCK5Bezq@68.64.159.45:2333','senspower:T9u_SCK5Bezq@68.64.159.79:2333','senspower:T9u_SCK5Bezq@68.64.159.12:2333','senspower:T9u_SCK5Bezq@68.64.159.38:2333','senspower:T9u_SCK5Bezq@216.231.43.109:2333','senspower:T9u_SCK5Bezq@216.231.42.140:2333','senspower:T9u_SCK5Bezq@216.231.45.207:2333','senspower:T9u_SCK5Bezq@216.231.44.191:2333','senspower:T9u_SCK5Bezq@216.231.40.79:2333','senspower:T9u_SCK5Bezq@216.231.43.43:2333','senspower:T9u_SCK5Bezq@216.231.42.193:2333','senspower:T9u_SCK5Bezq@216.231.45.68:2333','senspower:T9u_SCK5Bezq@216.231.43.247:2333','senspower:T9u_SCK5Bezq@216.231.43.143:2333','senspower:T9u_SCK5Bezq@216.231.43.181:2333','senspower:T9u_SCK5Bezq@149.52.118.151:2333','senspower:T9u_SCK5Bezq@149.52.118.128:2333','senspower:T9u_SCK5Bezq@149.52.118.74:2333','senspower:T9u_SCK5Bezq@149.52.118.150:2333','senspower:T9u_SCK5Bezq@149.52.118.248:2333','senspower:T9u_SCK5Bezq@149.52.118.205:2333','senspower:T9u_SCK5Bezq@149.52.118.113:2333','senspower:T9u_SCK5Bezq@149.52.118.220:2333','senspower:T9u_SCK5Bezq@149.52.118.133:2333','senspower:T9u_SCK5Bezq@149.52.118.6:2333','senspower:T9u_SCK5Bezq@149.52.118.18:2333','senspower:T9u_SCK5Bezq@149.52.118.194:2333','senspower:T9u_SCK5Bezq@149.52.118.124:2333','senspower:T9u_SCK5Bezq@149.40.69.69:2333','senspower:T9u_SCK5Bezq@149.40.83.188:2333','senspower:T9u_SCK5Bezq@149.40.71.30:2333','senspower:T9u_SCK5Bezq@149.40.71.40:2333','senspower:T9u_SCK5Bezq@149.40.69.74:2333','senspower:T9u_SCK5Bezq@149.40.71.16:2333','senspower:T9u_SCK5Bezq@149.40.71.149:2333','senspower:T9u_SCK5Bezq@149.40.83.13:2333','senspower:T9u_SCK5Bezq@149.40.69.184:2333','senspower:T9u_SCK5Bezq@149.40.83.200:2333','senspower:T9u_SCK5Bezq@149.40.71.98:2333','senspower:T9u_SCK5Bezq@149.40.83.163:2333','senspower:T9u_SCK5Bezq@149.40.83.194:2333','senspower:T9u_SCK5Bezq@149.40.71.155:2333','senspower:T9u_SCK5Bezq@149.40.83.96:2333','senspower:T9u_SCK5Bezq@149.40.71.146:2333','senspower:T9u_SCK5Bezq@149.40.69.124:2333','senspower:T9u_SCK5Bezq@149.40.69.89:2333','senspower:T9u_SCK5Bezq@149.40.69.84:2333','senspower:T9u_SCK5Bezq@149.40.71.203:2333','senspower:T9u_SCK5Bezq@149.40.83.161:2333','senspower:T9u_SCK5Bezq@149.40.83.178:2333','senspower:T9u_SCK5Bezq@149.40.71.243:2333','senspower:T9u_SCK5Bezq@149.40.71.251:2333','senspower:T9u_SCK5Bezq@149.40.69.202:2333','senspower:T9u_SCK5Bezq@149.40.69.105:2333','senspower:T9u_SCK5Bezq@149.40.71.234:2333','senspower:T9u_SCK5Bezq@149.40.69.157:2333','senspower:T9u_SCK5Bezq@149.40.83.156:2333','senspower:T9u_SCK5Bezq@149.40.83.124:2333','senspower:T9u_SCK5Bezq@149.40.71.170:2333','senspower:T9u_SCK5Bezq@149.40.83.88:2333','senspower:T9u_SCK5Bezq@149.40.71.3:2333','senspower:T9u_SCK5Bezq@149.40.71.197:2333','senspower:T9u_SCK5Bezq@149.40.69.58:2333','senspower:T9u_SCK5Bezq@149.40.83.17:2333','senspower:T9u_SCK5Bezq@149.40.71.201:2333','senspower:T9u_SCK5Bezq@149.40.69.60:2333','senspower:T9u_SCK5Bezq@149.40.83.133:2333','senspower:T9u_SCK5Bezq@149.40.71.69:2333','senspower:T9u_SCK5Bezq@149.40.69.125:2333','senspower:T9u_SCK5Bezq@149.40.71.229:2333','senspower:T9u_SCK5Bezq@149.40.69.104:2333','senspower:T9u_SCK5Bezq@149.40.69.101:2333','senspower:T9u_SCK5Bezq@149.40.83.205:2333','senspower:T9u_SCK5Bezq@149.40.71.74:2333','senspower:T9u_SCK5Bezq@149.40.83.74:2333','senspower:T9u_SCK5Bezq@149.40.83.231:2333','senspower:T9u_SCK5Bezq@149.40.69.223:2333','senspower:T9u_SCK5Bezq@149.40.83.114:2333','senspower:T9u_SCK5Bezq@149.40.71.103:2333','senspower:T9u_SCK5Bezq@149.40.83.244:2333','senspower:T9u_SCK5Bezq@149.40.69.117:2333','senspower:T9u_SCK5Bezq@149.40.69.113:2333','senspower:T9u_SCK5Bezq@149.40.83.216:2333','senspower:T9u_SCK5Bezq@149.40.83.246:2333','senspower:T9u_SCK5Bezq@149.40.83.67:2333','senspower:T9u_SCK5Bezq@149.40.83.137:2333','senspower:T9u_SCK5Bezq@149.40.71.96:2333','senspower:T9u_SCK5Bezq@149.40.69.149:2333','senspower:T9u_SCK5Bezq@149.40.83.33:2333','senspower:T9u_SCK5Bezq@149.40.69.186:2333','senspower:T9u_SCK5Bezq@149.40.71.65:2333','senspower:T9u_SCK5Bezq@149.40.83.228:2333','senspower:T9u_SCK5Bezq@149.40.69.239:2333','senspower:T9u_SCK5Bezq@149.40.69.52:2333','senspower:T9u_SCK5Bezq@149.40.69.119:2333','senspower:T9u_SCK5Bezq@149.40.71.249:2333','senspower:T9u_SCK5Bezq@149.40.69.88:2333','senspower:T9u_SCK5Bezq@149.40.71.39:2333','senspower:T9u_SCK5Bezq@149.40.71.54:2333','senspower:T9u_SCK5Bezq@149.40.69.39:2333','senspower:T9u_SCK5Bezq@149.40.71.147:2333','senspower:T9u_SCK5Bezq@149.40.69.254:2333','senspower:T9u_SCK5Bezq@149.40.71.178:2333','senspower:T9u_SCK5Bezq@149.40.69.220:2333','senspower:T9u_SCK5Bezq@149.40.69.11:2333','senspower:T9u_SCK5Bezq@149.40.69.42:2333','senspower:T9u_SCK5Bezq@149.40.69.138:2333','senspower:T9u_SCK5Bezq@149.40.83.183:2333','senspower:T9u_SCK5Bezq@149.40.69.128:2333','senspower:T9u_SCK5Bezq@149.40.83.77:2333','senspower:T9u_SCK5Bezq@149.40.69.146:2333','senspower:T9u_SCK5Bezq@149.40.69.139:2333','senspower:T9u_SCK5Bezq@149.40.83.44:2333','senspower:T9u_SCK5Bezq@149.40.71.28:2333','senspower:T9u_SCK5Bezq@149.40.83.247:2333','senspower:T9u_SCK5Bezq@149.40.71.184:2333','senspower:T9u_SCK5Bezq@149.40.69.4:2333','senspower:T9u_SCK5Bezq@149.40.83.232:2333','senspower:T9u_SCK5Bezq@149.40.71.211:2333','senspower:T9u_SCK5Bezq@149.40.69.13:2333','senspower:T9u_SCK5Bezq@149.40.69.44:2333','senspower:T9u_SCK5Bezq@149.40.69.79:2333','senspower:T9u_SCK5Bezq@192.200.211.246:2333','senspower:T9u_SCK5Bezq@192.200.211.240:2333','senspower:T9u_SCK5Bezq@192.200.211.233:2333','senspower:T9u_SCK5Bezq@192.200.211.245:2333','senspower:T9u_SCK5Bezq@192.200.211.236:2333']
+        ipList = config.static_proxy_pool()
+        if not ipList:
+            logger.warning("代理池为空，将使用无代理模式")
         else:
-            ipList = eval(config_data.get("ipList"))
-        logger.info(f"代理池配置成功 | 数量={len(ipList)}")
+            logger.info(f"代理池配置成功 | 数量={len(ipList)}")
     except Exception as e:
         logger.warning(f"获取ipList配置失败: {e}")
         ipList = []
@@ -1094,7 +1211,7 @@ if __name__ == '__main__':
     logger.info("✅ 工具类初始化完成")
 
     # ✅ 启动定时任务（房间检测和离线脚本监控）
-    start_select_info_scheduler(ISTEST)
+    start_select_info_scheduler()
 
     # ✅ 启动调度器健康监控线程
     start_scheduler_monitor()
@@ -1110,7 +1227,7 @@ if __name__ == '__main__':
 
     # ✅ 初始化 WebSocket 路由
     # from routes.websocket_routes import init_websocket_routes
-    # init_websocket_routes(ISTEST)
+    # init_websocket_routes()
     # logger.info("✅ WebSocket 路由已初始化")
 
     logger.info("=" * 60)

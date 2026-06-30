@@ -22,12 +22,13 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from crawlers.http.base import BaseHttpCrawler, ApiSequence
+from crawlers.constants import DataSource
 from core.config import Settings
 from downloader import Task, DownloadResult
-from monitor.recrawl.proxy import get_proxy_for_account
 from services import cookie_manager
 from services.cookie_manager import get_cookies as _get_cookies, get_cookie_extra as _get_cookie_extra
 from utils.alert import alert_manager
+from utils.adspower_proxy import get_proxy_for_account
 from utils.logger import logger
 
 
@@ -139,6 +140,10 @@ class LazadaHttpCrawler(BaseHttpCrawler):
     def get_platform_name(self) -> str:
         """返回平台标识。"""
         return 'lazada'
+
+    def get_data_source(self) -> str:
+        """返回数据源标识。"""
+        return DataSource.LAZADA
 
     def _parse_country_domain(self, group_name: str) -> str:
         """从 group_name 解析国家域名。
@@ -947,6 +952,7 @@ class LazadaHttpCrawler(BaseHttpCrawler):
             'sign': Settings.DATA_SERVER_CONFIG['api_sign'],
             'socketUserId': self.socket_user_id,
             'userType': 6.0,
+            'dataSource': DataSource.LAZADA,
             'updateTime': int(time.time() * 1000),
             'request': {
                 'response': response_text,
@@ -1073,24 +1079,43 @@ class LazadaHttpCrawler(BaseHttpCrawler):
     # ------------------------------------------------------------------
 
     def _extract_token_from_headers(self, headers: dict) -> dict[str, str]:
-        """从响应头 Set-Cookie 提取 _m_h5_tk 和 _m_h5_tk_enc"""
+        """从响应头 Set-Cookie 提取运行期 Cookie。"""
         set_cookie = headers.get('set-cookie', '') or headers.get('Set-Cookie', '')
         if not set_cookie:
             return {}
 
         import re
         tokens = {}
-        for cookie_part in set_cookie.split(','):
-            if '_m_h5_tk_enc=' in cookie_part:
-                match = re.search(r'_m_h5_tk_enc=([^;]+)', cookie_part)
+        for cookie_name in ('_m_h5_tk_enc', '_m_h5_tk', 'aui'):
+            for cookie_part in set_cookie.split(','):
+                if f'{cookie_name}=' not in cookie_part:
+                    continue
+                match = re.search(rf'{cookie_name}=([^;]+)', cookie_part)
                 if match:
-                    tokens['_m_h5_tk_enc'] = match.group(1)
-            elif '_m_h5_tk=' in cookie_part:
-                match = re.search(r'_m_h5_tk=([^;]+)', cookie_part)
-                if match:
-                    tokens['_m_h5_tk'] = match.group(1)
+                    tokens[cookie_name] = match.group(1)
 
         return tokens
+
+    def _extract_cookies_from_headers(self, headers: dict) -> dict[str, str]:
+        """兼容旧测试与调用名。"""
+        return self._extract_token_from_headers(headers)
+
+    def _update_cookies_from_response(self, response_headers: dict) -> bool:
+        """从响应头更新 live 端口 Cookie。"""
+        new_cookies = self._extract_cookies_from_headers(response_headers)
+        if not new_cookies:
+            return False
+
+        current = getattr(self, '_live_cookies', None) or {}
+        changed = any(current.get(key) != value for key, value in new_cookies.items())
+        if not changed:
+            return False
+
+        updated = current.copy()
+        updated.update(new_cookies)
+        self._live_cookies = updated
+        cookie_manager.save_cookies(self.browser_id, 'lazada', 'live', updated)
+        return True
 
     def _rebuild_task_with_new_tokens(self, task: Task,
                                       new_tokens: dict[str, str]) -> Task:

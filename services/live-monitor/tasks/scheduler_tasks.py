@@ -1147,7 +1147,7 @@ def mainSpider_T1(db_config, istest=1):
         raise
 
 
-def mainSpider_requests(db_config, num=3,ISTEST=1):
+def mainSpider_requests(db_config, num=3, is_test_env=True):
     """基本信息采集（requests模拟请求）"""
     logger.info("🚀 基本信息采集任务启动")
     
@@ -1351,39 +1351,27 @@ def mainSpider_requests(db_config, num=3,ISTEST=1):
 
 
 if __name__ == '__main__':
-    from utils.serverTool import fetch_apollo_config
-    ISTEST = int(os.environ.get('ISTEST', '0'))  # 0: 生产环境, 1: 测试环境
+    import config
+    is_test_env = config.is_test_env()  # True: 测试环境, False: 生产环境
 
     def init_database_config(istest=1):
-        """初始化数据库配置"""
+        """初始化数据库配置（已迁移到 Apollo，config 门面）"""
         try:
-            config_data = fetch_apollo_config(istest)
+            # MySQL 连接参数（cursorclass 为 pymysql 专用，门面不含，此处补上）
             db_config = {
-                'host': config_data["devSqlHost"],
-                'port': int(config_data["devSqlPort"]),
-                'user': config_data["devSqlUser"],
-                'password': config_data["devSqlPassword"],
-                'database': config_data['database'],
-                'charset': 'utf8mb4',
-                'cursorclass': pymysql.cursors.DictCursor
+                **config.mysql_config(),
+                'cursorclass': pymysql.cursors.DictCursor,
             }
-            if istest != 1:
-                # 初始化 Holo 数据库配置
-                holo_db_config = {
-                    'host': config_data[
-                        "holoHost"] if istest == 1 else "hgprecn-cn-vc241gnwp001-ap-southeast-1-vpc-st.hologres.aliyuncs.com",
-                    'port': int(config_data["holoPort"]),
-                    'dbname': config_data["holoDBname"],
-                    'user': config_data["holoUser"],
-                    'password': config_data["holoPassword"]
-                }
+            # 仅生产环境初始化 Holo 配置
+            if not config.is_test_env():
+                holo_db_config = config.holo_config()
             else:
                 holo_db_config = {}
 
-            return config_data, db_config, holo_db_config
+            return db_config, holo_db_config
         except Exception as e:
             logger.error(f"数据库配置初始化失败: {e}", exc_info=True)
             raise
-    config_data, db_config, holo_db_config = init_database_config(ISTEST)
+    db_config, holo_db_config = init_database_config(is_test_env)
 
-    mainSpider_requests(db_config, num=3, ISTEST=ISTEST)
+    mainSpider_requests(db_config, num=3, is_test_env=is_test_env)

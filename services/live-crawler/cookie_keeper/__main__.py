@@ -4,11 +4,12 @@
 """
 
 from .keeper import CookieKeeperScheduler
-from utils.logger import logger
+from utils.logger import Logings, logger
 
 
 def main():
     """启动 Cookie 养号调度器"""
+    Logings.configure('cookie_keeper')
     logger.info('正在启动 Cookie 养号服务...')
 
     scheduler = CookieKeeperScheduler()

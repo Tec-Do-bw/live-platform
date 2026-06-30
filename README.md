@@ -3,6 +3,7 @@
 > 整合直播间监控、视频流录制、浏览器管理、商家数据采集的一站式平台。
 >
 > AI 协作约束与设计决策见 [`CLAUDE.md`](CLAUDE.md);开发进度看 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+> 历史 Phase 1 / MediaMTX 整合资料已清理出常规入口，现仅保留归档记录。
 
 ## 项目结构
 
@@ -13,7 +14,6 @@ live-platform/
 │   ├── live-stream/        # 直播流录制(FFmpeg 推流、视频切割、OSS 上传)
 │   ├── adspower-server/    # AdsPower 浏览器管理(登录态、CDP 投屏)
 │   ├── live-crawler/       # 商家后台数据采集(TikTok/Shopee/Lazada)
-│   └── live-platform/      # Phase 1 整合服务(live-monitor + live-stream + MediaMTX,进行中)
 ├── docs/
 │   ├── ROADMAP.md          # 进度索引
 │   ├── plans/              # 进行中的实施计划
@@ -49,7 +49,7 @@ live-platform/
 | Web 框架 | FastAPI |
 | 爬虫引擎 | DrissionPage(浏览器)、HTTP(Lazada) |
 | 浏览器管理 | AdsPower API + 指纹浏览器 |
-| 视频处理 | FFmpeg(现) / MediaMTX(Phase 1 整合方向) |
+| 视频处理 | FFmpeg(现) |
 | 消息队列 | Kafka |
 | 对象存储 | 阿里云 OSS |
 | 前端 | Vue3 + Element Plus |
@@ -94,9 +94,17 @@ cd services/live-crawler/monitor/frontend && npm install
 |------|------|
 | `cd services/live-crawler && python main.py --mode once --crawl-type realtime` | Lazada 实时采集 |
 | `cd services/live-crawler && python main.py --mode full` | 全量采集(串行) |
-| `cd services/live-crawler && python -m monitor.server` | 启动采集监控面板(端口 8777) |
+| `cd services/live-crawler && python -m monitor.server` | 启动 live-crawler API(Cookie/TikTok refresh/live-status/dashboard,端口 8777) |
 | `cd services/live-crawler && python -m cookie_keeper` | 启动 Cookie 养号服务 |
 | `curl http://localhost:8080/health` | 检查 live-monitor 健康状态 |
+
+## 工具脚本
+
+| 脚本 | 用途 | 适用环境 |
+|------|------|----------|
+| `scripts/sync-live-spider.sh` | 同步 `services/live-stream/` 到独立仓库 `live-spider` 的 `sync/live-platform` 分支 | 仅公司 Windows 环境 |
+
+详见 [`AGENTS.md` Git 工作流章节](AGENTS.md#git-工作流与远程仓库策略)。
 
 ## 子项目文档
 
@@ -104,4 +112,4 @@ cd services/live-crawler/monitor/frontend && npm install
 - [直播流录制 (live-stream)](services/live-stream/README.md)
 - [浏览器管理 (adspower-server)](services/adspower-server/README.md)
 - [数据采集 (live-crawler)](services/live-crawler/README.md)
-- [Phase 1 整合 (live-platform)](services/live-platform/README.md)
+- 历史 Phase 1 / MediaMTX 资料：[`docs/archive/`](docs/archive/)

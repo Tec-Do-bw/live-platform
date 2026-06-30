@@ -8,7 +8,7 @@
 
 ## 主备高可用机制
 
-- 双节点通过 `NODE_ID`、`PRIORITY` 环境变量区分；主节点 `priority=100`，备节点 `priority=50`
+- 双节点通过 Apollo `live_monitor.node_id`、`live_monitor.priority` 配置区分；主节点 `priority=100`，备节点 `priority=50`
 - `/health` 端点返回节点状态，供对端和调度脚本判断可用性
 - `/sync_log`、`/sync_room_dict`、`/sync_offline_scripts` 实现节点间数据同步
 
@@ -43,3 +43,10 @@
 - live-stream 通过 `/liveRoom/*Info` 接口获取直播流地址（`flv_url`），接口规范见 `docs/specs/live-room-api.md`
 - 房间开播/下播事件通过 Kafka 消息通知 live-stream 启停录制
 - 共享 Apollo 配置中心的数据库与 Kafka 配置
+
+## Apollo 配置
+
+- Apollo 规则详见根 `.claude/rules/apollo-config.md`，本服务通过 `config.py` 门面读取配置，业务代码禁止直接调用 `APOLLO.get_value`
+- Apollo 引导参数仅允许 `APOLLO_URL`、`APOLLOID`、`DEPLOY_ENV` 走环境变量；节点配置、数据库、Kafka、Redis、代理池均从 Apollo 读取
+- 节点主备配置使用 `live_monitor.node_id` / `live_monitor.node_ip` / `live_monitor.priority` / `live_monitor.backup_node_url`
+- Holo 连接配置使用通用 `holo.host` / `holo.port` / `holo.dbname` / `holo.user` / `holo.password`，不是 `live_monitor.holo.*`

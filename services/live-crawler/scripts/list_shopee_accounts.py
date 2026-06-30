@@ -27,7 +27,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ADSPOWER_API_URL = os.getenv("ADSPOWER_API_URL", "http://localhost:50325")
+# 默认值与 core/config_base.py 的 ADSPOWER_CONFIG['api_url'] 对齐
+ADSPOWER_API_URL = os.getenv("ADSPOWER_API_URL", "http://127.0.0.1:50325")
 REQUEST_TIMEOUT = 10
 REQUEST_INTERVAL = 1.5
 MAX_RETRIES = 3

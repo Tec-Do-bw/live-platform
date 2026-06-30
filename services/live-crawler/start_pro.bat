@@ -1,9 +1,15 @@
-@echo off
-setlocal
-cd /d "%~dp0"
-set APP_ENV=pro
-set LOG_LEVEL=INFO
-echo [live_dp] APP_ENV=%APP_ENV%, LOG_LEVEL=%LOG_LEVEL%
-python main.py --mode scheduler
-pause
-endlocal
+  @echo off
+  setlocal
+  cd /d "%~dp0"
+  set APP_ENV=pro
+  set LOG_LEVEL=INFO
+  echo [live-crawler] APP_ENV=%APP_ENV%, LOG_LEVEL=%LOG_LEVEL%
+
+  start "live-crawler scheduler" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python main.py --mode scheduler"
+  start "live-crawler api" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m monitor.server"
+  start "live-crawler lazada-cookie-keeper" /D "%~dp0" cmd /k "set APP_ENV=pro&& set LOG_LEVEL=INFO&& python -m cookie_keeper"
+
+  echo.
+  echo Started 3 live-crawler service windows
+  pause
+  endlocal

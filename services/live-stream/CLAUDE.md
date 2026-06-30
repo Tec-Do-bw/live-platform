@@ -1,6 +1,6 @@
 # live-stream
 
-> 通用编码规范、交互规范见根 `CLAUDE.md`。项目结构、启动命令、模块表、数据流、环境变量见 `README.md`。本文仅记录约束与设计决策。
+> 通用编码规范、交互规范见根 `CLAUDE.md`。项目结构、启动命令、模块表、数据流、Apollo 引导变量见 `README.md`。本文仅记录约束与设计决策。
 
 ## 项目定位
 
@@ -21,11 +21,13 @@
 
 | 约束 | 当前值 | 问题 |
 |------|--------|------|
-| 最大重试次数 | 5 次 | 不够，直播流波动频繁 |
-| 心跳检测间隔 | 30s | 太长，断流感知延迟 |
-| 无数据超时 | 60s | 太长，断流后 60s 才触发重连 |
-| 重试初始间隔 | 3s | 偏长，可缩短到 1s |
+| 最大重试次数 | 默认 12 次，可用 Apollo `live_stream.max_retries` 调整 | 直播流波动频繁，不能 5 次就放弃 |
+| 心跳检测间隔 | 默认 10s，可用 Apollo `live_stream.heartbeat_interval_seconds` 调整 | 更快发现 lease / 输出异常 |
+| 无数据超时 | 默认 25s，可用 Apollo `live_stream.no_data_timeout_seconds` 调整 | 断流后更快触发重连 |
+| 重试初始间隔 | 默认 1s，可用 Apollo `live_stream.retry_interval_seconds` 调整 | 减少短断流空窗 |
 | 稳定运行判定 | 60s 后重置重试计数 | 合理但阈值可调 |
+
+TikTok `play_urls` 里通常有多个 FLV 候选。拉流失败重连时先轮换备用 URL，再继续等待下一轮 live-monitor/Redis 刷新，避免一直重试同一个不稳定 CDN 边缘地址。
 
 ## 与 live-monitor 的交互规则
 
@@ -37,7 +39,7 @@
 
 约束：
 - 轮询间隔 **3 分钟**，先上报再获取新房间
-- 主备节点通过环境变量 `PRIMARY_NODE_URL` / `BACKUP_NODE_URL` 配置
+- 主备节点通过 Apollo `live_stream.primary_node_url` / `live_stream.backup_node_url` 配置
 - 推流结束后**必须**从 `online_room_list` 移除房间，否则心跳误报
 
 ## 编码注意事项

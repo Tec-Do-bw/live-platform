@@ -27,6 +27,10 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# === AI 工具私有配置 ===
+.codex/config.toml
+.mcp.json
+
 # === OS ===
 .DS_Store
 Thumbs.db
@@ -57,6 +61,10 @@ tiktok*.json
 *.db
 *.db-*
 
+# === 日报状态文件(运行时数据) ===
+services/live-crawler/account_status.json
+services/live-crawler/account_status.json.broken
+
 
 # === 压缩包 ===
 *.zip
@@ -68,3 +76,5 @@ _tmp_*/
 # === Playwright CLI 持久化会话 ===
 .playwright-cli/
 .claude/scratch/
+# brainstorming visual companion 临时产物
+.superpowers/

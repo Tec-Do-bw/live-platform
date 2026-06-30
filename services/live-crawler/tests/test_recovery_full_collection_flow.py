@@ -6,8 +6,10 @@ import types
 
 background_module = types.ModuleType('apscheduler.schedulers.background')
 cron_module = types.ModuleType('apscheduler.triggers.cron')
+interval_module = types.ModuleType('apscheduler.triggers.interval')
 drission_module = types.ModuleType('DrissionPage')
 ddddocr_module = types.ModuleType('ddddocr')
+live_crawler_module = types.ModuleType('crawlers.browser.live_crawler')
 
 
 class _FakeBackgroundScheduler:
@@ -18,6 +20,8 @@ class _FakeBackgroundScheduler:
         self._jobs.append(types.SimpleNamespace(
             name=kwargs.get('name', ''),
             id=kwargs.get('id', ''),
+            kwargs=kwargs.get('kwargs', {}),
+            trigger=kwargs.get('trigger'),
             next_run_time=None,
         ))
 
@@ -32,6 +36,11 @@ class _FakeBackgroundScheduler:
 
 
 class _FakeCronTrigger:
+    def __init__(self, *args, **kwargs):
+        self.kwargs = kwargs
+
+
+class _FakeIntervalTrigger:
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
 
@@ -51,21 +60,33 @@ class _FakeDdddOcr:
         pass
 
 
+class _ImportDummyCrawler:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
 background_module.BackgroundScheduler = _FakeBackgroundScheduler
 cron_module.CronTrigger = _FakeCronTrigger
+interval_module.IntervalTrigger = _FakeIntervalTrigger
 drission_module.Chromium = _FakeChromium
 drission_module.ChromiumOptions = _FakeChromiumOptions
 ddddocr_module.DdddOcr = _FakeDdddOcr
+live_crawler_module.LiveCrawler = _ImportDummyCrawler
 sys.modules.setdefault('apscheduler', types.ModuleType('apscheduler'))
 sys.modules.setdefault('apscheduler.schedulers', types.ModuleType('apscheduler.schedulers'))
 sys.modules.setdefault('apscheduler.triggers', types.ModuleType('apscheduler.triggers'))
 sys.modules['apscheduler.schedulers.background'] = background_module
 sys.modules['apscheduler.triggers.cron'] = cron_module
+sys.modules['apscheduler.triggers.interval'] = interval_module
 sys.modules['DrissionPage'] = drission_module
 sys.modules['ddddocr'] = ddddocr_module
+sys.modules['crawlers.browser.live_crawler'] = live_crawler_module
 
 import main
 from scheduler.task_scheduler import TaskScheduler
+
+# 仅 main / task_scheduler 导入期间需要轻量 LiveCrawler 桩，避免污染后续工厂测试。
+sys.modules.pop('crawlers.browser.live_crawler', None)
 
 
 class DummyMonitor:
@@ -134,7 +155,7 @@ class DummyCrawler:
     calls = []
     results_by_user = {}
 
-    def __init__(self, platform, browser_id, full_collection=False, group_name='', batch_id=''):
+    def __init__(self, platform, browser_id, full_collection=False, group_name='', batch_id='', crawl_type='history'):
         self.platform = platform
         self.browser_id = browser_id
         DummyCrawler.calls.append({
@@ -143,6 +164,7 @@ class DummyCrawler:
             'full_collection': full_collection,
             'group_name': group_name,
             'batch_id': batch_id,
+            'crawl_type': crawl_type,
         })
 
     def start_crawl(self):
@@ -158,9 +180,10 @@ class DummyCrawler:
         return result
 
 
-def _patch_run_once(monkeypatch, platform_config, tracker, status_mgr, monitor):
-    import monitor.recrawl as recrawl
+live_crawler_module.LiveCrawler = DummyCrawler
 
+
+def _patch_run_once(monkeypatch, platform_config, tracker, status_mgr, monitor):
     DummyCrawler.calls = []
     DummyCrawler.results_by_user = {}
     monkeypatch.setattr(main.Settings, 'PLATFORM_CONFIG', platform_config, raising=False)
@@ -168,7 +191,6 @@ def _patch_run_once(monkeypatch, platform_config, tracker, status_mgr, monitor):
     monkeypatch.setattr(main, 'CollectionTracker', lambda: tracker)
     monkeypatch.setattr(main, 'LoginStatusManager', lambda conn: status_mgr)
     monkeypatch.setattr(main, 'LiveCrawler', DummyCrawler)
-    monkeypatch.setattr(recrawl, 'auto_detect_and_recrawl', lambda *args, **kwargs: None)
 
 
 def _patch_scheduler(monkeypatch, platform_config, tracker, status_mgr, monitor):
@@ -315,3 +337,49 @@ def test_scheduler_writes_failed_event_for_recovery_full_failure(monkeypatch):
         'full_recovery_started',
         'full_recovery_failed',
     ]
+
+
+def test_add_crawl_task_passes_platform_filter_from_cron_config(monkeypatch):
+    """cron_config 可指定 platform_filter，用于注册 TikTok-only 历史采集任务。"""
+    import scheduler.task_scheduler as task_scheduler
+
+    monkeypatch.setattr(task_scheduler.Settings, 'SCHEDULER_CONFIG', {
+        'enabled': True,
+        'cron_config': [
+            {'hour': '13', 'minute': '0', 'timezone_group': 'UTC+8', 'platform_filter': 'tiktok'},
+            {'hour': '4', 'minute': '0', 'timezone_group': 'UTC+8'},
+        ],
+    })
+    monkeypatch.setattr(task_scheduler.Settings, 'PLATFORM_CONFIG', {})
+
+    scheduler = TaskScheduler()
+    scheduler.add_crawl_task()
+
+    jobs = scheduler.scheduler.get_jobs()
+    assert jobs[0].kwargs == {'timezone_group': 'UTC+8', 'platform_filter': 'tiktok'}
+    assert jobs[0].id == 'live_crawl_task_1_UTC+8_tiktok'
+    assert jobs[0].name == '直播数据采集任务 1 [UTC+8/tiktok]'
+    assert jobs[1].kwargs == {'timezone_group': 'UTC+8', 'platform_filter': None}
+    assert jobs[1].id == 'live_crawl_task_2_UTC+8_ALL'
+    assert jobs[1].name == '直播数据采集任务 2 [UTC+8/ALL]'
+
+
+def test_config_adds_tiktok_only_midday_backfill_for_all_timezone_groups():
+    """所有现有时区组都有一条 TikTok-only 当地约 13 点补采任务。"""
+    from core.config import Settings
+
+    cron_config = Settings.SCHEDULER_CONFIG['cron_config']
+    tiktok_backfills = [
+        item for item in cron_config
+        if item.get('platform_filter') == 'tiktok'
+    ]
+
+    assert {(item['timezone_group'], item['hour'], item['minute']) for item in tiktok_backfills} == {
+        ('UTC+9', '12', '0'),
+        ('UTC+8', '13', '0'),
+        ('UTC+7', '14', '0'),
+        ('UTC-3', '0', '0'),
+        ('UTC-6', '3', '10'),
+        ('UTC-8', '5', '0'),
+    }
+    assert len([item for item in cron_config if 'platform_filter' not in item]) == 12

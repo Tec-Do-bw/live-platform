@@ -2,7 +2,7 @@
 
 import pytest
 
-from monitor.db import get_connection, init_db
+from monitor import get_connection, init_db
 from monitor.login_status_manager import LoginStatusManager
 
 

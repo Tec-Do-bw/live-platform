@@ -90,19 +90,21 @@ class Downloader:
         self._merged_headers = {**DEFAULT_HEADERS, **(headers or {})}
 
         # 代理选择策略（基于 tests/proxy_stability 实测数据）：
-        # - 调用方未显式传 proxy（保留默认 DEFAULT_PROXY）→ 首次走静态池随机，重试切 ipbiubiu
+        # - 调用方未显式传 proxy（保留默认 DEFAULT_PROXY）→ 每次请求随机选静态池 IP，重试切 ipbiubiu
         # - 调用方显式传入 proxy（含 None）→ 全程使用，重试不切换
         # 静态池：300 IP 实测成功率 100%、P95 1688ms
         # ipbiubiu：一次一换、100% US 纯度，作为重试代理
+        # 注意：代理在 _execute_task 内按"每次请求/每次重试"动态选取并构造本地 client，
+        # 不在此处固定单一 IP——长生命周期实例若锁死一个 IP，该 IP 被限流即全量超时（单点故障），
+        # 且并发线程改写共享 self._client 会互相踩踏。
         if proxy is DEFAULT_PROXY:
-            self._primary_proxy = "http://" + random.choice(self.ip_list)
+            self._rotate_pool = True   # 主请求每次从静态池随机取 IP
+            self._fixed_proxy = None
             self._retry_proxy = DEFAULT_PROXY
         else:
-            self._primary_proxy = proxy
+            self._rotate_pool = False
+            self._fixed_proxy = proxy  # 含 None（禁用代理）
             self._retry_proxy = proxy
-
-        # 创建首次请求用的 Client
-        self._client = self._build_client(self._primary_proxy)
 
         # 结果存储
         self._results: list[DownloadResult] = []
@@ -182,7 +184,9 @@ class Downloader:
     def _execute_task(self, task: Task) -> DownloadResult:
         """执行单个任务，含 L2 应用层指数退避重试。
 
-        重试时自动切换到 _retry_proxy（默认 ipbiubiu，一次一换 IP）。
+        每次尝试在本方法内选取代理并构造局部 client（不改写 self），保证线程安全：
+          - 首次尝试：静态池每请求随机取 IP（或调用方指定的固定代理）
+          - 第 2 次起：切到 _retry_proxy（默认 ipbiubiu，自带一次一换 IP）
         若 task.min_content_length 不为 None，HTTP 200 但响应过短也视为失败重试。
         """
         last_error: str | None = None
@@ -190,10 +194,16 @@ class Downloader:
         task_start = time.monotonic()
 
         for attempt in range(1, self._max_retries + 2):  # +1 是首次尝试
-            # 第二次尝试起切到重试代理（ipbiubiu 自带一次一换，后续重试不必再切）
-            if attempt == 2 and self._retry_proxy != self._primary_proxy:
-                self._client = self._build_client(self._retry_proxy)
-                logger.debug("[%s] 切换到重试代理"% task.task_id)
+            # 按尝试次数选代理：首次走主路径（静态池随机/固定代理），第 2 次起走重试代理
+            if attempt == 1:
+                proxy = ("http://" + random.choice(self.ip_list)
+                         if self._rotate_pool else self._fixed_proxy)
+            else:
+                proxy = self._retry_proxy
+            # 局部 client，绝不写回 self —— 并发线程互不干扰
+            client = self._build_client(proxy)
+            if attempt == 2 and self._retry_proxy != self._fixed_proxy:
+                logger.debug("[%s] 切换到重试代理" % task.task_id)
 
             try:
                 # 构造请求参数
@@ -210,7 +220,7 @@ class Downloader:
                     kwargs["timeout"] = task.timeout
 
                 # 通过方法名分发（get/post/put/delete/patch/head/options）
-                method_fn = getattr(self._client, task.method.lower())
+                method_fn = getattr(client, task.method.lower())
                 resp = method_fn(task.url, **kwargs)
 
                 # 短响应判定（HTTP 200 但响应过短，视为风控/简化页 → 重试换代理）

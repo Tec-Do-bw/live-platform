@@ -6,41 +6,7 @@ import json
 from datetime import datetime, timedelta
 from fastapi import FastAPI
 
-
-# ✅ ✅ ✅ ✅ 公司apollo获取配置 ✅ ✅ ✅ ✅ ✅
-# apollo获取配置
-def fetch_apollo_config(istest=1):
-    # 测试环境
-    if istest == 1:
-        APOLLO_URL = 'http://dev-apollo.tec-develop.com'
-        APOLLOID = 'live-spider'
-
-    # 正式环境
-    else:
-        # http://10.225.17.67:30080（windows机子需要单独做映射）
-        APOLLO_URL = 'http://10.225.17.67:30080'
-        # APOLLO_URL = 'http://apollo-service-apollo-configservice.apollo:8080'
-        APOLLOID = 'live-spider'
-
-    if istest == 1:
-        url = "{}/configs/{}/dev01/application".format(str(APOLLO_URL), str(APOLLOID))
-    else:
-        url = "{}/configs/{}/PRO/application".format(str(APOLLO_URL), str(APOLLOID))
-
-    # 配置你的 Apollo 服务详情
-    config_data = {}
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # 检查响应是否成功
-        config_data = response.json()
-    except Exception as e:
-        print(f"获取apollo配置失败: {e}")
-
-    if config_data:
-        configurations = config_data["configurations"]
-        return configurations
-    else:
-        return {}
+import config
 
 
 # 获取当前链接的插件ID
@@ -516,16 +482,10 @@ def get_installed_plugin_but_not_logged_in_cjid(db_config):
 
 
 def check_CJ_data(istest=0):
-    config_data = fetch_apollo_config(istest)
-    # 数据库连接配置
+    # 数据库连接参数已迁移到 Apollo（config 门面）；istest 参数保留兼容旧调用，已不再使用
     db_config = {
-        'host': config_data["devSqlHost"],
-        'port': int(config_data["devSqlPort"]),
-        'user': config_data["devSqlUser"],
-        'password': config_data["devSqlPassword"],
-        'database': config_data['database'],
-        'charset': 'utf8mb4',
-        'cursorclass': pymysql.cursors.DictCursor
+        **config.mysql_config(),
+        'cursorclass': pymysql.cursors.DictCursor,
     }
 
     # # 链接数据库配置

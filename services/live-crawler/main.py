@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root))
 
 from scheduler.task_scheduler import TaskScheduler
 from crawlers.browser.live_crawler import LiveCrawler
-from utils.logger import logger
+from utils.logger import Logings, logger
 from core.config import Settings
 from core.collection_tracker import CollectionTracker
 from core.collection_mode import resolve_collection_mode
@@ -40,6 +40,7 @@ def crawl_single_account(platform: str, account, full_collection: bool, batch_id
     else:
         user_id = account
         group_name = ''
+    Logings.configure('manual_full')
     try:
         crawler = LiveCrawler(platform=platform, browser_id=user_id,
                               full_collection=full_collection, group_name=group_name,
@@ -342,13 +343,6 @@ def _run_once_impl(full_collection: bool, workers: int, crawl_type: str, platfor
     # 采集监控：记录批次结束
     monitor.finish_batch(batch_id)
 
-    # 自动补采：检测缺失并执行补采（全量模式跳过）
-    try:
-        from monitor.recrawl import auto_detect_and_recrawl
-        auto_detect_and_recrawl(batch_id, mode=mode)
-    except Exception as e:
-        logger.error(f'自动补采调用异常: {e}')
-
 
 def main():
     """主函数"""
@@ -385,6 +379,13 @@ def main():
     )
 
     args = parser.parse_args()
+
+    service_name = {
+        'scheduler': 'scheduler',
+        'once': 'manual_once',
+        'full': 'manual_full',
+    }[args.mode]
+    Logings.configure(service_name)
     
     # 显示配置信息
     logger.info(f'Kafka状态: {"启用" if Settings.KAFKA_CONFIG["enabled"] else "禁用"}')
@@ -402,4 +403,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

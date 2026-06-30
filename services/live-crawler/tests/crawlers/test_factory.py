@@ -13,11 +13,31 @@ sys.modules.setdefault('ddddocr', MagicMock())
 class TestFactoryRouting:
     """工厂类路由测试"""
 
-    def test_browser_crawler_tiktok(self):
-        """tiktok 路由到浏览器爬虫"""
+    def test_browser_crawler_tiktok(self, monkeypatch):
+        """tiktok 默认 crawler_type=browser 时路由到浏览器爬虫"""
         from crawlers.browser.live_crawler import LiveCrawler
+        from core.config import Settings
+        monkeypatch.setitem(
+            Settings.PLATFORM_CONFIG,
+            'tiktok',
+            {**Settings.PLATFORM_CONFIG.get('tiktok', {}), 'crawler_type': 'browser'},
+        )
+        monkeypatch.setattr('crawlers.browser.live_crawler.load_credentials', lambda *args, **kwargs: None)
         crawler = LiveCrawler(platform='tiktok', browser_id='b1')
         assert crawler.__class__.__name__ == 'TikTokLiveCrawler'
+
+    def test_http_crawler_tiktok_config_mode(self, monkeypatch):
+        """PLATFORM_CONFIG.tiktok.crawler_type=http 时 tiktok 路由到 HTTP 适配器"""
+        from crawlers.browser.live_crawler import LiveCrawler
+        from core.config import Settings
+        monkeypatch.setitem(
+            Settings.PLATFORM_CONFIG,
+            'tiktok',
+            {**Settings.PLATFORM_CONFIG.get('tiktok', {}), 'crawler_type': 'http'},
+        )
+        monkeypatch.setattr('crawlers.browser.live_crawler.load_credentials', lambda *args, **kwargs: None)
+        crawler = LiveCrawler(platform='tiktok', browser_id='b1')
+        assert crawler.__class__.__name__ == 'TikTokHttpCollector'
 
     def test_browser_crawler_shopee(self):
         """shopee 路由到浏览器爬虫"""

@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.12, FastAPI, pytest, dataclasses
 
+> 2026-06-24 note: 本计划中 `services/live-platform/api/routes.py` 相关步骤为历史集成项；`services/live-platform/` 已删除，后续不再作为现役修改范围。
+
 ---
 
 ## 文件结构
@@ -19,7 +21,7 @@
 - `main.py:354-393` — `/liveRoom/portInfo` 路由处理函数
 - `main.py:397-429` — `/liveRoom/shopeeInfo` 路由处理函数
 - `main.py:433-463` — `/liveRoom/lazadaInfo` 路由处理函数
-- `services/live-platform/api/routes.py:26-33` — `_platform_response` 函数
+- 历史项：`services/live-platform/api/routes.py:26-33` — `_platform_response` 函数（服务已删除）
 
 **测试文件：**
 - `tests/test_api_response.py` — 翻译层单测（classify_xxx_result 覆盖所有 code）
@@ -796,92 +798,9 @@ git commit -m "test(api): 翻译层单测覆盖所有 code 场景
 
 ---
 
-### Task 7: 改造聚合代理
+### Task 7: 历史聚合代理改造（已移除）
 
-**Files:**
-- Modify: `services/live-platform/api/routes.py`
-
-- [ ] **Step 1: 重写 _platform_response 函数**
-
-```python
-from __future__ import annotations
-
-from typing import Optional
-
-from fastapi import APIRouter, Header
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
-
-from adapters import get_stream_info
-from orchestrator.state_machine import state_manager
-from shared.config import settings
-
-# 复用 live-monitor 的翻译层（路径需按实际部署调整）
-import sys
-sys.path.insert(0, str(settings.live_monitor_path)) if hasattr(settings, 'live_monitor_path') else None
-from utils.api_response import (
-    classify_tiktok_result,
-    classify_shopee_result,
-    classify_lazada_result,
-    success_response,
-    error_response,
-    ErrorReason,
-)
-
-router = APIRouter()
-
-PLATFORM_CLASSIFIERS = {
-    "tiktok": classify_tiktok_result,
-    "shopee": classify_shopee_result,
-    "lazada": classify_lazada_result,
-}
-
-
-class LiveRoomRequest(BaseModel):
-    mateUrl: str
-
-
-def _unauthorized(access_token: Optional[str]) -> Optional[dict]:
-    if access_token != settings.server.access_token:
-        return {"code": 401, "message": "Unauthorized"}
-    return None
-
-
-async def _platform_response(platform: str, request: LiveRoomRequest, access_token: Optional[str]) -> dict:
-    auth_error = _unauthorized(access_token)
-    if auth_error:
-        return auth_error
-
-    mate_url = request.mateUrl
-    if not mate_url:
-        return error_response(
-            code=4001, reason=ErrorReason.INVALID_PARAM,
-            detail="mateUrl 为空", platform=platform, mate_url=""
-        )
-
-    raw = await get_stream_info(platform, mate_url)
-
-    classifier = PLATFORM_CLASSIFIERS[platform]
-    outcome = classifier(raw, mate_url)
-
-    if outcome.code == 200 or 2000 <= outcome.code < 3000:
-        return success_response(outcome.code, outcome.port_info, mate_url)
-    return error_response(
-        outcome.code, outcome.error_reason, outcome.error_detail,
-        platform=platform, mate_url=mate_url
-    )
-```
-
-- [ ] **Step 2: 提交聚合代理改造**
-
-```bash
-git add services/live-platform/api/routes.py
-git commit -m "feat(live-platform): 聚合代理同步使用标准化响应结构
-
-- _platform_response 使用 classify_xxx_result 翻译层
-- 移除旧的 flv_url='error' 兜底逻辑
-- 与 live-monitor 输出格式完全一致"
-```
+`services/live-platform/api/routes.py` 曾作为聚合代理同步改造范围。2026-06-24 已删除 `services/live-platform/`，本任务不再属于现役执行范围。后续仅维护 `services/live-monitor` 自身路由响应契约。
 
 ---
 
@@ -946,5 +865,5 @@ git commit -m "chore: 响应标准化实施完成，联调验证通过"
 - [ ] `main.py` 三个路由全部使用新响应结构
 - [ ] `tests/test_api_response.py` 全部 PASS（覆盖每个 code 至少一条用例）
 - [ ] 本地联调三个端点，响应结构符合 `docs/specs/live-room-api.md` v2 规范
-- [ ] `services/live-platform/api/routes.py` 同步改造
+- [x] 历史 `services/live-platform/api/routes.py` 聚合代理改造已随服务删除移出范围
 - [ ] main.py 内部巡检逻辑（551/683/687/753）**未被修改**（留下次 PR）

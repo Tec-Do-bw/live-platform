@@ -132,6 +132,30 @@ class AdsPowerService:
             logger.warning("关闭浏览器异常: {}", exc)
             return False
 
+    async def check_browser_active(self, profile_id: str) -> bool:
+        """检查浏览器是否处于运行状态（当前设备）。
+
+        调用 AdsPower V2 GET /api/v2/browser-profile/active,
+        data.status == "Active" 表示浏览器仍开着,"Inactive" 表示已关闭。
+
+        异常(连接失败/API 错误)时保守返回 True(视为仍活跃),
+        避免误判为已关闭而在 profile 仍占用时开新浏览器导致冲突。
+        """
+        if not profile_id:
+            return False
+        try:
+            data = await self._request(
+                "GET", f"/api/v2/browser-profile/active?profile_id={profile_id}"
+            )
+            status = (data.get("data", {}) or {}).get("status", "")
+            return status == "Active"
+        except (AdsPowerConnectionError, AdsPowerApiError) as exc:
+            logger.warning("查询浏览器活跃状态失败,保守视为活跃: profile_id={}, err={}", profile_id, exc)
+            return True
+        except Exception as exc:
+            logger.warning("查询浏览器活跃状态异常,保守视为活跃: profile_id={}, err={}", profile_id, exc)
+            return True
+
     async def cleanup_browser(self, profile_id: str) -> bool:
         """
         清理浏览器配置（关闭并删除）

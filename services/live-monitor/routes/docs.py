@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, File, UploadFile, Form, Cookie, Depends, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 import os
 import re
 from utils.Tools import generate_api_config, chat_with_model, register_function,parse_log_to_dict,spiderLogWrite
@@ -40,29 +40,10 @@ security = HTTPBasic()
 
 # 验证用户登录
 async def verify_login(request: Request):
-    # 获取当前路径
-    current_path = request.url.path
-    
-    # 如果是doc.html、ask.html、versionHistory.html或dataNeedForm.html页面，不需要验证登录
-    if "/docs/doc" in current_path or "/docs/ask" in current_path or "/docs/versionHistory" in current_path or "/docs/dataNeedForm" in current_path  or "/docs/updates.xml" in current_path  or "/docs/privacy_policy.html" in current_path:
-        return True
-    
     # 检查会话中是否有登录状态
     if not request.session.get("authenticated"):
-        # 未登录，重定向到登录页面
-        return RedirectResponse(url="/docs/login", status_code=303)
+        return JSONResponse(content={"code": 401, "message": "Unauthorized", "data": None}, status_code=401)
     return True
-
-# 登录页面
-@router.get("/login", response_class=HTMLResponse)
-async def get_login_page(request: Request):
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "login.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading login page: {str(e)}", status_code=500)
 
 # 处理登录请求
 @router.post("/login")
@@ -78,12 +59,12 @@ async def login(request: Request):
             request.session["authenticated"] = True
             request.session["username"] = username
             
-            # 登录成功，重定向到请求的页面或默认页面
-            requested_path = request.query_params.get("next", "/docs/configGenerator")
-            return RedirectResponse(url=requested_path, status_code=303)
+            return JSONResponse(content={"code": 200, "message": "success", "data": None})
         else:
-            # 登录失败，返回到登录页面并显示错误
-            return RedirectResponse(url="/docs/login?error=invalid_credentials", status_code=303)
+            return JSONResponse(
+                content={"code": 401, "message": "invalid_credentials", "data": None},
+                status_code=401,
+            )
     except Exception as e:
         return JSONResponse(
             content={"code": 500, "message": f"Login error: {str(e)}", "data": None},
@@ -95,103 +76,11 @@ async def login(request: Request):
 async def logout(request: Request):
     # 清除会话
     request.session.clear()
-    return RedirectResponse(url="/docs/doc", status_code=303)
+    return JSONResponse(content={"code": 200, "message": "success", "data": None})
 
 
 for func in business_functions:
     register_function(func)
-
-@router.get("/doc", response_class=HTMLResponse)
-async def get_doc():
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "doc.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading documentation: {str(e)}", status_code=500)
-
-@router.get("/ask", response_class=HTMLResponse)
-async def get_ask():
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "ask.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading documentation: {str(e)}", status_code=500)
-
-@router.get("/offlineTask", response_class=HTMLResponse)
-async def get_offline_task(request: Request):
-    # 验证用户是否已登录
-    if await verify_login(request) is not True:
-        return await verify_login(request)
-    
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "offlineTask.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading documentation: {str(e)}", status_code=500)
-
-
-@router.get("/privacy_policy.html", response_class=HTMLResponse)
-async def get_offline_task(request: Request):
-    # 验证用户是否已登录
-    if await verify_login(request) is not True:
-        return await verify_login(request)
-    
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "privacy_policy.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading documentation: {str(e)}", status_code=500)
-
-@router.get("/updates.xml", response_class=HTMLResponse)
-async def get_offline_task(request: Request):
-    # 验证用户是否已登录
-    if await verify_login(request) is not True:
-        return await verify_login(request)
-    
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "updates.xml")
-        with open(html_file_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading documentation: {str(e)}", status_code=500)
-
-
-@router.get("/configGenerator", response_class=HTMLResponse)
-async def get_config_generator(request: Request):
-    # 验证用户是否已登录
-    if await verify_login(request) is not True:
-        return await verify_login(request)
-    
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "configGenerator.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading documentation: {str(e)}", status_code=500)
-
-
-@router.get("/versionHistory", response_class=HTMLResponse)
-async def get_version_history_html(request: Request):
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "versionHistory.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:  
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading documentation: {str(e)}", status_code=500)
-
-
-
 
 @router.post("/chat")
 async def chat(request: Request):
@@ -800,16 +689,6 @@ async def add_version_history(request: Request):
             content={"code": 500, "message": f"Error adding version history: {str(e)}", "data": None},
             status_code=500
         )
-
-@router.get("/dataNeedForm", response_class=HTMLResponse)
-async def get_data_need_form(request: Request):
-    try:
-        html_file_path = os.path.join(os.path.dirname(__file__), "..", "static", "dataNeedForm.html")
-        with open(html_file_path, "r", encoding="utf-8") as f:  
-            html_content = f.read()
-        return html_content
-    except Exception as e:
-        return HTMLResponse(content=f"Error loading data need form: {str(e)}", status_code=500)
 
 @router.get("/getDataNeedPool")
 async def get_data_need_pool_api(request: Request):

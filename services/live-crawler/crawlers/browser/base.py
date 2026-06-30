@@ -62,12 +62,21 @@ class BaseLiveCrawler(ABC):
     @abstractmethod
     def get_platform_name(self) -> str:
         """获取平台标识名称（子类必须实现）
-        
+
         Returns:
             str: 平台标识（如 'tiktok', 'shopee'）
         """
         pass
-    
+
+    @abstractmethod
+    def get_data_source(self) -> str:
+        """返回数据源标识（子类必须实现）
+
+        Returns:
+            str: 数据源标识（如 'live_crawler_tiktok_browser'）
+        """
+        pass
+
     @abstractmethod
     def handle_special_logic(self, url: str, response: Any, **kwargs) -> None:
         """处理平台特殊逻辑（子类必须实现）
@@ -207,6 +216,7 @@ class BaseLiveCrawler(ABC):
             "extra": extra,
             "sign": Settings.DATA_SERVER_CONFIG['api_sign'],
             "userType": 6.0,
+            "dataSource": self.get_data_source(),
             "updateTime": int(time.time() * 1000),
             "request": {
                 "response": response_str,

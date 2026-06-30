@@ -2,6 +2,7 @@
 paths:
   - "services/live-crawler/core/collection_mode.py"
   - "services/live-crawler/crawlers/browser/base.py"
+  - "services/live-crawler/crawlers/http/tiktok/adapter.py"
   - "services/live-crawler/scheduler/task_scheduler.py"
   - "services/live-crawler/monitor/login_status_manager.py"
   - "services/live-crawler/main.py"
@@ -44,6 +45,8 @@ CREATE TABLE account_login_events (
 - 若当前为 logout 则设置 `self.full_collection = True` 和 `self._login_recovery = True`
 - `main.py` / `task_scheduler.py` 在 `start_crawl()` 后检测 `result['login_recovery']`
 - 补写 `full_recovery_started` / `full_recovery_succeeded` 事件
+
+> **TikTok HTTP 版**：浏览器版基类不参与，落点在 `crawlers/http/tiktok/adapter.py`（`setup_session` 验证后读 `send_login_callback` 返回的 `login_recovery` 标记）。完整链路见 [[tiktok-http-lifecycle]]。
 
 ### Fallback 路径（3 轮完成）
 

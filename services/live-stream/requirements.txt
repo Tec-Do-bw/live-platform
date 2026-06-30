@@ -10,6 +10,7 @@ pymysql
 fastapi
 uvicorn[standard]
 oss2
+redis==7.1.0
 
 
 

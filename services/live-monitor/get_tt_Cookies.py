@@ -38,46 +38,10 @@ def get_live_data_cookies():
         result = db_pool.execute_query(getLiveChectsql)
         logger.info(f"获取cookie数据成功 | 数量={len(result) if result else 0}")
         return result if result else []
-        
+
     except Exception as e:
         logger.error(f"数据库查询出错: {e}", exc_info=True)
         return []
-    
-
-# ✅ ✅ ✅ ✅ 公司apollo获取配置 ✅ ✅ ✅ ✅ ✅ 
-# apollo获取配置
-def fetch_apollo_config(istest):
-    #测试环境
-    if istest == 1:
-        APOLLO_URL = 'http://dev-apollo.tec-develop.com'
-        APOLLOID = 'live-spider'
-
-    #正式环境
-    else:
-        # http://10.225.17.67:30080（windows机子需要单独做映射）
-        APOLLO_URL = 'http://10.225.17.67:30080'
-        # APOLLO_URL = 'http://apollo-service-apollo-configservice.apollo:8080'
-        APOLLOID = 'live-spider'
-       
-    if istest == 1:
-        url = "{}/configs/{}/dev01/application".format(str(APOLLO_URL),str(APOLLOID))
-    else:
-        url = "{}/configs/{}/PRO/application".format(str(APOLLO_URL),str(APOLLOID))
-   
-    # 配置你的 Apollo 服务详情
-    config_data = {}
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # 检查响应是否成功
-        config_data = response.json()
-    except Exception as e:
-        print(f"获取apollo配置失败: {e}")
-        
-    if config_data:
-        configurations = config_data["configurations"]
-        return  configurations
-    else:
-        return {}
 
 
 def getCookies():

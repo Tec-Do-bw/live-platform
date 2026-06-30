@@ -10,7 +10,8 @@
 | 直播流录制 | [`services/live-stream/`](services/live-stream/CLAUDE.md) | FFmpeg 推流、视频切割、OSS 上传 |
 | 浏览器管理 | [`services/adspower-server/`](services/adspower-server/CLAUDE.md) | AdsPower 浏览器、CDP 投屏、登录监控 |
 | 数据采集 | [`services/live-crawler/`](services/live-crawler/CLAUDE.md) | TikTok/Shopee/Lazada 双轨采集(浏览器+HTTP) |
-| Phase 1 整合服务 | [`services/live-platform/`](services/live-platform/CLAUDE.md) | live-monitor + live-stream + MediaMTX(进行中) |
+
+> 历史 Phase 1 / MediaMTX 整合服务已删除，相关实现资料仅保留在归档文档中，不再视为现役子项目。
 
 ## 文档地图
 
@@ -25,7 +26,7 @@
 
 ## 技术栈
 
-Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower API · FFmpeg / MediaMTX · Kafka · 阿里云 OSS · Vue3 + Element Plus · SQLite
+Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower API · FFmpeg · Kafka · 阿里云 OSS · Vue3 + Element Plus · SQLite
 
 ## 已知坑
 
@@ -51,9 +52,11 @@ Python 3.12 · FastAPI · DrissionPage(浏览器爬虫)+ HTTP(Lazada)· AdsPower
 | `live-room-api-contract.md` | 修改 `services/live-monitor/utils/*Tool.py` | 维护爬虫工具返回值契约 |
 | `collection-mode-rules.md` | 编辑 live-crawler 采集调度入口 | 全量/增量/登出恢复模式判断优先级 |
 | `logout-recovery-flow.md` | 编辑 live-crawler base/scheduler/login 相关代码 | 即时恢复(2 轮)与 Fallback(3 轮)路径 |
-| `login-callback-spec.md` | 编辑 adspower-server 或 live-crawler 登录回调代码 | login_status 三态、reason 字段、回调优先级与去重 |
+| `login-callback-spec.md` | 编辑 adspower-server 或 live-crawler 登录回调代码(含 tiktok HTTP adapter/refresher) | 浏览器侧三态 vs HTTP 侧二态、reason 字段、回调优先级与去重 |
 | `shopee-special-rules.md` | 编辑 live-crawler shopee 相关代码 | page_urls 模板、时区 T-1、域名映射、JS 注入采集 |
-| `tiktok-collection-time.md` | 编辑 live-crawler tiktok/browserapi | 增量 T-3、全量 T-28、禁用 SETTLEMENT_HOUR |
+| `tiktok-collection-time.md` | 编辑 live-crawler tiktok(http collector/browser)/browserapi | 增量 T-3、全量 T-28、禁用 SETTLEMENT_HOUR |
+| `tiktok-http-lifecycle.md` | 编辑 tiktok HTTP 三链路(adapter/collector/refresher/refresh_routes/login_monitor) | 登录态一律走 HTTP account_info、回调三铁律、三链路衔接契约 |
+| `apollo-config.md` | 编辑各服务 core/apollo、config.py 或配置读取代码 | Apollo 唯一权威源、点分命名、引导参数例外、禁止代码写入 Apollo |
 
 其他工作流约定:
 

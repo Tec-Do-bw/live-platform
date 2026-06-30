@@ -1,0 +1,43 @@
+flowchart TD
+    Start([FFmpeg 断流触发<br/>on_retry_refresh])
+
+    Start --> Step1[步骤1: 重新读取 Redis]
+
+    Step1 --> RedisRead["redis_source.get_status(collection_id)"]
+
+    RedisRead --> CheckStatus{status<br/>存在?}
+
+    CheckStatus -->|否<br/>离线/过期| Release[释放租约<br/>停止录制]
+
+    CheckStatus -->|是| Step2[步骤2: 刷新候选URL列表]
+
+    Step2 --> BuildCandidates["build_live_url_candidates({<br/>  flv_url: status.flvUrl,<br/>  play_urls: status.metadata.play_urls<br/>})"]
+
+    BuildCandidates --> UpdateList[更新 live_url_candidates 列表]
+
+    UpdateList --> Step3[步骤3: 检查主URL是否变化]
+
+    Step3 --> CompareURL{status.flvUrl<br/>!= current_url?}
+
+    CompareURL -->|是<br/>live-monitor更新了| UseNew["返回新URL<br/>refreshed_live_url"]
+
+    CompareURL -->|否<br/>主URL未变| Step4[步骤4: 轮换备用URL]
+
+    Step4 --> FindIndex["在 live_url_candidates 中<br/>找到 current_url 的索引"]
+
+    FindIndex --> NextIndex["next_index = (current_index + 1)<br/>% len(candidates)"]
+
+    NextIndex --> GetNext["从列表取 candidates[next_index]"]
+
+    GetNext --> CheckSame{轮换后的URL<br/>!= current_url?}
+
+    CheckSame -->|是| UseBackup["返回备用URL<br/>fallback_url"]
+
+    CheckSame -->|否<br/>只有1个URL| UseCurrent["返回原URL<br/>继续重试"]
+
+    style Step1 fill:#ff9,stroke:#f66,stroke-width:2px
+    style Step2 fill:#9f9,stroke:#393,stroke-width:2px
+    style Step3 fill:#9cf,stroke:#369,stroke-width:2px
+    style Step4 fill:#fcf,stroke:#939,stroke-width:2px
+    style UseNew fill:#6f6,stroke:#060,stroke-width:3px
+    style UseBackup fill:#f9f,stroke:#606,stroke-width:3px
